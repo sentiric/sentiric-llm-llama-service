@@ -3,7 +3,7 @@ build/
 vcpkg_installed/
 compile_commands.json
 
-# Dependencies
+# Yereldeki submodule'ü build context'e gönderme, Docker içinde klonlayacağız.
 vendor/
 
 # IDE files
@@ -12,7 +12,4 @@ vendor/
 
 # OS files
 .DS_Store
-
-# Executables
-llm_service
 models/
