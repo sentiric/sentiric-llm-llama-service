@@ -1,87 +1,94 @@
 cmake_minimum_required(VERSION 3.20)
-project(llm-llama-service CXX C)
+project(llm_service)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# vcpkg toolchain
+set(CMAKE_TOOLCHAIN_FILE "/opt/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
 
-# KRİTİK: Static build için flag'ler
-set(LLAMA_STATIC ON)
-set(BUILD_SHARED_LIBS OFF)
+# Find system llama.cpp library
+find_package(llama REQUIRED)
 
-find_package(gRPC CONFIG REQUIRED)
-find_package(spdlog CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
-find_package(httplib CONFIG REQUIRED)
-find_package(Threads REQUIRED)
-find_package(Protobuf CONFIG REQUIRED)
+# Find dependencies via vcpkg
+find_package(httplib REQUIRED)
+find_package(gRPC REQUIRED)
+find_package(spdlog REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
-include(FetchContent)
-FetchContent_Declare(
-  sentiric_contracts
-  GIT_REPOSITORY https://github.com/sentiric/sentiric-contracts.git
-  GIT_TAG v1.10.0
-)
-FetchContent_MakeAvailable(sentiric_contracts)
-
-# llama.cpp'yi subdirectory olarak ekle
-add_subdirectory(llama.cpp)
-
-# Protobuf generation
-set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
-set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
-
-add_custom_command(
-    OUTPUT
-        "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
-        "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
-        "${GENERATED_DIR}/sentiric/llm/v1/local.pb.h"
-        "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.h"
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_DIR}
-    COMMAND $<TARGET_FILE:protobuf::protoc>
-        --proto_path=${sentiric_contracts_SOURCE_DIR}/proto
-        --cpp_out=${GENERATED_DIR}
-        --grpc_out=${GENERATED_DIR}
-        --plugin=protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
-        ${PROTO_FILES}
-    DEPENDS ${PROTO_FILES}
-    COMMENT "Generating Protobuf and gRPC C++ sources"
+# Generate gRPC code
+set(PROTO_FILES
+    proto/llm_service.proto
 )
 
-# STATIC library olarak değiştir
-add_library(proto_lib STATIC
-    "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
-    "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
-)
-target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
-target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
+foreach(PROTO_FILE ${PROTO_FILES})
+    get_filename_component(ABS_PROTO_FILE ${PROTO_FILE} ABSOLUTE)
+    get_filename_component(PROTO_DIR ${ABS_PROTO_FILE} DIRECTORY)
+    get_filename_component(PROTO_NAME ${ABS_PROTO_FILE} NAME_WE)
+    
+    set(GENERATED_PROTO_DIR ${CMAKE_CURRENT_BINARY_DIR}/proto)
+    
+    # Generate gRPC code
+    protobuf_generate(
+        LANGUAGE cpp
+        PROTOC_OUT_DIR ${GENERATED_PROTO_DIR}
+        TARGET llm_service_proto
+        ${ABS_PROTO_FILE}
+    )
+    
+    # Generate gRPC service code  
+    protobuf_generate_grpc_cpp(
+        TARGET llm_service_grpc
+        PROTOC_OUT_DIR ${GENERATED_PROTO_DIR}
+        ${ABS_PROTO_FILE}
+    )
+    
+    # Include generated directory
+    include_directories(${GENERATED_PROTO_DIR})
+endforeach()
 
-add_executable(llm_service
+# Create executables
+add_executable(llm_service 
     src/main.cpp
-    src/llm_engine.cpp
     src/grpc_server.cpp
-    src/http_server.cpp
+    src/model_handler.cpp
+    ${GENERATED_PROTO_DIR}/llm_service.pb.cc
+    ${GENERATED_PROTO_DIR}/llm_service.grpc.pb.cc
 )
 
-target_link_libraries(llm_service
-    proto_lib
+add_executable(grpc_test_client 
+    src/grpc_client.cpp
+    ${GENERATED_PROTO_DIR}/llm_service.pb.cc
+    ${GENERATED_PROTO_DIR}/llm_service.grpc.pb.cc
+)
+
+# Link libraries for main service
+target_link_libraries(llm_service PRIVATE 
     llama
-    spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
-    Threads::Threads
-    gRPC::grpc++ protobuf::libprotobuf
-)
-
-target_include_directories(llm_service PRIVATE
-    src
-    ${GENERATED_DIR}
-)
-
-add_executable(grpc_test_client src/grpc_test_client.cpp)
-target_link_libraries(grpc_test_client
-    proto_lib 
+    httplib::httplib
+    gRPC::grpc++
     spdlog::spdlog
-    gRPC::grpc++ protobuf::libprotobuf
+    nlohmann_json::nlohmann_json
+    protobuf::libprotobuf
 )
-target_include_directories(grpc_test_client PRIVATE
-    src
-    ${GENERATED_DIR}
+
+# Link libraries for test client
+target_link_libraries(grpc_test_client PRIVATE 
+    gRPC::grpc++
+    spdlog::spdlog
+    protobuf::libprotobuf
+)
+
+# Include directories
+target_include_directories(llm_service PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${GENERATED_PROTO_DIR}
+)
+
+target_include_directories(grpc_test_client PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${GENERATED_PROTO_DIR}
+)
+
+# C++ standard
+set_target_properties(llm_service grpc_test_client PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
 )
