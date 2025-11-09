@@ -8,7 +8,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
-// YENİ: Kontrat header'ını dahil et
+// DÜZELTME: Include yolu basitleştirildi.
 #include "sentiric/llm/v1/local.pb.h"
 
 class LLMEngine {
@@ -19,7 +19,6 @@ public:
     LLMEngine(const LLMEngine&) = delete;
     LLMEngine& operator=(const LLMEngine&) = delete;
 
-    // YENİ: İmza, doğrudan request nesnesini alacak şekilde değişti
     void generate_stream(
         const sentiric::llm::v1::LocalGenerateRequest& request,
         std::function<void(const std::string& token)> on_token_callback,

@@ -3,7 +3,7 @@
 #include "llm_engine.h"
 #include <memory>
 #include <grpcpp/grpcpp.h>
-// YENİ: Kontrat header'ları artık FetchContent'ten gelen yoldan dahil edilecek
+// DÜZELTME: Include yolu basitleştirildi.
 #include "sentiric/llm/v1/local.grpc.pb.h"
 
 class GrpcServer final : public sentiric::llm::v1::LLMLocalService::Service {

@@ -69,9 +69,13 @@ target_link_libraries(llm_service PRIVATE
 target_include_directories(llm_service PRIVATE
     src
     vendor/llama.cpp
+    ${GENERATED_DIR} # <-- DÜZELTME 1: Üretilen dosyaların yolunu buraya ekle
 )
 
 # --- C++ Test İstemcisi ---
 add_executable(grpc_test_client src/grpc_test_client.cpp)
 target_link_libraries(grpc_test_client PRIVATE proto_lib spdlog::spdlog)
-target_include_directories(grpc_test_client PRIVATE src)
+target_include_directories(grpc_test_client PRIVATE
+    src
+    ${GENERATED_DIR} # <-- DÜZELTME 2: Üretilen dosyaların yolunu buraya ekle
+)

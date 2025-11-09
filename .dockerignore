@@ -3,8 +3,8 @@ build/
 vcpkg_installed/
 compile_commands.json
 
-# Yereldeki submodule'ü build context'e gönderme, Docker içinde klonlayacağız.
-vendor/
+# YORUM SATIRI YAPILDI VEYA SİLİNDİ: Submodule'ün kopyalanmasına izin ver.
+# vendor/
 
 # IDE files
 .vscode/
