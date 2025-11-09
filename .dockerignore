@@ -1,15 +1,12 @@
-# Build artifacts
+.git
+.github
+Dockerfile
+.dockerignore
+README.md
+*.log
+temp/
 build/
-vcpkg_installed/
-compile_commands.json
-
-# YORUM SATIRI YAPILDI VEYA SİLİNDİ: Submodule'ün kopyalanmasına izin ver.
-# vendor/
-
-# IDE files
+.docker/
 .vscode/
-.idea/
-
-# OS files
-.DS_Store
+*.gguf
 models/
