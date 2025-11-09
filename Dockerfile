@@ -20,12 +20,14 @@ COPY vcpkg.json .
 # Bu katman sadece vcpkg.json değiştiğinde yeniden çalışır.
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# ADIM 3: Projenin TAMAMINI (yerelde initialize edilmiş submodule'ler DAHİL) kopyala.
+# ADIM 3: Projenin TAMAMINI kopyala.
 COPY . .
 
-# Derleme
+# Derleme - STATIC BUILD
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
+    -DLLAMA_STATIC=ON \
+    -DBUILD_SHARED_LIBS=OFF \
     -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
 RUN cmake --build build --target all -j $(nproc)
 
@@ -36,8 +38,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Sadece executable'ları kopyala - ARTIK SHARED LIB GEREK YOK
 COPY --from=builder /app/build/llm_service /usr/local/bin/llm_service
 COPY --from=builder /app/build/grpc_test_client /usr/local/bin/grpc_test_client
+
 RUN mkdir -p /models
 
 EXPOSE 16060 16061

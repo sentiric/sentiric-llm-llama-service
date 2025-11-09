@@ -4,6 +4,10 @@ project(llm-llama-service CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# KRİTİK: Static build için flag'ler
+set(LLAMA_STATIC ON)
+set(BUILD_SHARED_LIBS OFF)
+
 find_package(gRPC CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
@@ -46,7 +50,7 @@ add_library(proto_lib
 target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
 target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
-set(LLAMA_STATIC ON)
+# Static build için
 add_subdirectory(vendor/llama.cpp)
 
 add_executable(llm_service
@@ -56,10 +60,9 @@ add_executable(llm_service
     src/http_server.cpp
 )
 
-# DÜZELTME: ggml_static yerine sadece llama kullan
 target_link_libraries(llm_service PRIVATE
     proto_lib
-    llama  # ggml_static SİLİNDİ
+    llama
     spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
     Threads::Threads
     gRPC::grpc++ protobuf::libprotobuf
