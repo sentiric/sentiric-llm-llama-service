@@ -34,12 +34,14 @@ RUN cmake --build build --target all -j $(nproc)
 # --- Çalışma Aşaması ---
 FROM ubuntu:22.04
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+# KRİTİK: OpenMP kütüphanesini yükle
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates libgomp1 && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Sadece executable'ları kopyala - ARTIK SHARED LIB GEREK YOK
+# Sadece executable'ları kopyala
 COPY --from=builder /app/build/llm_service /usr/local/bin/llm_service
 COPY --from=builder /app/build/grpc_test_client /usr/local/bin/grpc_test_client
 
