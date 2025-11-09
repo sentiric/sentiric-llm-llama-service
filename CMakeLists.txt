@@ -54,27 +54,30 @@ add_executable(llm_service
     src/llm_engine.cpp
     src/grpc_server.cpp
     src/http_server.cpp
-    # vendor/llama.cpp/common/common.cpp <-- DÜZELTME 1: Bu satırı SİLİN
 )
 
+# DÜZELTME: ggml_static yerine sadece llama kullan
 target_link_libraries(llm_service PRIVATE
     proto_lib
-    llama ggml_static
+    llama  # ggml_static SİLİNDİ
     spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
     Threads::Threads
+    gRPC::grpc++ protobuf::libprotobuf
 )
 
 target_include_directories(llm_service PRIVATE
     src
     vendor/llama.cpp
-    # vendor/llama.cpp/common <-- DÜZELTME 2: Bu satırı SİLİN
     ${GENERATED_DIR}
 )
 
 add_executable(grpc_test_client src/grpc_test_client.cpp)
-target_link_libraries(grpc_test_client PRIVATE proto_lib spdlog::spdlog)
+target_link_libraries(grpc_test_client PRIVATE 
+    proto_lib 
+    spdlog::spdlog
+    gRPC::grpc++ protobuf::libprotobuf
+)
 target_include_directories(grpc_test_client PRIVATE
     src
-    # vendor/llama.cpp/common <-- DÜZELTME 3: Bu satırı SİLİN
     ${GENERATED_DIR}
 )

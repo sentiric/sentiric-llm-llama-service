@@ -1,3 +1,4 @@
+// src/llm_engine.h
 #pragma once
 
 #include "config.h"
@@ -8,7 +9,6 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
-// DÜZELTME: Include yolu basitleştirildi.
 #include "sentiric/llm/v1/local.pb.h"
 
 class LLMEngine {
@@ -19,9 +19,8 @@ public:
     LLMEngine(const LLMEngine&) = delete;
     LLMEngine& operator=(const LLMEngine&) = delete;
 
-    // YENİ: İmza, doğrudan request nesnesini alacak şekilde değişti
     void generate_stream(
-        const sentiric::llm::v1::LocalGenerateStreamRequest& request, // <-- LocalGenerateRequest'ten buna değiştirin
+        const sentiric::llm::v1::LocalGenerateStreamRequest& request,
         std::function<void(const std::string& token)> on_token_callback,
         std::function<bool()> should_stop_callback
     );
