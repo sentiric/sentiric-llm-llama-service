@@ -4,7 +4,7 @@ FROM ubuntu:22.04 AS builder
 # Gerekli paketleri kur
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential curl zip unzip tar \
-    ca-certificates pkg-config ninja-build && \
+    ca-certificates pkg-config ninja-build libcurl4-openssl-dev && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # vcpkg'yi kur
@@ -17,13 +17,16 @@ WORKDIR /app
 COPY vcpkg.json .
 
 # ADIM 2: Kaynak kodun geri kalanını kopyalamadan ÖNCE bağımlılıkları kur.
-# Bu katman sadece vcpkg.json değiştiğinde yeniden çalışır.
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# ADIM 3: Projenin TAMAMINI kopyala.
+# ADIM 3: Projenin TAMAMINI kopyala
 COPY . .
 
-# Derleme - STATIC BUILD
+# ADIM 4: llama.cpp'yi proje içinde build et
+RUN git clone https://github.com/azmisahin-forks/llama.cpp.git llama.cpp
+RUN cd llama.cpp && git checkout 0750a59903688746883b0ecb24ac5ceed68edbf1
+
+# Derleme - STATIC BUILD ZORUNLU
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLAMA_STATIC=ON \

@@ -23,6 +23,10 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
+# llama.cpp'yi subdirectory olarak ekle
+add_subdirectory(llama.cpp)
+
+# Protobuf generation
 set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
@@ -43,15 +47,13 @@ add_custom_command(
     COMMENT "Generating Protobuf and gRPC C++ sources"
 )
 
-add_library(proto_lib
+# STATIC library olarak değiştir
+add_library(proto_lib STATIC
     "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
     "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
 )
 target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
 target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
-
-# Static build için
-add_subdirectory(vendor/llama.cpp)
 
 add_executable(llm_service
     src/main.cpp
@@ -60,7 +62,7 @@ add_executable(llm_service
     src/http_server.cpp
 )
 
-target_link_libraries(llm_service PRIVATE
+target_link_libraries(llm_service
     proto_lib
     llama
     spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
@@ -70,12 +72,11 @@ target_link_libraries(llm_service PRIVATE
 
 target_include_directories(llm_service PRIVATE
     src
-    vendor/llama.cpp
     ${GENERATED_DIR}
 )
 
 add_executable(grpc_test_client src/grpc_test_client.cpp)
-target_link_libraries(grpc_test_client PRIVATE 
+target_link_libraries(grpc_test_client
     proto_lib 
     spdlog::spdlog
     gRPC::grpc++ protobuf::libprotobuf

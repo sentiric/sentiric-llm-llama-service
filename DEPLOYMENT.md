@@ -1,5 +1,28 @@
 # 🚀 Deployment Rehberi
 
+## YENİ: Submodule-Free Development Workflow
+
+### Build Process (Artık daha basit)
+```bash
+# ESKİ: 
+git clone --recursive ...
+git submodule update --init
+
+# YENİ:
+git clone ...
+docker compose up --build -d
+```
+
+### Dependency Management
+- **llama.cpp**: Otomatik Docker build sırasında indirilir
+- **Versiyon Kontrolü**: `git checkout 0750a599` ile sabitlenir
+- **Bağımlılıklar**: vcpkg ile merkezi yönetim
+
+### Debugging Improvements
+- **Daha az moving part**: Submodule sync sorunu yok
+- **Better caching**: Docker layer optimization
+- **Simpler reproduction**: Tüm bağımlılıklar otomatik
+
 ## Production Deployment
 
 ### System Requirements

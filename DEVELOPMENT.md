@@ -1,5 +1,18 @@
 # 👨‍💻 Geliştirici Rehberi
 
+## Yeni Build Sistemi
+
+### Bağımlılık Yönetimi
+- **llama.cpp**: Docker build sırasında otomatik indirilir
+- **vcpkg**: Bağımlılıkları yönetir
+- **No Submodules**: Repo daha hafif ve temiz
+
+### Geliştirme Avantajları
+- ✅ Daha hızlı git clone
+- ✅ Submodule conflict yok
+- ✅ Otomatik dependency management
+- ✅ Reproducible builds
+
 ## Kod Standartları
 
 ### C++ Standartları

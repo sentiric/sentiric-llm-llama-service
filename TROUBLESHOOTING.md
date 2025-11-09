@@ -1,5 +1,55 @@
 # 🐛 Sorun Giderme Rehberi
 
+## YENİ: Static Build Sorunları ve Çözümleri
+
+### Common Static Linking Issues
+
+**Problem**: `libllama.so: cannot open shared object file`
+```cmake
+# ÇÖZÜM: Static build flag'leri
+set(LLAMA_STATIC ON)
+set(BUILD_SHARED_LIBS OFF)
+```
+
+**Problem**: `libproto_lib.so: cannot open shared object file`  
+```cmake
+# ÇÖZÜM: Proto library static yap
+add_library(proto_lib STATIC ...)
+```
+
+### Yeni Build System Issues
+
+**Problem**: `Could NOT find CURL` (llama.cpp > v0.9.0)
+```dockerfile
+# ÇÖZÜM: CURL desteğini kapat
+-DLLAMA_CURL=OFF
+# VE: libcurl4-openssl-dev yükle
+RUN apt-get install -y libcurl4-openssl-dev
+```
+
+**Problem**: `llama.h: No such file or directory`
+```cmake
+# ÇÖZÜM: Include path'leri manuel ayarla
+include_directories(/opt/llama.cpp)
+```
+
+## YENİ: Submodule-Free Architecture Best Practices
+
+### Avantajlar
+- ✅ Daha hızlı git clone
+- ✅ Submodule conflict yok  
+- ✅ Daha basit CI/CD pipeline
+- ✅ Reproducible builds
+
+### Build Optimization
+```dockerfile
+# Layer caching için optimal sıra:
+# 1. Bağımlılıklar
+# 2. llama.cpp build  
+# 3. Ana proje build
+# 4. Runtime image
+```
+
 ## Hata Kataloğu
 
 ### 1. Library Loading Errors

@@ -5,11 +5,12 @@
 ## 🚀 Özellikler
 
 - ✅ **Yüksek Performans**: C++ & llama.cpp optimizasyonu
-- ✅ **GRPC Streaming**: Token-token real-time yanıt
+- ✅ **GRPC Streaming**: Token-token real-time yanıt  
 - ✅ **HTTP Health Check**: `/health` endpoint
 - ✅ **Docker Container**: Tam izole edilmiş deployment
 - ✅ **Stable Build**: Static linking ile güvenilir çalışma
 - ✅ **Phi-3-mini Model**: 3B parametre, Türkçe destek
+- ✅ **Hafif Repo**: Submodulesüz, temiz yapı
 
 ## 📦 Teknik Spesifikasyonlar
 
@@ -38,7 +39,7 @@
 
 ### Hızlı Başlangıç
 ```bash
-# 1. Repoyu klonla
+# 1. Repoyu klonla (--recursive gerekmez!)
 git clone https://github.com/sentiric/sentiric-llm-llama-service.git
 cd sentiric-llm-llama-service
 

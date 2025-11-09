@@ -5,9 +5,6 @@ build/
 vcpkg_installed/
 compile_commands.json
 
-# Dependencies
-# vendor/ satırı silindi
-
 # IDE files
 .vscode/
 .idea/
@@ -19,5 +16,5 @@ compile_commands.json
 llm_service
 models/
 
-# src/*.pb.cc
-# src/*.grpc.pb.cc
+# Artık vendor dizini yok, bu satırı silebiliriz
+# vendor/
