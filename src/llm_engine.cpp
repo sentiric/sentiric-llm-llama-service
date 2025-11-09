@@ -5,8 +5,6 @@
 #include <string>
 #include <algorithm>
 
-// --- LLMEngine Sınıfı Implementasyonu (Modern API ile) ---
-
 LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
     spdlog::info("Initializing llama.cpp backend...");
     llama_backend_init();
@@ -20,10 +18,9 @@ LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
     llama_context_params ctx_params = llama_context_default_params();
     ctx_params.n_ctx = settings_.context_size;
     ctx_params.n_threads = settings_.n_threads;
-    ctx_params.n_threads_batch = settings_.n_threads_batch; // n_threads_batch kullanılıyor
+    ctx_params.n_threads_batch = settings_.n_threads_batch;
 
-    // Modern API: llama_init_from_model kullanılıyor
-    ctx_ = llama_init_from_model(model_, ctx_params);
+    ctx_ = llama_new_context_with_model(model_, ctx_params);
     if (!ctx_) {
         llama_free_model(model_);
         throw std::runtime_error("Failed to create context");
@@ -35,7 +32,7 @@ LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
 
 LLMEngine::~LLMEngine() {
     if (ctx_) llama_free(ctx_);
-    if (model_) llama_free_model(model_); // Eski API, ama hala çalışıyor. Moderni llama_model_free
+    if (model_) llama_free_model(model_);
     llama_backend_free();
 }
 
@@ -56,13 +53,15 @@ void LLMEngine::generate_stream(
 
     // 1. Parametreleri ayarla
     const auto& grpc_params = request.params();
+    float temp = grpc_params.has_temperature() ? grpc_params.temperature() : settings_.default_temperature;
+    int32_t top_k = grpc_params.has_top_k() ? grpc_params.top_k() : settings_.default_top_k;
+    float top_p = grpc_params.has_top_p() ? grpc_params.top_p() : settings_.default_top_p;
+    float repeat_penalty = grpc_params.has_repetition_penalty() ? grpc_params.repetition_penalty() : settings_.default_repeat_penalty;
     int32_t max_tokens = grpc_params.has_max_new_tokens() ? grpc_params.max_new_tokens() : settings_.default_max_tokens;
-    
-    // 2. Tokenization
-    // KESİN ÇÖZÜM: `llama_model_get_vocab` ve `llama_tokenize`
-    const llama_vocab* vocab = llama_model_get_vocab(model_);
-    std::vector<llama_token> prompt_tokens(request.prompt().size() + 1); // +1 for BOS
-    int n_tokens = llama_tokenize(vocab, request.prompt().c_str(), request.prompt().length(), prompt_tokens.data(), prompt_tokens.size(), true, false);
+
+    // 2. Tokenization - KESİN ÇÖZÜM: Context ile tokenize et
+    std::vector<llama_token> prompt_tokens(request.prompt().size());
+    int n_tokens = llama_tokenize(ctx_, request.prompt().c_str(), request.prompt().length(), prompt_tokens.data(), prompt_tokens.size(), true, false);
     if (n_tokens < 0) {
         spdlog::error("Tokenization failed");
         return;
@@ -76,57 +75,48 @@ void LLMEngine::generate_stream(
         return;
     }
     
-    llama_kv_cache_clear(ctx_);
+    // KESİN ÇÖZÜM: KV Cache'i tüm sequence'leri silerek temizle
+    llama_kv_cache_seq_rm(ctx_, 0, -1, -1);
 
     // Prompt'u context'e işle
-    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), prompt_tokens.size(), 0, 0);
+    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), n_tokens, 0, 0);
     if (llama_decode(ctx_, batch) != 0) {
         spdlog::error("llama_decode failed on prompt");
         return;
     }
-    
-    // 4. Sampler Zincirini Oluştur
-    auto sparams = llama_sampler_chain_default_params();
-    llama_sampler* sampler_chain = llama_sampler_chain_init(sparams);
 
-    // KESİN ÇÖZÜM: Sampler'ları doğru imzalarla ekle (ctx_ ve nullptr olmadan)
-    llama_sampler_chain_add(sampler_chain, llama_sampler_init_repetition_penalty(
-        grpc_params.has_repetition_penalty() ? grpc_params.repetition_penalty() : settings_.default_repeat_penalty,
-        settings_.repeat_last_n));
-    llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_k( 
-        grpc_params.has_top_k() ? grpc_params.top_k() : settings_.default_top_k));
-    llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_p(
-        grpc_params.has_top_p() ? grpc_params.top_p() : settings_.default_top_p, 1));
-    llama_sampler_chain_add(sampler_chain, llama_sampler_init_temp(
-        grpc_params.has_temperature() ? grpc_params.temperature() : settings_.default_temperature));
-
-    int n_past = prompt_tokens.size();
+    int n_past = n_tokens;
     int n_remain = max_tokens;
 
-    // 5. Generation Loop
+    std::vector<llama_token> generated_tokens = prompt_tokens;
+
+    // 4. Generation Loop
     while (n_remain > 0) {
         if (should_stop_callback()) {
             spdlog::warn("Stream generation stopped by client cancellation.");
             break;
         }
 
-        // Sampler zincirini kullanarak bir sonraki token'ı örnekle
-        llama_token new_token_id = llama_sampler_sample(sampler_chain, ctx_, -1);
+        // KESİN ÇÖZÜM: Tek ve modern sampler fonksiyonunu kullan
+        llama_token new_token_id = llama_sample_top_p_top_k(
+            ctx_,
+            llama_get_logits(ctx_),
+            generated_tokens.data(),
+            generated_tokens.size(),
+            top_k,
+            top_p,
+            temp,
+            repeat_penalty
+        );
 
-        // Örnekleyiciye bu token'ı kabul ettiğimizi bildir
-        llama_sampler_accept(sampler_chain, ctx_, new_token_id);
-
-        if (llama_vocab_is_eog(vocab, new_token_id)) {
+        if (new_token_id == llama_token_eos(model_)) {
             break;
         }
 
-        char buf[128];
-        int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
-        if (n < 0) {
-            spdlog::error("Failed to convert token to piece");
-            break;
-        }
-        on_token_callback(std::string(buf, n));
+        std::string token_str = llama_token_to_piece(ctx_, new_token_id);
+        on_token_callback(token_str);
+        
+        generated_tokens.push_back(new_token_id);
 
         // Sonraki token'ı decode etmek için context'i hazırla
         batch = llama_batch_get_one(&new_token_id, 1, n_past, 0);
@@ -138,7 +128,4 @@ void LLMEngine::generate_stream(
         n_past++;
         n_remain--;
     }
-    
-    // Kaynakları temizle
-    llama_sampler_free(sampler_chain);
 }

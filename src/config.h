@@ -11,10 +11,13 @@ struct Settings {
     int grpc_port = 16061;
     std::string model_path = "/models/phi-3-mini.q4.gguf";
     std::string log_level = "info";
+
     // llama.cpp Ayarları
     int context_size = 4096;
     int n_threads = std::thread::hardware_concurrency();
     int n_batch = 512;
+    int n_threads_batch = std::thread::hardware_concurrency(); // <-- DÜZELTME: Bu satırı ekleyin.
+
     // Sampling Parametreleri (Varsayılanlar)
     float default_temperature = 0.8f;
     int32_t default_top_k = 40;
