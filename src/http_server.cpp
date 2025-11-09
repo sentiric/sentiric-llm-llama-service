@@ -1,15 +1,14 @@
 #include "http_server.h"
 #include "spdlog/spdlog.h"
-#include "httplib.h"
 #include "nlohmann/json.hpp"
 
 using json = nlohmann::json;
 
-void run_http_server(std::shared_ptr<LLMEngine> engine, const std::string& host, int port) {
-    httplib::Server svr;
-
-    svr.Get("/health", [engine](const httplib::Request &, httplib::Response &res) {
-        bool model_ready = engine->is_model_loaded();
+HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, int port)
+    : engine_(std::move(engine)), port_(port) {
+    
+    svr_.Get("/health", [this](const httplib::Request &, httplib::Response &res) {
+        bool model_ready = engine_->is_model_loaded();
         int status_code = model_ready ? 200 : 503;
 
         json response_body;
@@ -17,12 +16,25 @@ void run_http_server(std::shared_ptr<LLMEngine> engine, const std::string& host,
         response_body["model_ready"] = model_ready;
         response_body["engine"] = "llama.cpp";
 
-        res.set_content(response_body.dump(2), "application/json");
+        res.set_content(response_body.dump(), "application/json");
         res.status = status_code;
     });
+}
 
-    spdlog::info("📊 HTTP health server listening on {}:{}", host, port);
-    if (!svr.listen(host.c_str(), port)) {
-        spdlog::critical("HTTP server failed to start on port {}", port);
+void HttpServer::run() {
+    spdlog::info("📊 HTTP health server listening on 0.0.0.0:{}", port_);
+    svr_.listen("0.0.0.0", port_);
+}
+
+void HttpServer::stop() {
+    if (svr_.is_running()) {
+        svr_.stop();
+        spdlog::info("HTTP server stopped.");
+    }
+}
+
+void run_http_server_thread(std::shared_ptr<HttpServer> server) {
+    if (server) {
+        server->run();
     }
 }

@@ -1,23 +1,27 @@
 #pragma once
 #include <string>
 #include <cstdlib>
-#include <spdlog/spdlog.h>
 #include <thread>
-#include <cmath> // std::fmax için eklendi
 
 struct Settings {
+    // Sunucu Ayarları
     int http_port = 16060;
     int grpc_port = 16061;
     std::string model_path = "/models/phi-3-mini.q4.gguf";
     std::string log_level = "info";
+
+    // llama.cpp Ayarları
     int context_size = 4096;
     int n_threads = std::thread::hardware_concurrency();
     int n_batch = 512;
 
-    // Yeni Sampling Varsayılanları
+    // Sampling Parametreleri (Varsayılanlar)
     float default_temperature = 0.8f;
-    int default_top_k = 40;
+    int32_t default_top_k = 40;
     float default_top_p = 0.95f;
+    float default_repeat_penalty = 1.1f;
+    int32_t default_max_tokens = 2048;
+    int32_t repeat_last_n = 64;
 };
 
 inline Settings load_settings() {
@@ -28,8 +32,6 @@ inline Settings load_settings() {
     if (const char* env_p = std::getenv("LOG_LEVEL")) s.log_level = env_p;
     if (const char* env_p = std::getenv("LLM_CONTEXT_SIZE")) s.context_size = std::stoi(env_p);
     if (const char* env_p = std::getenv("LLM_THREADS")) s.n_threads = std::stoi(env_p);
-    if (const char* env_p = std::getenv("LLM_BATCH_SIZE")) s.n_batch = std::stoi(env_p);
     
-    // Gelişmiş sampling ayarları için Env değişkeni eklemedim, ancak istenseydi buraya eklenirdi.
     return s;
 }

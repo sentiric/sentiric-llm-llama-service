@@ -1,59 +1,51 @@
 # 🧠 Sentiric LLM Llama Service
 
-**Sentiric LLM Llama Service**, yerel donanım üzerinde (on-premise) Büyük Dil Modeli (LLM) çıkarımı sağlayan, C++ ile yazılmış yüksek performanslı bir uzman AI motorudur. `llama.cpp` kütüphanesini temel alarak, `Phi-3`, `Llama3` gibi popüler açık kaynaklı modelleri GGUF formatında, minimum kaynak tüketimi ve gecikme ile çalıştırır.
+**Sentiric LLM Llama Service**, yerel donanım üzerinde (on-premise) Büyük Dil Modeli (LLM) çıkarımı sağlayan, C++ ile yazılmış yüksek performanslı bir uzman AI motorudur. `llama.cpp` kütüphanesini temel alarak, popüler açık kaynaklı modelleri GGUF formatında çalıştırır.
 
-Bu servis, `llm-gateway-service` tarafından, en üst düzeyde performans, güvenlik ve verimlilik gerektiren metin üretimi ihtiyaçları için çağrılır. Bu servis, Python tabanlı `llm-local-service`'in yerini alacak şekilde tasarlanmıştır.
+Bu servis, `sentiric-contracts` v1.10.0+ API standardını uygular.
 
 ## 🎯 Temel Sorumluluklar
-
--   **Maksimum Performans:** C++ ve `llama.cpp` sayesinde Python ek yükü (overhead) olmadan, donanıma en yakın hızda LLM çıkarımı yapar.
--   **Düşük Kaynak Tüketimi:** Kuantize edilmiş GGUF modelleri ile çok düşük bellek (RAM) kullanımı sağlar.
--   **gRPC Streaming:** Metin yanıtlarını token token üreterek düşük algılanan gecikme sağlar.
--   **Donanım Verimliliği:** Modern CPU komut setlerini (AVX, AVX2) ve opsiyonel olarak GPU hızlandırmayı (CUDA, Metal) destekler.
--   **Dinamik Sağlık Kontrolü:** Modelin yüklenip hazır olup olmadığını bildiren `/health` endpoint'i.
+- **Maksimum Performans:** C++ ve `llama.cpp` ile donanıma en yakın hızda LLM çıkarımı.
+- **Düşük Kaynak Tüketimi:** Kuantize edilmiş GGUF modelleri ile düşük bellek kullanımı.
+- **gRPC Streaming:** Metin yanıtlarını token token üreterek düşük algılanan gecikme.
+- **Dinamik Sağlık Kontrolü:** Modelin hazır olup olmadığını bildiren `/health` endpoint'i.
 
 ## 🛠️ Derleme ve Çalıştırma
 
 ### Ön Koşullar
 - Docker ve Docker Compose
 - Git
-- Bir adet GGUF formatında LLM modeli (Örn: `Phi-3-mini-4k-instruct.Q4_K_M.gguf`)
-(https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf)
+- Bir adet GGUF formatında LLM modeli (Örn: `phi-3-mini-4k-instruct.Q4_K_M.gguf`)
+
 ### Adım Adım Kurulum
 
-1.  **Repoyu Klonla:**
+1.  **Repoyu Klonla ve Submodule'leri Yükle:**
     ```bash
-    git clone https://github.com/sentiric/llm-llama-service.git
+    git clone --recurse-submodules https://github.com/sentiric/llm-llama-service.git
     cd llm-llama-service
     ```
 
-2.  **`llama.cpp` Submodule'ünü Yükle:**
+2.  **Modeli Hazırla:**
+    - Proje kök dizininde `models` adında bir klasör oluşturun.
+    - İndirdiğiniz GGUF model dosyasını bu klasörün içine kopyalayın. Örnek:
     ```bash
-    git submodule update --init --recursive
+    ./models/download.sh
     ```
 
-3.  **Modeli Hazırla:**
-    - Proje kök dizininde `model-cache` adında bir klasör oluşturun.
-    - İndirdiğiniz GGUF model dosyasını bu klasörün içine kopyalayın.
+3.  **Yapılandırmayı Düzenle (Gerekirse):**
+    - `docker-compose.yml` dosyasındaki `LLM_LOCAL_SERVICE_MODEL_PATH` değişkenini, kendi model dosyanızın adıyla güncelleyin.
 
-4.  **Yapılandırmayı Düzenle:**
-    - `docker-compose.yml` dosyasını açın.
-    - `environment` bölümündeki `LLM_LOCAL_SERVICE_MODEL_PATH` değişkenini, kendi model dosyanızın adıyla güncelleyin.
-
-5.  **Servisi Başlat:**
+4.  **Servisi Başlat:**
     ```bash
     docker compose up --build
     ```
-    İlk derleme işlemi birkaç dakika sürebilir. Sonraki başlatmalar çok daha hızlı olacaktır.
+    İlk derleme birkaç dakika sürebilir.
 
 ## ✅ Doğrulama
 
--   **Sağlık Kontrolü:** Tarayıcınızda `http://localhost:16060/health` adresini açın veya terminalden `curl http://localhost:16060/health` komutunu çalıştırın. `{"model_ready":true}` yanıtını görmelisiniz.
--   **gRPC Test:** Projeyle birlikte gelen Python test istemcisini kullanarak servisi test edin:
+-   **Sağlık Kontrolü:** `curl http://localhost:16060/health` komutunu çalıştırın. `{"model_ready":true}` yanıtını görmelisiniz.
+-   **gRPC Test:** Servis çalışırken, **ayrı bir terminalde** aşağıdaki komutu çalıştırın.
     ```bash
-    # Gerekli kütüphaneleri kurun
-    pip install grpcio protobuf
-
-    # Test istemcisini çalıştırın
-    python grpc_test_client.py "Türkiye'nin başkenti neresidir?"
+    # Test istemcisini çalıştır
+    docker compose exec llm-llama-service grpc_test_client "Türkiye'nin başkenti neresidir?"
     ```

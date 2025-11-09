@@ -16,3 +16,7 @@ vendor/
 # Executables
 llm_service
 models/
+
+# YENİ: Otomatik oluşturulan proto dosyalarını GİT'E EKLEYİN, bu yüzden .gitignore'dan kaldırın.
+# src/*.pb.cc
+# src/*.grpc.pb.cc

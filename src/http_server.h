@@ -3,6 +3,21 @@
 #include "llm_engine.h"
 #include <memory>
 #include <string>
+#include <thread>
+#include "httplib.h"
 
-// HTTP sağlık kontrol sunucusunu başlatan fonksiyon
-void run_http_server(std::shared_ptr<LLMEngine> engine, const std::string& host, int port);
+class HttpServer {
+public:
+    HttpServer(std::shared_ptr<LLMEngine> engine, int port);
+    void stop();
+    void run();
+
+private:
+    httplib::Server svr_;
+    std::shared_ptr<LLMEngine> engine_;
+    int port_;
+    std::thread server_thread_;
+};
+
+// Sunucuyu başlatan ve thread'i yöneten fonksiyon
+void run_http_server_thread(std::shared_ptr<HttpServer> server);
