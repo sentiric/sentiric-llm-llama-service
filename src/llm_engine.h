@@ -19,8 +19,9 @@ public:
     LLMEngine(const LLMEngine&) = delete;
     LLMEngine& operator=(const LLMEngine&) = delete;
 
+    // YENİ: İmza, doğrudan request nesnesini alacak şekilde değişti
     void generate_stream(
-        const sentiric::llm::v1::LocalGenerateRequest& request,
+        const sentiric::llm::v1::LocalGenerateStreamRequest& request, // <-- LocalGenerateRequest'ten buna değiştirin
         std::function<void(const std::string& token)> on_token_callback,
         std::function<bool()> should_stop_callback
     );

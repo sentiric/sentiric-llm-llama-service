@@ -7,6 +7,7 @@
 #include <csignal>
 #include <spdlog/spdlog.h>
 #include <future>
+#include <grpcpp/grpcpp.h> // grpc::Server için tam tanım
 
 // Global değişkenler yerine promise/future kullanmak daha modern bir yaklaşımdır.
 std::promise<void> shutdown_promise;
@@ -19,6 +20,27 @@ void signal_handler(int signal) {
         // Zaten set edilmişse ignore et.
     }
 }
+
+// DÜZELTME: Bu fonksiyonun run_grpc_server'dan ayrı olması daha temiz bir tasarım.
+// run_grpc_server thread içinde çalışırken, bu fonksiyon sunucuyu oluşturup başlatır ve pointer'ı döndürür.
+std::unique_ptr<grpc::Server> start_grpc_server(std::shared_ptr<LLMEngine> engine, int port) {
+    std::string address = "0.0.0.0:" + std::to_string(port);
+    // Servisi heap'te oluşturmak, scope dışına çıktığında silinmesini önler.
+    auto service = new GrpcServer(engine); 
+    
+    grpc::ServerBuilder builder;
+    builder.AddListeningPort(address, grpc::InsecureServerCredentials());
+    builder.RegisterService(service);
+
+    std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
+    if (!server) {
+        spdlog::critical("gRPC server failed to start on {}", address);
+        return nullptr;
+    }
+    spdlog::info("🚀 gRPC server listening on {}", address);
+    return server;
+}
+
 
 int main(int argc, char **argv) {
     signal(SIGINT, signal_handler);
@@ -35,6 +57,7 @@ int main(int argc, char **argv) {
         auto engine = std::make_shared<LLMEngine>(settings);
 
         // gRPC ve HTTP sunucularını başlat
+        // DÜZELTME: start_grpc_server artık çağrılıyor
         grpc_server_ptr = start_grpc_server(engine, settings.grpc_port);
         http_server = std::make_shared<HttpServer>(engine, settings.http_port);
 
@@ -44,7 +67,7 @@ int main(int argc, char **argv) {
         }
 
         std::thread grpc_thread(&grpc::Server::Wait, grpc_server_ptr.get());
-        std::thread http_thread(&HttpServer::run, http_server.get());
+        std::thread http_thread(&HttpServer::run, http_server);
 
         // Kapatma sinyali gelene kadar bekle
         auto shutdown_future = shutdown_promise.get_future();
@@ -53,11 +76,13 @@ int main(int argc, char **argv) {
         // Sunucuları kapat
         spdlog::info("Shutting down servers...");
         http_server->stop();
-        grpc_server_ptr->Shutdown();
+        // Shutdown'a bir deadline vermek, takılı kalmasını önler.
+        grpc_server_ptr->Shutdown(std::chrono::system_clock::now() + std::chrono::seconds(5));
+
 
         // Thread'lerin bitmesini bekle
-        http_thread.join();
-        grpc_thread.join();
+        if (http_thread.joinable()) http_thread.join();
+        if (grpc_thread.joinable()) grpc_thread.join();
 
     } catch (const std::exception& e) {
         spdlog::critical("Fatal error during service lifecycle: {}", e.what());

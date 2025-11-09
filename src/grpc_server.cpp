@@ -4,9 +4,10 @@
 
 GrpcServer::GrpcServer(std::shared_ptr<LLMEngine> engine) : engine_(std::move(engine)) {}
 
+// DÜZELTME: İmza, proto tanımına uygun hale getirildi.
 grpc::Status GrpcServer::LocalGenerateStream(
     grpc::ServerContext* context,
-    const sentiric::llm::v1::LocalGenerateRequest* request,
+    const sentiric::llm::v1::LocalGenerateStreamRequest* request, // <-- Değişti
     grpc::ServerWriter<sentiric::llm::v1::LocalGenerateStreamResponse>* writer) {
 
     if (!engine_->is_model_loaded()) {
@@ -17,27 +18,22 @@ grpc::Status GrpcServer::LocalGenerateStream(
     }
     
     spdlog::info("[gRPC] Stream started for prompt: '{}...'", request->prompt().substr(0, 50));
-
-    // Client'ın bağlantıyı koparıp koparmadığını kontrol etmek için
-    std::atomic<bool> client_cancelled = false;
-    context->AsyncNotifyWhenDone([&client_cancelled](bool ok) {
-        if (ok) {
-            client_cancelled.store(true);
-        }
-    });
-
+    
     try {
         engine_->generate_stream(
             *request,
             [&](const std::string& token) {
                 sentiric::llm::v1::LocalGenerateStreamResponse response;
                 response.set_token(token);
+                // Yazma işlemi başarısız olursa (client bağlantıyı kapatırsa),
+                // daha fazla işlem yapmayı durdur.
                 if (!writer->Write(response)) {
-                    // Bu genellikle client'ın bağlantıyı kapattığı anlamına gelir.
+                    spdlog::warn("[gRPC] Write failed, client likely disconnected.");
                 }
             },
+            // DÜZELTME: Modern ve güvenli iptal kontrolü. Lambda'ya gerek kalmadı.
             [&]() -> bool {
-                return client_cancelled.load();
+                return context->IsCancelled();
             }
         );
     } catch (const std::exception& e) {
@@ -45,9 +41,9 @@ grpc::Status GrpcServer::LocalGenerateStream(
         return grpc::Status(grpc::StatusCode::INTERNAL, "An internal error occurred.");
     }
 
-    if (client_cancelled) {
+    if (context->IsCancelled()) {
         spdlog::warn("[gRPC] Stream cancelled by client.");
-        return grpc::Status(grpc::StatusCode::CANCELLED, "Stream cancelled by client.");
+        return grpc::Status::CANCELLED;
     }
 
     spdlog::info("[gRPC] Stream finished successfully.");

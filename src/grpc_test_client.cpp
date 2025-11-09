@@ -11,7 +11,8 @@ using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
 using sentiric::llm::v1::LLMLocalService;
-using sentiric::llm::v1::LocalGenerateRequest;
+// DÜZELTME 1: Her iki istek tipi de dahil ediliyor
+using sentiric::llm::v1::LocalGenerateStreamRequest; 
 using sentiric::llm::v1::LocalGenerateStreamResponse;
 using sentiric::llm::v1::GenerationParams;
 
@@ -21,7 +22,8 @@ public:
         : stub_(LLMLocalService::NewStub(channel)) {}
 
     void GenerateStream(const std::string& prompt) {
-        LocalGenerateRequest request;
+        // DÜZELTME 2: Doğru istek tipi kullanılıyor (LocalGenerateStreamRequest)
+        LocalGenerateStreamRequest request;
         request.set_prompt(prompt);
 
         // İsteğe bağlı parametreleri ayarla
@@ -46,7 +48,8 @@ public:
 
         Status status = reader->Finish();
         if (!status.ok()) {
-            spdlog::error("RPC failed: {} ({})", status.error_message(), status.error_code());
+            // DÜZELTME 3: status.error_code() bir tamsayıya cast ediliyor
+            spdlog::error("RPC failed: {} ({})", status.error_message(), static_cast<int>(status.error_code()));
         } else {
             spdlog::info("Stream completed successfully.");
         }

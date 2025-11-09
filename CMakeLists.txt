@@ -4,7 +4,6 @@ project(llm-llama-service CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# vcpkg aracılığıyla TÜM C++ bağımlılıklarını bul
 find_package(gRPC CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
@@ -12,7 +11,6 @@ find_package(httplib CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 
-# --- SENTIRIC-CONTRACTS'TAN PROTO DOSYALARINI AL ---
 include(FetchContent)
 FetchContent_Declare(
   sentiric_contracts
@@ -21,42 +19,42 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
-# --- KOD ÜRETİMİNİ BU PROJE İÇİNDE YAP ---
-add_library(proto_lib INTERFACE)
-
 set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
-protobuf_generate(
-    TARGET proto_lib
-    LANGUAGE cpp
-    GENERATE_EXTENSIONS .pb.cc .pb.h
-    PROTOS ${PROTO_FILES}
-    IMPORT_DIRS "${sentiric_contracts_SOURCE_DIR}/proto"
-    GENERATED_DIR ${GENERATED_DIR}
-)
-protobuf_generate(
-    TARGET proto_lib
-    LANGUAGE grpc
-    GENERATE_EXTENSIONS .grpc.pb.cc .grpc.pb.h
-    PROTOS ${PROTO_FILES}
-    IMPORT_DIRS "${sentiric_contracts_SOURCE_DIR}/proto"
-    PLUGIN "protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>"
-    GENERATED_DIR ${GENERATED_DIR}
+add_custom_command(
+    OUTPUT
+        "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
+        "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
+        "${GENERATED_DIR}/sentiric/llm/v1/local.pb.h"
+        "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.h"
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_DIR}
+    COMMAND $<TARGET_FILE:protobuf::protoc>
+        --proto_path=${sentiric_contracts_SOURCE_DIR}/proto
+        --cpp_out=${GENERATED_DIR}
+        --grpc_out=${GENERATED_DIR}
+        --plugin=protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
+        ${PROTO_FILES}
+    DEPENDS ${PROTO_FILES}
+    COMMENT "Generating Protobuf and gRPC C++ sources"
 )
 
-target_include_directories(proto_lib INTERFACE "${GENERATED_DIR}")
+add_library(proto_lib
+    "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
+    "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
+)
+target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
+target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
-# --- llama.cpp'yi submodule olarak dahil et ---
 set(LLAMA_STATIC ON)
 add_subdirectory(vendor/llama.cpp)
 
-# --- Ana Sunucu Uygulaması ---
 add_executable(llm_service
     src/main.cpp
     src/llm_engine.cpp
     src/grpc_server.cpp
     src/http_server.cpp
+    # vendor/llama.cpp/common/common.cpp <-- DÜZELTME 1: Bu satırı SİLİN
 )
 
 target_link_libraries(llm_service PRIVATE
@@ -69,13 +67,14 @@ target_link_libraries(llm_service PRIVATE
 target_include_directories(llm_service PRIVATE
     src
     vendor/llama.cpp
-    ${GENERATED_DIR} # <-- DÜZELTME 1: Üretilen dosyaların yolunu buraya ekle
+    # vendor/llama.cpp/common <-- DÜZELTME 2: Bu satırı SİLİN
+    ${GENERATED_DIR}
 )
 
-# --- C++ Test İstemcisi ---
 add_executable(grpc_test_client src/grpc_test_client.cpp)
 target_link_libraries(grpc_test_client PRIVATE proto_lib spdlog::spdlog)
 target_include_directories(grpc_test_client PRIVATE
     src
-    ${GENERATED_DIR} # <-- DÜZELTME 2: Üretilen dosyaların yolunu buraya ekle
+    # vendor/llama.cpp/common <-- DÜZELTME 3: Bu satırı SİLİN
+    ${GENERATED_DIR}
 )
