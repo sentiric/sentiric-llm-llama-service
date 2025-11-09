@@ -93,19 +93,24 @@ void LLMEngine::generate_stream(
 
         // Sonraki token'ı örnekle
         float* logits = llama_get_logits(ctx_);
-        int n_vocab = llama_n_vocab(model_);
-        llama_token_data_array candidates = { new llama_token_data[n_vocab], (size_t)n_vocab, false };
+        const int n_vocab = llama_n_vocab(model_);
+
+        // GÜVENLİ YÖNTEM: Ham new/delete yerine std::vector kullan.
+        // Bellek yönetimi otomatik ve exception-safe hale gelir.
+        std::vector<llama_token_data> candidates_data;
+        candidates_data.reserve(n_vocab);
         for (int i = 0; i < n_vocab; ++i) {
-            candidates.data[i] = { i, logits[i], 0.0f };
+            candidates_data.push_back({ (llama_token)i, logits[i], 0.0f });
         }
+        llama_token_data_array candidates = { candidates_data.data(), candidates_data.size(), false };
 
         llama_sample_repetition_penalty(ctx_, &candidates, last_n_tokens.data() + n_ctx - settings_.repeat_last_n, settings_.repeat_last_n, repeat_penalty);
         llama_sample_top_k(ctx_, &candidates, top_k, 1);
         llama_sample_top_p(ctx_, &candidates, top_p, 1);
         llama_sample_temp(ctx_, &candidates, temp);
-        
+
         llama_token new_token = llama_sample_token(ctx_, &candidates);
-        delete[] candidates.data;
+        // delete[] çağrısına gerek kalmadı.
 
         if (new_token == eos_token) break;
 

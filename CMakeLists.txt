@@ -4,14 +4,15 @@ project(llm-llama-service CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# vcpkg aracılığıyla temel kütüphaneleri bul
+# vcpkg aracılığıyla TÜM C++ bağımlılıklarını bul
 find_package(gRPC CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(httplib CONFIG REQUIRED)
 find_package(Threads REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
 
-# --- SENTIRIC-CONTRACTS ENTEGRASYONU ---
+# --- SENTIRIC-CONTRACTS'TAN PROTO DOSYALARINI AL ---
 include(FetchContent)
 FetchContent_Declare(
   sentiric_contracts
@@ -20,19 +21,37 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
-# 'sentiric-contracts'tan gelen C++ kaynak dosyalarını bir kütüphane olarak tanımla
-file(GLOB_RECURSE CONTRACT_SOURCES
-    "${sentiric_contracts_SOURCE_DIR}/gen/cpp/*.cc"
+# --- KOD ÜRETİMİNİ BU PROJE İÇİNDE YAP ---
+# ADIM 1: "proto_lib" adında bir INTERFACE hedefi oluştur.
+add_library(proto_lib INTERFACE)
+
+set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
+set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated") # Kodu build dizininde üret
+
+# ADIM 2: protobuf_generate'i var olan "proto_lib" hedefine kaynak eklemek için kullan.
+protobuf_generate(
+    TARGET proto_lib
+    LANGUAGE cpp
+    GENERATE_EXTENSIONS .pb.cc .pb.h
+    PROTOS ${PROTO_FILES}
+    IMPORT_DIRS "${sentiric_contracts_SOURCE_DIR}/proto"
+    GENERATED_DIR ${GENERATED_DIR}
 )
-add_library(sentiric_contracts_lib STATIC ${CONTRACT_SOURCES})
-target_include_directories(sentiric_contracts_lib PUBLIC
-    "${sentiric_contracts_SOURCE_DIR}/gen/cpp"
+protobuf_generate(
+    TARGET proto_lib
+    LANGUAGE grpc
+    GENERATE_EXTENSIONS .grpc.pb.cc .grpc.pb.h
+    PROTOS ${PROTO_FILES}
+    IMPORT_DIRS "${sentiric_contracts_SOURCE_DIR}/proto"
+    PLUGIN "protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>"
+    GENERATED_DIR ${GENERATED_DIR}
 )
+
+# ADIM 3: Üretilen dosyaların bulunduğu dizini "proto_lib" hedefine bir include dizini olarak ekle.
+target_include_directories(proto_lib INTERFACE "${GENERATED_DIR}")
 
 # --- llama.cpp'yi submodule olarak dahil et ---
 set(LLAMA_STATIC ON)
-set(LLAMA_BUILD_TESTS OFF)
-set(LLAMA_BUILD_EXAMPLES OFF)
 add_subdirectory(vendor/llama.cpp)
 
 # --- Ana Sunucu Uygulaması ---
@@ -44,35 +63,18 @@ add_executable(llm_service
 )
 
 target_link_libraries(llm_service PRIVATE
-    sentiric_contracts_lib
-    llama
-    ggml_static
-    spdlog::spdlog
-    nlohmann_json::nlohmann_json
-    httplib::httplib
-    gRPC::grpc++
-    protobuf::libprotobuf
+    proto_lib # Bu hedef protobuf ve grpc'yi zaten içeriyor
+    llama ggml_static
+    spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
     Threads::Threads
 )
 
 target_include_directories(llm_service PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    src
     vendor/llama.cpp
-    vendor/llama.cpp/common
 )
 
-# --- YENİ: C++ Test İstemcisi ---
-add_executable(grpc_test_client
-    src/grpc_test_client.cpp
-)
-
-target_link_libraries(grpc_test_client PRIVATE
-    sentiric_contracts_lib
-    gRPC::grpc++
-    protobuf::libprotobuf
-    spdlog::spdlog
-)
-
-target_include_directories(grpc_test_client PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
+# --- C++ Test İstemcisi ---
+add_executable(grpc_test_client src/grpc_test_client.cpp)
+target_link_libraries(grpc_test_client PRIVATE proto_lib spdlog::spdlog)
+target_include_directories(grpc_test_client PRIVATE src)

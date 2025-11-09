@@ -13,18 +13,17 @@ RUN /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
 WORKDIR /app
 
-# DÜZELTME 1: Önce sadece submodule'ü çekmek için gerekli dosyaları kopyala
-COPY .gitmodules .
-COPY .git .git
+# OPTİMİZASYON 1: Önce sadece bağımlılık tanım dosyasını kopyala.
+COPY vcpkg.json .
 
-# DÜZELTME 2: Submodule'leri (llama.cpp) erkenden yükle
-RUN git submodule update --init --recursive
-
-# DÜZELTME 3: Projenin geri kalanını kopyala
-COPY . .
-
-# vcpkg bağımlılıklarını kur (vcpkg.json dosyasını kullanır)
+# OPTİMİZASYON 2: Kaynak kodun geri kalanını kopyalamadan ÖNCE bağımlılıkları kur.
+# Bu katman sadece vcpkg.json değiştiğinde yeniden çalışır.
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
+
+# OPTİMİZASYON 3: Şimdi submodule'leri ve projenin geri kalanını kopyala.
+COPY .gitmodules .git .
+RUN git submodule update --init --recursive
+COPY . .
 
 # Derleme
 RUN cmake -B build \
@@ -39,7 +38,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-# Çalıştırılabilir dosyaları kopyala
 COPY --from=builder /app/build/llm_service /usr/local/bin/llm_service
 COPY --from=builder /app/build/grpc_test_client /usr/local/bin/grpc_test_client
 RUN mkdir -p /models
