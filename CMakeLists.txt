@@ -22,13 +22,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(sentiric_contracts)
 
 # --- KOD ÜRETİMİNİ BU PROJE İÇİNDE YAP ---
-# ADIM 1: "proto_lib" adında bir INTERFACE hedefi oluştur.
 add_library(proto_lib INTERFACE)
 
 set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
-set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated") # Kodu build dizininde üret
+set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
-# ADIM 2: protobuf_generate'i var olan "proto_lib" hedefine kaynak eklemek için kullan.
 protobuf_generate(
     TARGET proto_lib
     LANGUAGE cpp
@@ -47,7 +45,6 @@ protobuf_generate(
     GENERATED_DIR ${GENERATED_DIR}
 )
 
-# ADIM 3: Üretilen dosyaların bulunduğu dizini "proto_lib" hedefine bir include dizini olarak ekle.
 target_include_directories(proto_lib INTERFACE "${GENERATED_DIR}")
 
 # --- llama.cpp'yi submodule olarak dahil et ---
@@ -63,7 +60,7 @@ add_executable(llm_service
 )
 
 target_link_libraries(llm_service PRIVATE
-    proto_lib # Bu hedef protobuf ve grpc'yi zaten içeriyor
+    proto_lib
     llama ggml_static
     spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
     Threads::Threads

@@ -13,16 +13,14 @@ RUN /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
 WORKDIR /app
 
-# OPTİMİZASYON 1: Önce sadece bağımlılık tanım dosyasını kopyala.
+# ADIM 1: Önce sadece vcpkg bağımlılık tanım dosyasını kopyala.
 COPY vcpkg.json .
 
-# OPTİMİZASYON 2: Kaynak kodun geri kalanını kopyalamadan ÖNCE bağımlılıkları kur.
+# ADIM 2: Kaynak kodun geri kalanını kopyalamadan ÖNCE bağımlılıkları kur.
 # Bu katman sadece vcpkg.json değiştiğinde yeniden çalışır.
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# OPTİMİZASYON 3: Şimdi submodule'leri ve projenin geri kalanını kopyala.
-COPY .gitmodules .git .
-RUN git submodule update --init --recursive
+# ADIM 3: Projenin TAMAMINI (yerelde initialize edilmiş submodule'ler DAHİL) kopyala.
 COPY . .
 
 # Derleme
@@ -44,6 +42,5 @@ RUN mkdir -p /models
 
 EXPOSE 16060 16061
 ENV LLM_LOCAL_SERVICE_MODEL_PATH="/models/phi-3-mini.q4.gguf"
-# Diğer ENV değişkenleri...
 
 CMD ["llm_service"]
