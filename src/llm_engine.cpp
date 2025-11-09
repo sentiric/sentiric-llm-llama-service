@@ -55,7 +55,7 @@ void LLMEngine::generate_stream(
 
     std::lock_guard<std::mutex> lock(generation_mutex_);
 
-    // Test modu - gerçek model yüklenmemişse
+    // Model yüklenmemişse test modunda çalış
     if (!model_ || !ctx_) {
         spdlog::info("🧪 Running in TEST MODE");
         
@@ -83,7 +83,95 @@ void LLMEngine::generate_stream(
         return;
     }
 
-    // Gerçek implementation buraya gelecek
-    spdlog::info("Real model implementation would run here");
-    on_token_callback("[Real model not implemented in this version] ");
+    // --- GERÇEK MODEL IMPLEMENTASYONU ---
+    spdlog::info("🚀 Real model implementation running");
+
+    // 1. Parametreleri ayarla
+    const auto& grpc_params = request.params();
+    float temp = grpc_params.has_temperature() ? grpc_params.temperature() : settings_.default_temperature;
+    int32_t top_k = grpc_params.has_top_k() ? grpc_params.top_k() : settings_.default_top_k;
+    float top_p = grpc_params.has_top_p() ? grpc_params.top_p() : settings_.default_top_p;
+    float repeat_penalty = grpc_params.has_repetition_penalty() ? grpc_params.repetition_penalty() : settings_.default_repeat_penalty;
+    int32_t max_tokens = grpc_params.has_max_new_tokens() ? grpc_params.max_new_tokens() : settings_.default_max_tokens;
+
+    // 2. Tokenization
+    const llama_vocab* vocab = llama_model_get_vocab(model_);
+    std::vector<llama_token> prompt_tokens;
+    prompt_tokens.resize(request.prompt().size() + 1);
+    
+    int n_tokens = llama_tokenize(vocab, request.prompt().c_str(), request.prompt().length(), 
+                                 prompt_tokens.data(), prompt_tokens.size(), true, false);
+    if (n_tokens < 0) {
+        spdlog::error("Tokenization failed");
+        return;
+    }
+    prompt_tokens.resize(n_tokens);
+
+    // 3. Context'i hazırla
+    const int n_ctx = llama_n_ctx(ctx_);
+    if (n_tokens > n_ctx - 4) {
+        spdlog::error("Prompt is too long for the context size.");
+        return;
+    }
+    
+    // KV cache temizleme
+    llama_memory_seq_rm(llama_get_memory(ctx_), -1, 0, -1);
+
+    // 4. Prompt'u decode et
+    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), n_tokens);
+    if (llama_decode(ctx_, batch) != 0) {
+        spdlog::error("llama_decode failed on prompt");
+        return;
+    }
+
+    int n_remain = max_tokens;
+
+    // 5. Generation Loop - Basit greedy sampling
+    while (n_remain > 0) {
+        if (should_stop_callback()) {
+            spdlog::warn("Stream generation stopped by client cancellation.");
+            break;
+        }
+
+        // Logits'i al
+        float* logits = llama_get_logits_ith(ctx_, -1);
+        int n_vocab = llama_vocab_n_tokens(vocab);
+        
+        // Greedy sampling - en yüksek logit'i seç
+        llama_token new_token_id = 0;
+        float max_logit = logits[0];
+        for (int i = 1; i < n_vocab; ++i) {
+            if (logits[i] > max_logit) {
+                max_logit = logits[i];
+                new_token_id = i;
+            }
+        }
+
+        // EOS kontrolü
+        if (new_token_id == llama_vocab_eos(vocab)) {
+            break;
+        }
+
+        // Token'ı string'e çevirme
+        char token_buf[128];
+        int n_chars = llama_token_to_piece(vocab, new_token_id, token_buf, sizeof(token_buf), 0, false);
+        if (n_chars < 0) {
+            spdlog::error("Failed to convert token to string");
+            break;
+        }
+        
+        std::string token_str(token_buf, n_chars);
+        on_token_callback(token_str);
+
+        // Sonraki token'ı decode et
+        batch = llama_batch_get_one(&new_token_id, 1);
+        if (llama_decode(ctx_, batch) != 0) {
+            spdlog::error("Failed to decode next token");
+            break;
+        }
+        
+        n_remain--;
+    }
+
+    spdlog::info("✅ Generation completed successfully");
 }
