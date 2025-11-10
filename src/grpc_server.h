@@ -9,10 +9,9 @@ class GrpcServer final : public sentiric::llm::v1::LLMLocalService::Service {
 public:
     explicit GrpcServer(std::shared_ptr<LLMEngine> engine);
 
-    // DÜZELTME: İmza, proto tanımına uygun hale getirildi.
     grpc::Status LocalGenerateStream(
         grpc::ServerContext* context,
-        const sentiric::llm::v1::LocalGenerateStreamRequest* request, // <-- Değişti
+        const sentiric::llm::v1::LocalGenerateStreamRequest* request,
         grpc::ServerWriter<sentiric::llm::v1::LocalGenerateStreamResponse>* writer
     ) override;
 

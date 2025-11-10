@@ -4,18 +4,23 @@ FROM ghcr.io/sentiric/sentiric-llama-cpp:latest AS builder
 
 WORKDIR /app
 
-# ADIM 1: Bağımlılıkları kur (vcpkg zaten hazır)
+# 1. Contracts reposunu clone et
+RUN git clone https://github.com/sentiric/sentiric-contracts.git && \
+    mkdir -p gen/sentiric/llm/v1 && \
+    cp -r sentiric-contracts/gen/cpp/sentiric/llm/v1/* gen/sentiric/llm/v1/ && \
+    rm -rf sentiric-contracts
+
+# 2. Bağımlılıkları kur
 COPY vcpkg.json .
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# ADIM 2: Kodları kopyala ve build et (llama.cpp sistemde hazır)
+# 3. Kodları kopyala
 COPY . .
 
-# Build işlemi - llama.cpp artık sistem kütüphanesi
+# 4. Build - BASİT
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_SHARED_LIBS=OFF \
-    -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
+    -DBUILD_SHARED_LIBS=OFF
 
 RUN cmake --build build --target all -j $(nproc)
 
@@ -31,7 +36,7 @@ WORKDIR /app
 
 # Sadece executable'ları kopyala
 COPY --from=builder /app/build/llm_service /usr/local/bin/llm_service
-COPY --from=builder /app/build/grpc_test_client /usr/local/bin/grpc_test_client
+COPY --from=builder /app/build/llm_cli /usr/local/bin/llm_cli
 
 # Model dizinini oluştur
 RUN mkdir -p /models
@@ -39,9 +44,5 @@ RUN mkdir -p /models
 # Port ve environment variables
 EXPOSE 16060 16061
 ENV LLM_LOCAL_SERVICE_MODEL_PATH="/models/phi-3-mini.q4.gguf"
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:16060/health || exit 1
 
 CMD ["llm_service"]

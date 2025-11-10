@@ -4,10 +4,9 @@
 
 GrpcServer::GrpcServer(std::shared_ptr<LLMEngine> engine) : engine_(std::move(engine)) {}
 
-// DÜZELTME: İmza, proto tanımına uygun hale getirildi.
 grpc::Status GrpcServer::LocalGenerateStream(
     grpc::ServerContext* context,
-    const sentiric::llm::v1::LocalGenerateStreamRequest* request, // <-- Değişti
+    const sentiric::llm::v1::LocalGenerateStreamRequest* request,
     grpc::ServerWriter<sentiric::llm::v1::LocalGenerateStreamResponse>* writer) {
 
     if (!engine_->is_model_loaded()) {
@@ -25,13 +24,10 @@ grpc::Status GrpcServer::LocalGenerateStream(
             [&](const std::string& token) {
                 sentiric::llm::v1::LocalGenerateStreamResponse response;
                 response.set_token(token);
-                // Yazma işlemi başarısız olursa (client bağlantıyı kapatırsa),
-                // daha fazla işlem yapmayı durdur.
                 if (!writer->Write(response)) {
                     spdlog::warn("[gRPC] Write failed, client likely disconnected.");
                 }
             },
-            // DÜZELTME: Modern ve güvenli iptal kontrolü. Lambda'ya gerek kalmadı.
             [&]() -> bool {
                 return context->IsCancelled();
             }
