@@ -16,7 +16,7 @@ find_package(c-ares CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # --- llama.cpp'yi Alt Dizin Olarak Ekle ---
-# Not: GGML_CUDA ve diğer backend seçenekleri Dockerfile üzerinden ayarlanır.
+# DÜZELTME: Bu satırı, CUDA hedeflerinin linklenmesinden ÖNCEYE taşıdık.
 add_subdirectory(llama.cpp)
 
 # --- Protobuf Kod Üretimi ---
@@ -66,13 +66,6 @@ target_link_libraries(llm_service PRIVATE
     httplib::httplib gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
 )
 
-# DÜZELTME: Eğer CUDA ile derleme yapılıyorsa, gerekli CUDA kütüphanelerini linkle.
-# llama.cpp'nin CMake'i, GGML_CUDA aktif olduğunda bu hedefleri oluşturur.
-if(GGML_CUDA)
-    target_link_libraries(llm_service PRIVATE ggml-cuda CUDA::cuda_driver CUDA::cudart)
-endif()
-
-
 # --- CLI Aracı Hedefi ---
 add_executable(llm_cli
     src/cli/main.cpp
@@ -84,11 +77,14 @@ add_executable(llm_cli
 )
 target_include_directories(llm_cli PRIVATE src)
 target_link_libraries(llm_cli PRIVATE
-    proto_lib spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
+    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
     gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
 )
 
-# CLI aracı için de GPU linklemesi (gerekirse)
-if(GGML_CUDA)
-    target_link_libraries(llm_cli PRIVATE ggml-cuda CUDA::cuda_driver CUDA::cudart)
+# DÜZELTME: Bu blok, CUDA hedeflerini oluşturan `add_subdirectory(llama.cpp)`
+# komutundan SONRA gelmelidir.
+if(LLAMA_CUBLAS OR GGML_CUDA)
+    message(STATUS "CUDA backend enabled, linking CUDA libraries to targets.")
+    target_link_libraries(llm_service PRIVATE CUDA::cudart)
+    target_link_libraries(llm_cli PRIVATE CUDA::cudart)
 endif()
