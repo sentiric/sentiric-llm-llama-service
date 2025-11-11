@@ -25,10 +25,12 @@ struct Settings {
     std::string model_filename = "Phi-3-mini-4k-instruct-q4.gguf";
     std::string model_path = ""; // ModelManager tarafından doldurulacak olan nihai yol.
     std::string legacy_model_path = ""; // Eski sistemle uyumluluk için
-
+    
     int context_size = 4096;
     int n_threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency() / 2));
     
+    int n_gpu_layers = 0; // GPU'ya yüklenecek katman sayısı
+
     // Logging Settings
     std::string log_level = "info";
 
@@ -69,6 +71,8 @@ inline Settings load_settings() {
     s.context_size = get_env_var_as_int("LLM_LLAMA_SERVICE_CONTEXT_SIZE", s.context_size);
     s.n_threads = get_env_var_as_int("LLM_LLAMA_SERVICE_THREADS", s.n_threads);
     s.log_level = get_env_var("LLM_LLAMA_SERVICE_LOG_LEVEL", s.log_level);
+    
+    s.n_gpu_layers = get_env_var_as_int("LLM_LLAMA_SERVICE_GPU_LAYERS", s.n_gpu_layers);
     
     // Geriye dönük uyumluluk: Eğer yeni MODEL_ID/FILENAME boşsa ama eski MODEL_PATH doluysa, ayarları buradan çıkar.
     if (s.model_id.empty() && !s.legacy_model_path.empty()) {

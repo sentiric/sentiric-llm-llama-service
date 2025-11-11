@@ -65,9 +65,13 @@ void LlamaContextPool::release(llama_context* ctx) {
 
 LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
     spdlog::info("Initializing llama.cpp backend...");
-    llama_backend_init();
+    // Backend'i başlatırken NUMA ayarlarını da dikkate al (GPU için faydalı olabilir)
+    llama_backend_init(true);
 
     llama_model_params model_params = llama_model_default_params();
+    // GÜNCELLENDİ: n_gpu_layers ayarını model parametrelerine ekle
+    model_params.n_gpu_layers = settings_.n_gpu_layers;
+    
     model_ = llama_model_load_from_file(settings_.model_path.c_str(), model_params);
     
     if (!model_) {

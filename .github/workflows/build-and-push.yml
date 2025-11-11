@@ -1,11 +1,12 @@
 # .github/workflows/build-and-push.yml
-# Bu iş akışı, main branch'e yapılan her push'ta Docker imajını oluşturur ve GHCR'ye yayınlar.
-name: CI - Build and Push Docker Image
+name: CI - Build and Push Docker Images
 
 on:
   push:
     branches:
       - main
+    tags:
+      - 'v*.*.*'
 
 jobs:
   build-and-push:
@@ -13,6 +14,14 @@ jobs:
     permissions:
       contents: read
       packages: write
+    
+    strategy:
+      matrix:
+        include:
+          - dockerfile: Dockerfile
+            tag_suffix: ""
+          - dockerfile: Dockerfile.gpu
+            tag_suffix: "-gpu"
 
     steps:
       - name: Checkout repository
@@ -30,11 +39,18 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=,suffix=${{ matrix.tag_suffix }}
+            type=raw,value=latest${{ matrix.tag_suffix }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

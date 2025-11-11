@@ -1,0 +1,19 @@
+# docker-compose.gpu.yml
+# GPU desteği ile çalıştırmak için ana compose dosyasına ek olarak kullanılır.
+services:
+  llm-llama-service:
+    # GPU imajını kullan
+    image: ghcr.io/sentiric/sentiric-llm-llama-service:latest-gpu
+    
+    # GPU'yu konteynere tanıt
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    environment:
+      # Modeli tamamen GPU'ya yükle (-1 tüm katmanlar demek)
+      - LLM_LLAMA_SERVICE_GPU_LAYERS=-1

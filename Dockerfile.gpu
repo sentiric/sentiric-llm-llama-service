@@ -1,0 +1,56 @@
+# Dockerfile.gpu
+# NVIDIA CUDA destekli imajı oluşturur.
+
+# --- Derleme Aşaması ---
+# NVIDIA'nın resmi CUDA geliştirme imajını kullan
+FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04 AS builder
+
+# Gerekli temel araçları ve vcpkg bağımlılıklarını kur
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git cmake build-essential curl zip unzip tar \
+    pkg-config ninja-build ca-certificates python3
+
+# vcpkg'yi kur
+ARG VCPKG_VERSION=2024.05.24
+RUN curl -L "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSION}.tar.gz" -o vcpkg.tar.gz && \
+    mkdir -p /opt/vcpkg && \
+    tar xzf vcpkg.tar.gz -C /opt/vcpkg --strip-components=1 && \
+    rm vcpkg.tar.gz && \
+    /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+WORKDIR /app
+
+COPY vcpkg.json .
+RUN /opt/vcpkg/vcpkg install --triplet x64-linux
+
+RUN git clone https://github.com/ggerganov/llama.cpp.git llama.cpp
+
+COPY src ./src
+COPY CMakeLists.txt .
+
+# Projeyi CUDA desteği ile derle
+RUN cmake -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
+    -DLLAMA_CUBLAS=ON # CUDA desteğini aktive et
+RUN cmake --build build --target all -j $(nproc)
+
+# --- Çalışma Aşaması ---
+# NVIDIA'nın CUDA runtime imajını kullan (geliştirme imajından daha küçük)
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04 AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates libgomp1 curl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/build/llm_service /usr/local/bin/
+COPY --from=builder /app/build/llm_cli /usr/local/bin/
+
+COPY --from=builder /app/build/bin/*.so /usr/local/lib/
+RUN ldconfig
+
+RUN mkdir -p /models
+
+EXPOSE 16070 16071
+
+CMD ["llm_service"]

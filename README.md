@@ -2,7 +2,7 @@
 
 **Production-ready** C++ local LLM inference service. Built for high performance, concurrency, and reliability.
 
-[![CI/CD Status](https://github.com/sentiric/sentiric-llm-llama-service/actions/workflows/build.yml/badge.svg)](https://github.com/sentiric/sentiric-llm-llama-service/actions)
+[![CI - Build and Push Docker Image](https://github.com/sentiric/sentiric-llm-llama-service/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/sentiric/sentiric-llm-llama-service/actions/workflows/build-and-push.yml)
 
 ## 🚀 Features
 
@@ -39,21 +39,18 @@ All detailed project documentation is located in the `/docs` directory.
 ### Running the Service
 
 ```bash
-# 1. Clone the repository
+# Clone the repository
 git clone https://github.com/sentiric/sentiric-llm-llama-service.git
 cd sentiric-llm-llama-service
 
-# 2. Download the required model
-./models/download.sh
-
-# 3. Build and run the service
+# Build and run the service
 docker compose up --build -d
 
-# 4. Check service health (wait up to 1-2 minutes for the model to load)
-curl http://localhost:16060/health
+# Check service health (wait up to 1-2 minutes for the model to load)
+curl http://localhost:16070/health
 # Expected output: {"engine":"llama.cpp","model_ready":true,"status":"healthy"}
 
-# 5. Test with the CLI tool
+# Test with the CLI tool
 docker compose exec llm-llama-service llm_cli generate "Hello, what is your name?"
 ```
 
