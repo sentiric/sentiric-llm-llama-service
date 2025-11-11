@@ -1,5 +1,4 @@
 # CMakeLists.txt
-# Yeni model_manager.cpp dosyasını derleme hedefine ekler.
 cmake_minimum_required(VERSION 3.20)
 project(llm-llama-service CXX)
 
@@ -17,9 +16,7 @@ find_package(c-ares CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # --- llama.cpp'yi Alt Dizin Olarak Ekle ---
-set(LLAMA_STATIC OFF) # Paylaşılan kütüphane oluşturduğumuz için OFF olmalı
-set(LLAMA_BUILD_TESTS OFF)
-set(LLAMA_BUILD_EXAMPLES OFF)
+# Not: GGML_CUDA ve diğer backend seçenekleri Dockerfile üzerinden ayarlanır.
 add_subdirectory(llama.cpp)
 
 # --- Protobuf Kod Üretimi ---
@@ -61,13 +58,20 @@ add_executable(llm_service
     src/llm_engine.cpp
     src/grpc_server.cpp
     src/http_server.cpp
-    src/model_manager.cpp # EKLENDİ
+    src/model_manager.cpp
 )
 target_include_directories(llm_service PRIVATE src)
 target_link_libraries(llm_service PRIVATE
     proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
     httplib::httplib gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
 )
+
+# DÜZELTME: Eğer CUDA ile derleme yapılıyorsa, gerekli CUDA kütüphanelerini linkle.
+# llama.cpp'nin CMake'i, GGML_CUDA aktif olduğunda bu hedefleri oluşturur.
+if(GGML_CUDA)
+    target_link_libraries(llm_service PRIVATE ggml-cuda CUDA::cuda_driver CUDA::cudart)
+endif()
+
 
 # --- CLI Aracı Hedefi ---
 add_executable(llm_cli
@@ -83,3 +87,8 @@ target_link_libraries(llm_cli PRIVATE
     proto_lib spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
     gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
 )
+
+# CLI aracı için de GPU linklemesi (gerekirse)
+if(GGML_CUDA)
+    target_link_libraries(llm_cli PRIVATE ggml-cuda CUDA::cuda_driver CUDA::cudart)
+endif()
