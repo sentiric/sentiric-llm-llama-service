@@ -1,6 +1,7 @@
 # CMakeLists.txt
 cmake_minimum_required(VERSION 3.20)
-project(llm-llama-service CXX)
+# DÜZELTME: Projeye CUDA dilini ekle
+project(llm-llama-service CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +15,12 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(httplib CONFIG REQUIRED)
 find_package(c-ares CONFIG REQUIRED)
 find_package(Threads REQUIRED)
+
+# DÜZELTME: CUDA Toolkit'i projenin en başında bul.
+# Bu, GGML_CUDA aktif olduğunda CUDA::* hedeflerini global olarak tanımlar.
+if(GGML_CUDA)
+    find_package(CUDAToolkit REQUIRED)
+endif()
 
 # --- Alt Projeleri ve Kod Üretimini Yapılandır ---
 add_subdirectory(llama.cpp)
@@ -47,9 +54,9 @@ add_library(proto_lib STATIC
     "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
     "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
 )
-target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
+target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
-# --- Hedefleri Tanımla (Henüz Linkleme Yapma) ---
+# --- Ana Servis Hedefi ---
 add_executable(llm_service
     src/main.cpp
     src/llm_engine.cpp
@@ -58,7 +65,16 @@ add_executable(llm_service
     src/model_manager.cpp
 )
 target_include_directories(llm_service PRIVATE src)
+target_link_libraries(llm_service PRIVATE
+    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
+    httplib::httplib gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
+)
+if(GGML_CUDA)
+    target_link_libraries(llm_service PRIVATE CUDA::cudart)
+endif()
 
+
+# --- CLI Aracı Hedefi ---
 add_executable(llm_cli
     src/cli/main.cpp
     src/cli/cli_client.cpp
@@ -68,26 +84,10 @@ add_executable(llm_cli
     src/cli/benchmark.cpp
 )
 target_include_directories(llm_cli PRIVATE src)
-
-
-# --- Merkezi Linkleme Bloğu (Tüm Hedefler Tanımlandıktan Sonra) ---
-
-# Temel kütüphaneleri tüm hedeflere linkle
-target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
-
-target_link_libraries(llm_service PRIVATE
-    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
-    httplib::httplib gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
-)
-
 target_link_libraries(llm_cli PRIVATE
     proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
     gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
 )
-
-# Koşullu olarak CUDA kütüphanelerini linkle
 if(GGML_CUDA)
-    message(STATUS "CUDA backend enabled, linking CUDA libraries to targets.")
-    target_link_libraries(llm_service PRIVATE CUDA::cudart)
     target_link_libraries(llm_cli PRIVATE CUDA::cudart)
 endif()
