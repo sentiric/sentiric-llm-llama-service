@@ -1,8 +1,6 @@
 # CMakeLists.txt
 cmake_minimum_required(VERSION 3.20)
 
-# DÜZELTME: Proje tanımını CUDA'nın varlığına göre koşullu yap.
-# Bu, CPU imajının nvcc'yi aramasını engeller.
 if(DEFINED GGML_CUDA AND GGML_CUDA)
     project(llm-llama-service CXX CUDA)
 else()
@@ -22,7 +20,6 @@ find_package(httplib CONFIG REQUIRED)
 find_package(c-ares CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
-# DÜZELTME: CUDA Toolkit'i sadece gerektiğinde ve en başta bul.
 if(GGML_CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
@@ -59,6 +56,8 @@ add_library(proto_lib STATIC
     "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
     "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
 )
+# DÜZELTME: Kütüphanenin kendi header'larını bulabilmesi için include path'i hemen burada tanımlanmalı.
+target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
 target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
 # --- Ana Servis Hedefi ---
