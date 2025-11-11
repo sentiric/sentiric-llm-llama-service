@@ -1,75 +1,49 @@
 # 🚀 Deployment Rehberi
 
-## YENİ: Submodule-Free Development Workflow
+Bu servis, GitHub Actions aracılığıyla otomatik olarak `ghcr.io/sentiric/sentiric-llm-llama-service` adresine Docker imajı olarak yayınlanır. Üretim ortamında dağıtım yapmanın en iyi yolu bu önceden oluşturulmuş imajı kullanmaktır.
 
-### Build Process (Artık daha basit)
+## Sistem Gereksinimleri
+-   **Docker**: 20.10+
+-   **Docker Compose**: 2.0+ (opsiyonel, `docker run` da kullanılabilir)
+-   **RAM**: 4GB minimum
+-   **Depolama**: Model dosyası için ~3GB boş alan
+
+## Üretim Dağıtımı (Production Deployment)
+
+1.  **`docker-compose.yml` Dosyasını Hazırlayın:**
+    Projenin kök dizinindeki `docker-compose.yml` dosyası, üretim dağıtımı için tasarlanmıştır. Bu dosyayı sunucunuza kopyalayın.
+
+2.  **Ortam Değişkenlerini Ayarlayın (Opsiyonel):**
+    Gerekirse, `docker-compose.yml` dosyasının yanına bir `.env` dosyası oluşturarak veya doğrudan sistem ortam değişkenlerini ayarlayarak konfigürasyonu özelleştirin. (Tüm değişkenler için `Configuration` bölümüne bakın.)
+
+3.  **Servisi Başlatın:**
+    `docker-compose.yml`'nin bulunduğu dizinde aşağıdaki komutu çalıştırın.
+
+    ```bash
+    # En güncel imajı çek ve servisi başlat
+    docker compose up -d
+    ```
+    Bu komut, `build` yapmaz, bunun yerine GHCR'den `:latest` etiketli imajı çeker.
+
+4.  **Doğrulama:**
+    Servisin başlaması, modelin indirilmesi nedeniyle birkaç dakika sürebilir.
+
+    ```bash
+    # Konteyner durumunu kontrol et
+    docker compose ps
+
+    # Servis hazır olduğunda health check yap
+    curl http://localhost:16070/health
+    ```
+
+## Geliştirme Ortamı (Development)
+
+Geliştirme yaparken kaynak kodundan build yapmak için, projenin içindeki `docker-compose.override.yml` dosyası otomatik olarak kullanılır.
+
 ```bash
-# ESKİ: 
-git clone --recursive ...
-git submodule update --init
-
-# YENİ:
-git clone ...
+# Geliştirme ortamında, yerel kaynak kodunu kullanarak build et ve başlat
 docker compose up --build -d
 ```
-
-### Dependency Management
-- **llama.cpp**: Otomatik Docker build sırasında indirilir
-- **Versiyon Kontrolü**: `git checkout 0750a599` ile sabitlenir
-- **Bağımlılıklar**: vcpkg ile merkezi yönetim
-
-### Debugging Improvements
-- **Daha az moving part**: Submodule sync sorunu yok
-- **Better caching**: Docker layer optimization
-- **Simpler reproduction**: Tüm bağımlılıklar otomatik
-
-## Production Deployment
-
-### System Requirements
-- **OS**: Ubuntu 20.04+ / RHEL 8+
-- **Docker**: 20.10+
-- **Docker Compose**: 2.0+
-- **RAM**: 4GB minimum, 8GB recommended
-- **Storage**: 5GB available
-- **CPU**: 4 cores+ recommended
-
-### Deployment Steps
-
-1. **System Preparation**
-   ```bash
-   # Install Docker
-   curl -fsSL https://get.docker.com -o get-docker.sh
-   sudo sh get-docker.sh
-   
-   # Install Docker Compose
-   sudo apt-get install docker-compose-plugin
-   ```
-
-2. **Application Deployment**
-   ```bash
-   # Clone repository
-   git clone https://github.com/sentiric/sentiric-llm-llama-service.git
-   cd sentiric-llm-llama-service
-   
-   # Download model
-   ./models/download.sh
-   
-   # Deploy
-   docker compose up -d
-   ```
-
-3. **Verification**
-   ```bash
-   # Check service status
-   docker compose ps
-   
-   # Health check
-   curl http://localhost:16070/health
-   
-   # Test inference
-   docker compose exec llm-llama-service \
-     grpc_test_client "Test message"
-   ```
 
 ## Configuration
 
