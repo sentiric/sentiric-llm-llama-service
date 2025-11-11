@@ -4,8 +4,8 @@
 
 using json = nlohmann::json;
 
-HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, int port)
-    : engine_(std::move(engine)), port_(port) {
+HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port)
+    : engine_(std::move(engine)), host_(host), port_(port) {
     
     svr_.Get("/health", [this](const httplib::Request &, httplib::Response &res) {
         bool model_ready = engine_->is_model_loaded();
@@ -22,8 +22,8 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, int port)
 }
 
 void HttpServer::run() {
-    spdlog::info("📊 HTTP health server listening on 0.0.0.0:{}", port_);
-    svr_.listen("0.0.0.0", port_);
+    spdlog::info("📊 HTTP health server listening on {}:{}", host_, port_);
+    svr_.listen(host_.c_str(), port_);
 }
 
 void HttpServer::stop() {

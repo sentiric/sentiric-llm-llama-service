@@ -29,6 +29,8 @@ int main() {
     auto settings = load_settings();
     spdlog::set_level(spdlog::level::from_str(settings.log_level));
     spdlog::info("Sentiric LLM Llama Service starting...");
+    spdlog::info("Configuration: host={}, http_port={}, grpc_port={}", settings.host, settings.http_port, settings.grpc_port);
+
 
     std::unique_ptr<grpc::Server> grpc_server_ptr;
     std::shared_ptr<HttpServer> http_server;
@@ -43,7 +45,7 @@ int main() {
         }
 
         // gRPC Sunucusunu başlat
-        std::string grpc_address = "0.0.0.0:" + std::to_string(settings.grpc_port);
+        std::string grpc_address = settings.host + ":" + std::to_string(settings.grpc_port);
         GrpcServer grpc_service(engine);
         grpc::ServerBuilder builder;
         builder.AddListeningPort(grpc_address, grpc::InsecureServerCredentials());
@@ -57,7 +59,7 @@ int main() {
         spdlog::info("🚀 gRPC server listening on {}", grpc_address);
 
         // HTTP Sunucusunu başlat
-        http_server = std::make_shared<HttpServer>(engine, settings.http_port);
+        http_server = std::make_shared<HttpServer>(engine, settings.host, settings.http_port);
         
         // Sunucuları ayrı thread'lerde çalıştır
         grpc_thread = std::thread(&grpc::Server::Wait, grpc_server_ptr.get());

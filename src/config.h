@@ -5,18 +5,25 @@
 #include <thread>
 #include <stdexcept>
 #include "spdlog/spdlog.h"
+#include <algorithm> // std::max ve std::min için
 
 struct Settings {
-    int http_port = 16060;
-    int grpc_port = 16061;
-    std::string model_path = "/models/phi-3-mini.q4.gguf";
-    std::string log_level = "info";
+    // Network Settings
+    std::string host = "0.0.0.0"; // Dinlenecek IP adresi
+    int http_port = 16070;
+    int grpc_port = 16071;
+    // int metrics_port = 16072; // Gelecekteki metrikler için hazır
 
+    // Model & Engine Settings
+    std::string model_path = "/models/phi-3-mini.q4.gguf";
     int context_size = 4096;
     // Donanım thread sayısının yarısı, max 8. Hyper-threading'i hesaba katarak.
     int n_threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency() / 2));
     
-    // Varsayılan sampling parametreleri
+    // Logging Settings
+    std::string log_level = "info";
+
+    // Default Sampling Parameters
     float default_temperature = 0.8f;
     int32_t default_top_k = 40;
     float default_top_p = 0.95f;
@@ -41,8 +48,12 @@ inline Settings load_settings() {
         }
     };
     
-    s.http_port = get_env_var_as_int("LLM_HTTP_PORT", s.http_port);
-    s.grpc_port = get_env_var_as_int("LLM_GRPC_PORT", s.grpc_port);
+    // Yeni standartlaştırılmış ortam değişkenlerini oku
+    s.host = get_env_var("LLM_LLAMA_SERVICE_IPV4_ADDRESS", s.host);
+    s.http_port = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_PORT", s.http_port);
+    s.grpc_port = get_env_var_as_int("LLM_LLAMA_SERVICE_GRPC_PORT", s.grpc_port);
+    // s.metrics_port = get_env_var_as_int("LLM_LLAMA_SERVICE_METRICS_PORT", s.metrics_port);
+
     s.model_path = get_env_var("LLM_MODEL_PATH", s.model_path);
     s.log_level = get_env_var("LOG_LEVEL", s.log_level);
     s.context_size = get_env_var_as_int("LLM_CONTEXT_SIZE", s.context_size);
