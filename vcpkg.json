@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
-  "name": "sentiric-llm-llama-service",
-  "version-string": "0.1.0",
+  "name": "llm-llama-service-deps",
+  "version-string": "1.0.0",
   "dependencies": [
     "grpc",
     "protobuf",

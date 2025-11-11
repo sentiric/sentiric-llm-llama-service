@@ -8,7 +8,26 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <queue>
+#include <condition_variable>
 #include "sentiric/llm/v1/local.pb.h"
+
+// Eşzamanlı istekleri yönetmek için bir context havuzu.
+class LlamaContextPool {
+public:
+    LlamaContextPool(llama_model* model, const Settings& settings, size_t pool_size);
+    ~LlamaContextPool();
+
+    llama_context* acquire();
+    void release(llama_context* ctx);
+
+private:
+    llama_model* model_;
+    const Settings& settings_;
+    std::queue<llama_context*> pool_;
+    std::mutex mutex_; // DÜZELTİLDİ
+    std::condition_variable cv_;
+};
 
 class LLMEngine {
 public:
@@ -20,17 +39,18 @@ public:
 
     void generate_stream(
         const sentiric::llm::v1::LocalGenerateStreamRequest& request,
-        std::function<void(const std::string& token)> on_token_callback,
-        std::function<bool()> should_stop_callback
+        const std::function<void(const std::string&)>& on_token_callback,
+        const std::function<bool()>& should_stop_callback
     );
 
     bool is_model_loaded() const;
-    const Settings& get_settings() const;
 
 private:
     llama_model* model_ = nullptr;
-    llama_context* ctx_ = nullptr;
+    const llama_vocab* vocab_ = nullptr;
+    llama_sampler* sampler_ = nullptr;
+
     std::atomic<bool> model_loaded_{false};
     Settings settings_;
-    std::mutex generation_mutex_;
+    std::unique_ptr<LlamaContextPool> context_pool_;
 };

@@ -25,7 +25,7 @@ grpc::Status GrpcServer::LocalGenerateStream(
                 sentiric::llm::v1::LocalGenerateStreamResponse response;
                 response.set_token(token);
                 if (!writer->Write(response)) {
-                    spdlog::warn("[gRPC] Write failed, client likely disconnected.");
+                    // Client bağlantıyı kapattı. `should_stop_callback` bunu yakalayacak.
                 }
             },
             [&]() -> bool {
@@ -33,7 +33,7 @@ grpc::Status GrpcServer::LocalGenerateStream(
             }
         );
     } catch (const std::exception& e) {
-        spdlog::error("[gRPC] Unhandled exception during stream generation: {}", e.what());
+        spdlog::error("[gRPC] Unhandled exception: {}", e.what());
         return grpc::Status(grpc::StatusCode::INTERNAL, "An internal error occurred.");
     }
 
@@ -41,6 +41,12 @@ grpc::Status GrpcServer::LocalGenerateStream(
         spdlog::warn("[gRPC] Stream cancelled by client.");
         return grpc::Status::CANCELLED;
     }
+
+    // API tutarlılığı için FinishDetails gönder.
+    sentiric::llm::v1::LocalGenerateStreamResponse final_response;
+    auto* details = final_response.mutable_finish_details();
+    details->set_finish_reason("stop"); // veya "length"
+    writer->Write(final_response);
 
     spdlog::info("[gRPC] Stream finished successfully.");
     return grpc::Status::OK;

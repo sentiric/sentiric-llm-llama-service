@@ -120,6 +120,49 @@ netstat -tulpn | grep 16061
 
 # Container çalışıyor mu?
 docker ps | grep llm-llama-service
+
+
+
+### Hata: `error while loading shared libraries: libllama.so: cannot open shared object file`
+
+**Sebep:**
+Bu hata, `llm_service` uygulamasının çalışmak için ihtiyaç duyduğu `libllama.so` paylaşılan kütüphanesini bulamadığı anlamına gelir. Docker multi-stage build sürecinde, bu `.so` dosyası `builder` katmanında oluşturulmuş ancak son `runtime` katmanına kopyalanmamıştır.
+
+**Çözüm:**
+`Dockerfile` dosyasının `runtime` aşamasına, `libllama.so` dosyasını standart bir kütüphane yoluna kopyalayan ve ardından `ldconfig` ile linker önbelleğini güncelleyen adımlar eklenmelidir:
+
+```dockerfile
+# ... (runtime aşaması)
+
+# YENİ: Gerekli paylaşılan kütüphaneyi kopyala
+COPY --from=builder /app/build/bin/libllama.so /usr/local/lib/
+
+# YENİ: Dinamik linker önbelleğini güncelle ki libllama.so bulunsun
+RUN ldconfig
+
+# ... (dosyanın geri kalanı)
+```
+
+### Hata: `error while loading shared libraries: libXXX.so: cannot open shared object file`
+
+**Örnekler:** `libllama.so`, `libggml.so`
+
+**Sebep:**
+Bu hata, `llm_service` uygulamasının veya bağımlılıklarından birinin, çalışmak için ihtiyaç duyduğu bir paylaşılan kütüphaneyi (`.so` dosyası) bulamadığı anlamına gelir. `llama.cpp` projesi, `libllama.so`, `libggml.so` gibi birden fazla paylaşılan kütüphane üretir. Docker multi-stage build sürecinde, bu kütüphanelerin tamamı `builder` katmanında oluşturulmuş ancak son `runtime` katmanına eksik kopyalanmıştır.
+
+**Çözüm:**
+`Dockerfile`'ın `runtime` aşamasında, `llama.cpp` tarafından üretilen **tüm** paylaşılan kütüphanelerin kopyalandığından emin olunmalıdır. Bunun en sağlam yolu, `builder` katmanının çıktı dizinindeki (`/app/build/bin/`) tüm `.so` dosyalarını `runtime` katmanındaki standart bir kütüphane yoluna (`/usr/local/lib/`) kopyalamaktır. Ardından `ldconfig` çalıştırılmalıdır.
+
+```dockerfile
+# ... (runtime aşaması)
+
+# DÜZELTME: Sadece libllama.so değil, GEREKLİ TÜM paylaşılan kütüphaneleri kopyala
+COPY --from=builder /app/build/bin/*.so /usr/local/lib/
+
+# Dinamik linker önbelleğini güncelle
+RUN ldconfig
+
+# ... (dosyanın geri kalanı)
 ```
 
 ## Performance Issues

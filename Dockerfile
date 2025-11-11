@@ -1,48 +1,57 @@
-# sentiric-llm-llama-service/Dockerfile
 # --- Derleme Aşaması ---
-FROM ghcr.io/sentiric/sentiric-llama-cpp:latest AS builder
+FROM ubuntu:22.04 AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git cmake build-essential curl zip unzip tar \
+    pkg-config ninja-build ca-certificates python3
+
+# vcpkg'yi kur
+ARG VCPKG_VERSION=2024.05.24
+RUN curl -L "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSION}.tar.gz" -o vcpkg.tar.gz && \
+    mkdir -p /opt/vcpkg && \
+    tar xzf vcpkg.tar.gz -C /opt/vcpkg --strip-components=1 && \
+    rm vcpkg.tar.gz && \
+    /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
 WORKDIR /app
 
-# 1. Contracts reposunu clone et
-RUN git clone https://github.com/sentiric/sentiric-contracts.git && \
-    mkdir -p gen/sentiric/llm/v1 && \
-    cp -r sentiric-contracts/gen/cpp/sentiric/llm/v1/* gen/sentiric/llm/v1/ && \
-    rm -rf sentiric-contracts
-
-# 2. Bağımlılıkları kur
+# 1. vcpkg bağımlılıklarını kur
 COPY vcpkg.json .
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# 3. Kodları kopyala
-COPY . .
+# 2. llama.cpp'nin en güncel halini klonla
+RUN git clone https://github.com/ggerganov/llama.cpp.git llama.cpp
 
-# 4. Build - BASİT
+# 3. Proje kaynak kodunu kopyala
+COPY src ./src
+COPY CMakeLists.txt .
+
+# 4. Projeyi derle
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_SHARED_LIBS=OFF
-
+    -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
 RUN cmake --build build --target all -j $(nproc)
 
 # --- Çalışma Aşaması ---
-FROM ubuntu:22.04
+FROM ubuntu:22.04 AS runtime
 
-# Runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libgomp1 && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# Çalıştırılabilir dosyaları kopyala
+COPY --from=builder /app/build/llm_service /usr/local/bin/
+COPY --from=builder /app/build/llm_cli /usr/local/bin/
 
-# Sadece executable'ları kopyala
-COPY --from=builder /app/build/llm_service /usr/local/bin/llm_service
-COPY --from=builder /app/build/llm_cli /usr/local/bin/llm_cli
+# DÜZELTİLDİ: Sadece libllama.so değil, GEREKLİ TÜM paylaşılan kütüphaneleri kopyala
+COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 
-# Model dizinini oluştur
+# Dinamik linker önbelleğini güncelle
+RUN ldconfig
+
 RUN mkdir -p /models
 
-# Port ve environment variables
 EXPOSE 16060 16061
-ENV LLM_LOCAL_SERVICE_MODEL_PATH="/models/phi-3-mini.q4.gguf"
+ENV LLM_MODEL_PATH="/models/phi-3-mini.q4.gguf"
 
 CMD ["llm_service"]
