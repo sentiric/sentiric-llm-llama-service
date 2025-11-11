@@ -24,7 +24,7 @@ if(GGML_CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
 
-# --- Alt Projeleri Ekle ---
+# --- Alt Projeleri ve Kod Üretimini Yapılandır ---
 add_subdirectory(llama.cpp)
 include(FetchContent)
 FetchContent_Declare(
@@ -34,11 +34,11 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
-# --- Kod Üretimi ---
+# --- Protobuf Kod Üretimi ---
 set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
-# protoc komutu için özel bir hedef oluştur
+# DÜZELTME: protoc komutunu kendi özel hedefine taşı
 add_custom_target(generate_protobuf ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_DIR}
     COMMAND $<TARGET_FILE:protobuf::protoc>
@@ -55,6 +55,8 @@ add_library(proto_lib STATIC
     "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
     "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
 )
+# DÜZELTME: proto_lib'in generate_protobuf bitmeden derlenmemesini sağla
+add_dependencies(proto_lib generate_protobuf)
 
 add_executable(llm_service
     src/main.cpp
@@ -73,16 +75,11 @@ add_executable(llm_cli
     src/cli/benchmark.cpp
 )
 
-# --- Derleme Bağımlılıkları ve Include Yollarını Ayarla ---
-# proto_lib'in derlenmesi için generate_protobuf hedefinin bitmesini bekle
-add_dependencies(proto_lib generate_protobuf)
-
-# proto_lib'in kendi header'larını bulabilmesi için include yolunu ekle
+# --- Hedef Özelliklerini ve Linklemeyi Ayarla ---
 target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
 target_include_directories(llm_service PRIVATE src)
 target_include_directories(llm_cli PRIVATE src)
 
-# --- Merkezi Linkleme Bloğu ---
 target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
 target_link_libraries(llm_service PRIVATE
