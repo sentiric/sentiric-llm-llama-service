@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/build/llm_service /usr/local/bin/
 COPY --from=builder /app/build/llm_cli /usr/local/bin/
 
-# DÜZELTİLDİ: Sadece libllama.so değil, GEREKLİ TÜM paylaşılan kütüphaneleri kopyala
+# Gerekli tüm paylaşılan kütüphaneleri kopyala
 COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 
 # Dinamik linker önbelleğini güncelle
@@ -51,7 +51,8 @@ RUN ldconfig
 
 RUN mkdir -p /models
 
-EXPOSE 16060 16061
-ENV LLM_MODEL_PATH="/models/phi-3-mini.q4.gguf"
+EXPOSE 16070 16071
+# Varsayılan model yolu için yeni standardı kullan
+ENV LLM_LLAMA_SERVICE_MODEL_PATH="/models/phi-3-mini.q4.gguf"
 
 CMD ["llm_service"]
