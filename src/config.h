@@ -1,3 +1,5 @@
+// src/config.h
+// DÜZELTME: Eksik olan <filesystem> başlık dosyası eklendi.
 #pragma once
 
 #include <string>
@@ -6,6 +8,10 @@
 #include <stdexcept>
 #include "spdlog/spdlog.h"
 #include <algorithm>
+#include <filesystem> // EKLENDİ: Dosya yolu manipülasyonu için gerekli
+
+// filesystem namespace'ini header'da tanımlamak iyi bir pratik değildir.
+// Bu yüzden inline fonksiyonda tam adını (std::filesystem) kullanacağız.
 
 struct Settings {
     // Network Settings
@@ -14,7 +20,12 @@ struct Settings {
     int grpc_port = 16071;
 
     // Model & Engine Settings
-    std::string model_path = "/models/phi-3-mini.q4.gguf";
+    std::string model_dir = "/models";
+    std::string model_id = "microsoft/Phi-3-mini-4k-instruct-gguf";
+    std::string model_filename = "Phi-3-mini-4k-instruct-q4.gguf";
+    std::string model_path = ""; // ModelManager tarafından doldurulacak olan nihai yol.
+    std::string legacy_model_path = ""; // Eski sistemle uyumluluk için
+
     int context_size = 4096;
     int n_threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency() / 2));
     
@@ -26,7 +37,7 @@ struct Settings {
     int32_t default_top_k = 40;
     float default_top_p = 0.95f;
     float default_repeat_penalty = 1.1f;
-    int32_t default_max_tokens = 1024;
+    int32_t default_max_tokens = 1024;        
 };
 
 inline Settings load_settings() {
@@ -46,16 +57,27 @@ inline Settings load_settings() {
         }
     };
     
-    // Tamamen standartlaştırılmış ortam değişkenleri
     s.host = get_env_var("LLM_LLAMA_SERVICE_IPV4_ADDRESS", s.host);
     s.http_port = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_PORT", s.http_port);
     s.grpc_port = get_env_var_as_int("LLM_LLAMA_SERVICE_GRPC_PORT", s.grpc_port);
     
-    s.model_path = get_env_var("LLM_LLAMA_SERVICE_MODEL_PATH", s.model_path);
+    s.model_dir = get_env_var("LLM_LLAMA_SERVICE_MODEL_DIR", s.model_dir);
+    s.model_id = get_env_var("LLM_LLAMA_SERVICE_MODEL_ID", s.model_id);
+    s.model_filename = get_env_var("LLM_LLAMA_SERVICE_MODEL_FILENAME", s.model_filename);
+    s.legacy_model_path = get_env_var("LLM_LLAMA_SERVICE_MODEL_PATH", s.legacy_model_path);
+    
     s.context_size = get_env_var_as_int("LLM_LLAMA_SERVICE_CONTEXT_SIZE", s.context_size);
     s.n_threads = get_env_var_as_int("LLM_LLAMA_SERVICE_THREADS", s.n_threads);
-    
     s.log_level = get_env_var("LLM_LLAMA_SERVICE_LOG_LEVEL", s.log_level);
     
+    // Geriye dönük uyumluluk: Eğer yeni MODEL_ID/FILENAME boşsa ama eski MODEL_PATH doluysa, ayarları buradan çıkar.
+    if (s.model_id.empty() && !s.legacy_model_path.empty()) {
+        spdlog::warn("Using legacy LLM_LLAMA_SERVICE_MODEL_PATH. It's recommended to set MODEL_ID and MODEL_FILENAME instead.");
+        std::filesystem::path p(s.legacy_model_path);
+        s.model_dir = p.parent_path().string();
+        s.model_filename = p.filename().string();
+        // ID'yi boş bırakarak ModelManager'ın eski davranışa dönmesini sağla.
+    }
+
     return s;
 }

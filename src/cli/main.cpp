@@ -23,15 +23,15 @@ Komutlar:
   wait-for-ready       - Servis hazır olana kadar bekle
 
 Seçenekler:
-  --grpc-endpoint      - GRPC endpoint (varsayılan: localhost:16061)
-  --http-endpoint      - HTTP endpoint (varsayılan: localhost:16060)
+  --grpc-endpoint      - GRPC endpoint (varsayılan: localhost:16071)
+  --http-endpoint      - HTTP endpoint (varsayılan: localhost:16070)
   --timeout            - Zaman aşımı süresi (saniye)
   --iterations         - Benchmark iterasyon sayısı
   --output             - Çıktı dosyası
 
 Örnekler:
   llm_cli generate "Türkiye'nin başkenti neresidir?"
-  llm_cli health --http-endpoint 192.168.1.100:16060
+  llm_cli health --http-endpoint 192.168.1.100:16070
   llm_cli benchmark --iterations 50
   llm_cli wait-for-ready --timeout 120
 )";
@@ -62,9 +62,9 @@ int main(int argc, char** argv) {
     }
     
     std::string grpc_endpoint = options.count("grpc-endpoint") ? 
-                               options["grpc-endpoint"] : "localhost:16061";
+                               options["grpc-endpoint"] : "localhost:16071";
     std::string http_endpoint = options.count("http-endpoint") ? 
-                               options["http-endpoint"] : "localhost:16060";
+                               options["http-endpoint"] : "localhost:16070";
     
     try {
         if (command == "generate" && argc > 2) {

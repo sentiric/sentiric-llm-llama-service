@@ -12,8 +12,8 @@ class HTTPClient;
 
 class CLIClient {
 public:
-    CLIClient(const std::string& grpc_endpoint = "localhost:16061", 
-              const std::string& http_endpoint = "localhost:16060");
+    CLIClient(const std::string& grpc_endpoint = "localhost:16071", 
+              const std::string& http_endpoint = "localhost:16070");
     ~CLIClient();
     
     // GRPC İşlemleri

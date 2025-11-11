@@ -1,3 +1,5 @@
+# CMakeLists.txt
+# Yeni model_manager.cpp dosyasını derleme hedefine ekler.
 cmake_minimum_required(VERSION 3.20)
 project(llm-llama-service CXX)
 
@@ -15,7 +17,7 @@ find_package(c-ares CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # --- llama.cpp'yi Alt Dizin Olarak Ekle ---
-set(LLAMA_STATIC ON)
+set(LLAMA_STATIC OFF) # Paylaşılan kütüphane oluşturduğumuz için OFF olmalı
 set(LLAMA_BUILD_TESTS OFF)
 set(LLAMA_BUILD_EXAMPLES OFF)
 add_subdirectory(llama.cpp)
@@ -59,6 +61,7 @@ add_executable(llm_service
     src/llm_engine.cpp
     src/grpc_server.cpp
     src/http_server.cpp
+    src/model_manager.cpp # EKLENDİ
 )
 target_include_directories(llm_service PRIVATE src)
 target_link_libraries(llm_service PRIVATE
@@ -69,7 +72,6 @@ target_link_libraries(llm_service PRIVATE
 # --- CLI Aracı Hedefi ---
 add_executable(llm_cli
     src/cli/main.cpp
-    # KRİTİK DÜZELTME: Sadece .cpp dosyaları listelenir.
     src/cli/cli_client.cpp
     src/cli/grpc_client.cpp
     src/cli/http_client.cpp
