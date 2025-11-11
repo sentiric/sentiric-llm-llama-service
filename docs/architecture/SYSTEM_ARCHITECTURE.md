@@ -1,81 +1,70 @@
-# 🏗️ Teknik Mimari
+# 🏗️ Sistem Mimarisi
 
-## 1. Katmanlı Bağımlılık Mimarisi
+## 1. Sistem Diyagramı
 
-Sistem, derleme sürelerini optimize etmek ve bağımlılıkları modülerleştirmek için katmanlı bir Docker imaj yapısı kullanır.
+Servis, gelen istemci isteklerini işleyen, bir model motoru aracılığıyla token üreten ve bu token'ları stream eden bir yapıdır. Eşzamanlılık, bir `LlamaContextPool` tarafından yönetilir.
 
-```
-┌───────────────────────────┐
-│ ghcr.io/sentiric/vcpkg-base │ (Build Tools, vcpkg)
-└─────────────┬─────────────┘
-              │
-┌─────────────▼─────────────┐
-│ ghcr.io/sentiric/llama-cpp  │ (libllama.so, Headers)
-└─────────────┬─────────────┘
-              │
-┌─────────────▼─────────────┐
-│ sentiric-llm-llama-service  │ (Application Logic)
-└───────────────────────────┘
-```
+```mermaid
+graph TD
+    subgraph Clients
+        A[llm_cli]
+        B[Python Client]
+        C[...]
+    end
 
-## 2. Sistem Diagramı
+    subgraph LLM Service Container
+        direction LR
+        subgraph "API Endpoints"
+            gRPC_Server[gRPC Server]
+            HTTP_Server[HTTP Server]
+        end
 
-Servis, bir model motoru ve iki sunucu arayüzünden oluşur. Eşzamanlı istekler, bir `LlamaContextPool` tarafından yönetilir.
+        LLM_Engine[LLM Engine]
+        
+        subgraph "Concurrency Management"
+            LlamaContextPool(Llama Context Pool)
+        end
 
-```
-                                    ┌──────────────────┐
-                                ┌───►   gRPC Request   │
-                                │   └──────────────────┘
-   ┌─────────────┐    gRPC/HTTP   │   ┌──────────────────┐
-   │   Clients   │◄──────────────┼───►   gRPC Request   │
-   │ (llm_cli)   │              │   └──────────────────┘
-   └─────────────┘              │   ┌──────────────────┐
-                                └───►   gRPC Request   │
-                                    └──────────────────┘
-                                              │
-                                     ┌────────▼─────────┐
-                                     │  LLM Service     │
-                                     │ ┌──────────────┐ │
-                                     │ │  gRPC Server │ │
-                                     │ ├──────────────┤ │
-                                     │ │  HTTP Server │ │
-                                     │ ├──────────────┤ │
-                                     │ │  LLM Engine  │ │
-                                     │ └──────┬───────┘ │
-                                     └────────┼─────────┘
-                                              │
-                                     ┌────────▼─────────┐
-                                     │ LlamaContextPool │
-                                     │ ┌──────────────┐ │
-                                     │ │ llama_context│ │
-                                     │ │ llama_context│ │
-                                     │ │ ... (N adet) │ │
-                                     │ └──────────────┘ │
-                                     └────────┬─────────┘
-                                       ┌──────▼──────┐
-                                       │ libllama.so │ (Shared Library)
-                                       └──────┬──────┘
-                                       ┌──────▼──────┐
-                                       │  Phi-3 Model  │
-                                       └─────────────┘
+        gRPC_Server --> LLM_Engine
+        HTTP_Server --> LLM_Engine
+        LLM_Engine --> LlamaContextPool
+    end
+
+    subgraph "llama.cpp Backend"
+        libllama[libllama.so + deps]
+        ModelFile[(Phi-3 GGUF Model)]
+    end
+    
+    Clients -- gRPC / HTTP --> LLM Service Container
+    LlamaContextPool -- "Acquires/Releases" --> libllama
+    libllama -- "Loads/Interacts" --> ModelFile
+
+    classDef client fill:#d4edda,stroke:#155724
+    classDef service fill:#cce5ff,stroke:#004085
+    classDef backend fill:#f8d7da,stroke:#721c24
+    
+    class A,B,C client
+    class gRPC_Server,HTTP_Server,LLM_Engine,LlamaContextPool service
+    class libllama,ModelFile backend
 ```
 
-## 3. Eşzamanlılık Modeli (Concurrency)
+## 2. Eşzamanlılık Modeli (Concurrency)
 
-Önceki mimarideki global `std::mutex` darboğazı giderilmiştir. Yeni mimari, bir **context havuzu (`LlamaContextPool`)** kullanır:
+Mimari, bir **context havuzu (`LlamaContextPool`)** kullanarak gerçek eşzamanlılık sağlar:
 
--   Servis başladığında, `n_threads` sayısı kadar `llama_context` oluşturulur ve havuza eklenir.
+-   Servis başladığında, `LLM_THREADS` sayısı kadar `llama_context` oluşturulur ve havuza eklenir.
 -   Her gelen gRPC isteği, havuzdan boşta bir `llama_context` talep eder.
 -   İstek, bu context'i kullanarak token üretme işlemini gerçekleştirir. Bu sırada diğer istekler, havuzdaki diğer boş context'leri kullanarak paralel olarak işlenebilir.
--   İşlem bittiğinde, context temizlenir (KV cache sıfırlanır) ve tekrar havuza bırakılır.
+-   İşlem bittiğinde, context'in KV cache'i `llama_memory_seq_rm` ile temizlenir ve tekrar havuza bırakılır. Bu, bir sonraki isteğin temiz bir state ile başlamasını garanti eder.
 
-Bu yapı, servisin CPU kaynaklarını tam olarak kullanarak **gerçek eşzamanlılık** sağlar.
+## 3. Build ve Bağımlılık Mimarisi
 
-## 4. Build Süreci
+Sistem, bağımlılıkları derleme anında çözümleyen, taşınabilir ve kendi kendine yeten (self-contained) bir Docker imaj yapısı kullanır.
 
--   **CMake:** `find_package` kullanarak bağımlılıkları (gRPC, llama, spdlog vb.) modern ve taşınabilir bir şekilde bulur.
--   **FetchContent:** `sentiric-contracts` reposunu derleme anında çeker ve proto dosyalarını işler.
--   **Dockerfile:** Multi-stage build kullanır. `builder` aşamasında tüm derlemeler yapılır. `runtime` aşamasına ise sadece çalıştırılabilir dosyalar ve gerekli paylaşılan kütüphaneler (`libllama.so`, `libgomp1.so`) kopyalanır.
+1.  **vcpkg Kurulumu:** `vcpkg` paket yöneticisi, `vcpkg.json` dosyasında belirtilen C++ kütüphanelerini (`gRPC`, `spdlog` vb.) derler.
+2.  **`llama.cpp` Klonlama:** `ggerganov/llama.cpp` reposunun en güncel `master` branch'i, derleme ortamına klonlanır.
+3.  **Uygulama Derlemesi:** Projenin ana kodu, `vcpkg` ve anlık derlenen `llama.cpp` kütüphanelerine karşı derlenir.
+4.  **Runtime İmajı:** Minimal bir Ubuntu imajı üzerine sadece çalıştırılabilir dosyalar ve `llama.cpp`'nin gerektirdiği paylaşılan kütüphaneler (`*.so`) kopyalanır ve `ldconfig` ile linklenir.
 
 
 ---
