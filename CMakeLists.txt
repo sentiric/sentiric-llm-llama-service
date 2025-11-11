@@ -1,6 +1,7 @@
 # CMakeLists.txt
 cmake_minimum_required(VERSION 3.20)
 
+# Proje tanımını CUDA'nın varlığına göre koşullu yap
 if(DEFINED GGML_CUDA AND GGML_CUDA)
     project(llm-llama-service CXX CUDA)
 else()
@@ -24,7 +25,7 @@ if(GGML_CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
 
-# --- Alt Projeleri Ekle ---
+# --- Alt Projeleri ve Kod Üretimini Yapılandır ---
 add_subdirectory(llama.cpp)
 include(FetchContent)
 FetchContent_Declare(
@@ -34,19 +35,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
-# --- Protobuf Kod Üretimi (En Temel ve Güvenilir Yöntem) ---
+# --- Protobuf Kod Üretimi ---
 set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
-# Üretilecek dosyaların tam yollarını değişkenlere ata
-set(PROTO_SRCS "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc")
-set(PROTO_HDRS "${GENERATED_DIR}/sentiric/llm/v1/local.pb.h")
-set(GRPC_SRCS "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc")
-set(GRPC_HDRS "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.h")
-
-# Bu komut, belirtilen dosyalar istendiğinde protoc'u çalıştırır.
 add_custom_command(
-    OUTPUT ${PROTO_SRCS} ${PROTO_HDRS} ${GRPC_SRCS} ${GRPC_HDRS}
+    OUTPUT
+        "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
+        "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
+        "${GENERATED_DIR}/sentiric/llm/v1/local.pb.h"
+        "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.h"
     COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_DIR}
     COMMAND $<TARGET_FILE:protobuf::protoc>
         --proto_path=${sentiric_contracts_SOURCE_DIR}/proto
@@ -58,16 +56,15 @@ add_custom_command(
     COMMENT "Generating Protobuf and gRPC C++ sources"
 )
 
-# Üretilen kaynak dosyalarını kullanarak kütüphaneyi oluştur
 add_library(proto_lib STATIC
-    ${PROTO_SRCS}
-    ${GRPC_SRCS}
+    ${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc
+    ${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc
 )
 target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
 target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
 
-# --- Ana Servis Hedefi ---
+# --- Hedefleri Tanımla ve Linkle ---
 add_executable(llm_service
     src/main.cpp
     src/llm_engine.cpp
@@ -84,8 +81,6 @@ if(GGML_CUDA)
     target_link_libraries(llm_service PRIVATE CUDA::cudart)
 endif()
 
-
-# --- CLI Aracı Hedefi ---
 add_executable(llm_cli
     src/cli/main.cpp
     src/cli/cli_client.cpp
