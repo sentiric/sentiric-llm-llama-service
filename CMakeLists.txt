@@ -1,7 +1,12 @@
 # CMakeLists.txt
 cmake_minimum_required(VERSION 3.20)
-# DÜZELTME: Projeye CUDA dilini ekle
-project(llm-llama-service CXX CUDA)
+
+# DÜZELTME: Proje tanımını koşullu yap
+if(DEFINED GGML_CUDA AND GGML_CUDA)
+    project(llm-llama-service CXX CUDA)
+else()
+    project(llm-llama-service CXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,8 +21,7 @@ find_package(httplib CONFIG REQUIRED)
 find_package(c-ares CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
-# DÜZELTME: CUDA Toolkit'i projenin en başında bul.
-# Bu, GGML_CUDA aktif olduğunda CUDA::* hedeflerini global olarak tanımlar.
+# DÜZELTME: CUDA Toolkit'i sadece gerektiğinde ve en başta bul
 if(GGML_CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
@@ -56,7 +60,7 @@ add_library(proto_lib STATIC
 )
 target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
-# --- Ana Servis Hedefi ---
+# --- Hedefleri Tanımla ---
 add_executable(llm_service
     src/main.cpp
     src/llm_engine.cpp
@@ -65,16 +69,7 @@ add_executable(llm_service
     src/model_manager.cpp
 )
 target_include_directories(llm_service PRIVATE src)
-target_link_libraries(llm_service PRIVATE
-    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
-    httplib::httplib gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
-)
-if(GGML_CUDA)
-    target_link_libraries(llm_service PRIVATE CUDA::cudart)
-endif()
 
-
-# --- CLI Aracı Hedefi ---
 add_executable(llm_cli
     src/cli/main.cpp
     src/cli/cli_client.cpp
@@ -84,10 +79,21 @@ add_executable(llm_cli
     src/cli/benchmark.cpp
 )
 target_include_directories(llm_cli PRIVATE src)
+
+# --- Merkezi Linkleme Bloğu ---
+target_link_libraries(llm_service PRIVATE
+    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
+    httplib::httplib gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
+)
+
 target_link_libraries(llm_cli PRIVATE
     proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
     gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
 )
+
+# Koşullu olarak CUDA kütüphanelerini linkle
 if(GGML_CUDA)
+    message(STATUS "CUDA backend enabled, linking CUDA libraries to targets.")
+    target_link_libraries(llm_service PRIVATE CUDA::cudart)
     target_link_libraries(llm_cli PRIVATE CUDA::cudart)
 endif()
