@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic")
 
-# --- vcpkg ve Diğer Bağımlılıkları Bul ---
+# --- Bağımlılıkları Bul ---
 find_package(gRPC CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
@@ -24,9 +24,8 @@ if(GGML_CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
 
-# --- Alt Projeleri ve Kod Üretimini Yapılandır ---
+# --- Alt Projeleri Ekle ---
 add_subdirectory(llama.cpp)
-
 include(FetchContent)
 FetchContent_Declare(
   sentiric_contracts
@@ -35,14 +34,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
+# --- Kod Üretimi ---
 set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
-add_custom_command(
-    OUTPUT
-        "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
-        "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
-        "${GENERATED_DIR}/sentiric/llm/v1/local.pb.h"
-        "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.h"
+
+# protoc komutu için özel bir hedef oluştur
+add_custom_target(generate_protobuf ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_DIR}
     COMMAND $<TARGET_FILE:protobuf::protoc>
         --proto_path=${sentiric_contracts_SOURCE_DIR}/proto
@@ -52,15 +49,13 @@ add_custom_command(
         ${PROTO_FILES}
     DEPENDS ${PROTO_FILES}
 )
+
+# --- Kütüphane ve Executable Hedeflerini Tanımla ---
 add_library(proto_lib STATIC
     "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
     "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
 )
-# DÜZELTME: Kütüphanenin kendi header'larını bulabilmesi için include path'i hemen burada tanımlanmalı.
-target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
-target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
-# --- Ana Servis Hedefi ---
 add_executable(llm_service
     src/main.cpp
     src/llm_engine.cpp
@@ -68,17 +63,7 @@ add_executable(llm_service
     src/http_server.cpp
     src/model_manager.cpp
 )
-target_include_directories(llm_service PRIVATE src)
-target_link_libraries(llm_service PRIVATE
-    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
-    httplib::httplib gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
-)
-if(GGML_CUDA)
-    target_link_libraries(llm_service PRIVATE CUDA::cudart)
-endif()
 
-
-# --- CLI Aracı Hedefi ---
 add_executable(llm_cli
     src/cli/main.cpp
     src/cli/cli_client.cpp
@@ -87,11 +72,31 @@ add_executable(llm_cli
     src/cli/health_check.cpp
     src/cli/benchmark.cpp
 )
+
+# --- Derleme Bağımlılıkları ve Include Yollarını Ayarla ---
+# proto_lib'in derlenmesi için generate_protobuf hedefinin bitmesini bekle
+add_dependencies(proto_lib generate_protobuf)
+
+# proto_lib'in kendi header'larını bulabilmesi için include yolunu ekle
+target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
+target_include_directories(llm_service PRIVATE src)
 target_include_directories(llm_cli PRIVATE src)
-target_link_libraries(llm_cli PRIVATE
-    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
-    gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
+
+# --- Merkezi Linkleme Bloğu ---
+target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
+
+target_link_libraries(llm_service PRIVATE
+    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
+    httplib::httplib c-ares::cares Threads::Threads
 )
+
+target_link_libraries(llm_cli PRIVATE
+    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
+    httplib::httplib c-ares::cares Threads::Threads
+)
+
 if(GGML_CUDA)
+    message(STATUS "CUDA backend enabled, linking CUDA libraries to targets.")
+    target_link_libraries(llm_service PRIVATE CUDA::cudart)
     target_link_libraries(llm_cli PRIVATE CUDA::cudart)
 endif()
