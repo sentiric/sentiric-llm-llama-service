@@ -1,7 +1,8 @@
 # CMakeLists.txt
 cmake_minimum_required(VERSION 3.20)
 
-# DÜZELTME: Proje tanımını koşullu yap
+# DÜZELTME: Proje tanımını CUDA'nın varlığına göre koşullu yap.
+# Bu, CPU imajının nvcc'yi aramasını engeller.
 if(DEFINED GGML_CUDA AND GGML_CUDA)
     project(llm-llama-service CXX CUDA)
 else()
@@ -21,7 +22,7 @@ find_package(httplib CONFIG REQUIRED)
 find_package(c-ares CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
-# DÜZELTME: CUDA Toolkit'i sadece gerektiğinde ve en başta bul
+# DÜZELTME: CUDA Toolkit'i sadece gerektiğinde ve en başta bul.
 if(GGML_CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
@@ -60,7 +61,7 @@ add_library(proto_lib STATIC
 )
 target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
-# --- Hedefleri Tanımla ---
+# --- Ana Servis Hedefi ---
 add_executable(llm_service
     src/main.cpp
     src/llm_engine.cpp
@@ -69,7 +70,16 @@ add_executable(llm_service
     src/model_manager.cpp
 )
 target_include_directories(llm_service PRIVATE src)
+target_link_libraries(llm_service PRIVATE
+    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
+    httplib::httplib gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
+)
+if(GGML_CUDA)
+    target_link_libraries(llm_service PRIVATE CUDA::cudart)
+endif()
 
+
+# --- CLI Aracı Hedefi ---
 add_executable(llm_cli
     src/cli/main.cpp
     src/cli/cli_client.cpp
@@ -79,21 +89,10 @@ add_executable(llm_cli
     src/cli/benchmark.cpp
 )
 target_include_directories(llm_cli PRIVATE src)
-
-# --- Merkezi Linkleme Bloğu ---
-target_link_libraries(llm_service PRIVATE
-    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
-    httplib::httplib gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
-)
-
 target_link_libraries(llm_cli PRIVATE
     proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json httplib::httplib
     gRPC::grpc++ protobuf::libprotobuf c-ares::cares Threads::Threads
 )
-
-# Koşullu olarak CUDA kütüphanelerini linkle
 if(GGML_CUDA)
-    message(STATUS "CUDA backend enabled, linking CUDA libraries to targets.")
-    target_link_libraries(llm_service PRIVATE CUDA::cudart)
     target_link_libraries(llm_cli PRIVATE CUDA::cudart)
 endif()
