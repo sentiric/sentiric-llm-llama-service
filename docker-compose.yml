@@ -1,8 +1,7 @@
 # docker-compose.yml
-# ÜRETİM dosyası. Önceden oluşturulmuş imajı çeker.
+# Üretim ve geliştirme için temel yapılandırma dosyası.
 services:
   llm-llama-service:
-    # 'build' direktifi kaldırıldı.
     image: ghcr.io/sentiric/sentiric-llm-llama-service:latest
     container_name: llm-llama-service
     ports:
@@ -11,15 +10,31 @@ services:
     volumes:
       - ./models:/models
     environment:
+      # --- Network Ayarları ---
       - LLM_LLAMA_SERVICE_IPV4_ADDRESS=0.0.0.0
       - LLM_LLAMA_SERVICE_HTTP_PORT=${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}
       - LLM_LLAMA_SERVICE_GRPC_PORT=${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}
+      
+      # --- Model Yönetimi ---
       - LLM_LLAMA_SERVICE_MODEL_DIR=/models
-      - LLM_LLAMA_SERVICE_MODEL_ID=microsoft/Phi-3-mini-4k-instruct-gguf
-      - LLM_LLAMA_SERVICE_MODEL_FILENAME=Phi-3-mini-4k-instruct-q4.gguf
+      - LLM_LLAMA_SERVICE_MODEL_ID=${LLM_LLAMA_SERVICE_MODEL_ID:-microsoft/Phi-3-mini-4k-instruct-gguf}
+      - LLM_LLAMA_SERVICE_MODEL_FILENAME=${LLM_LLAMA_SERVICE_MODEL_FILENAME:-Phi-3-mini-4k-instruct-q4.gguf}
+      # Eski MODEL_PATH değişkeni de ayarlanabilir, ancak ID/Filename önceliklidir.
+      # - LLM_LLAMA_SERVICE_MODEL_PATH=/models/my-custom-model.gguf
+
+      # --- Motor ve Log Ayarları ---
+      - LLM_LLAMA_SERVICE_GPU_LAYERS=${LLM_LLAMA_SERVICE_GPU_LAYERS:-0}
       - LLM_LLAMA_SERVICE_CONTEXT_SIZE=${LLM_LLAMA_SERVICE_CONTEXT_SIZE:-4096}
       - LLM_LLAMA_SERVICE_THREADS=${LLM_LLAMA_SERVICE_THREADS:-4}
       - LLM_LLAMA_SERVICE_LOG_LEVEL=${LLM_LLAMA_SERVICE_LOG_LEVEL:-info}
+
+      # --- Varsayılan Sampling Parametreleri ---
+      - LLM_LLAMA_SERVICE_DEFAULT_MAX_TOKENS=${LLM_LLAMA_SERVICE_DEFAULT_MAX_TOKENS:-1024}
+      - LLM_LLAMA_SERVICE_DEFAULT_TEMPERATURE=${LLM_LLAMA_SERVICE_DEFAULT_TEMPERATURE:-0.8}
+      - LLM_LLAMA_SERVICE_DEFAULT_TOP_K=${LLM_LLAMA_SERVICE_DEFAULT_TOP_K:-40}
+      - LLM_LLAMA_SERVICE_DEFAULT_TOP_P=${LLM_LLAMA_SERVICE_DEFAULT_TOP_P:-0.95}
+      - LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY=${LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY:-1.1}
+      
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}/health"]

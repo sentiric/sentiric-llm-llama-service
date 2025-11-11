@@ -51,15 +51,30 @@ docker compose up --build -d
 
 Servisi yapılandırmak için aşağıdaki ortam değişkenlerini kullanın. Tüm değişkenler `LLM_LLAMA_SERVICE_` öneki ile başlar.
 
-| Değişken                          | Açıklama                                                                | Varsayılan Değer              |
-| --------------------------------- | ----------------------------------------------------------------------- | ----------------------------- |
-| `LLM_LLAMA_SERVICE_IPV4_ADDRESS`  | Servisin dinleyeceği IP adresi. `0.0.0.0` tüm arayüzleri dinler.        | `0.0.0.0`                     |
-| `LLM_LLAMA_SERVICE_HTTP_PORT`     | HTTP health check sunucusunun portu.                                    | `16070`                       |
-| `LLM_LLAMA_SERVICE_GRPC_PORT`     | gRPC sunucusunun portu.                                                 | `16071`                       |
-| `LLM_LLAMA_SERVICE_MODEL_PATH`    | Konteyner içindeki GGUF model dosyasının tam yolu.                      | `/models/phi-3-mini.q4.gguf`  |
-| `LLM_LLAMA_SERVICE_CONTEXT_SIZE`  | Modelin maksimum context penceresi.                                     | `4096`                        |
-| `LLM_LLAMA_SERVICE_THREADS`       | Token üretimi için kullanılacak CPU thread sayısı.                      | (Donanımın yarısı, max 8)     |
-| `LLM_LLAMA_SERVICE_LOG_LEVEL`     | Log seviyesi (`trace`, `debug`, `info`, `warn`, `error`, `critical`). | `info`                        |
+| Değişken                                   | Açıklama                                                                          | Varsayılan Değer                  |
+| ------------------------------------------ | --------------------------------------------------------------------------------- | --------------------------------- |
+| **Network**                                |                                                                                   |                                   |
+| `LLM_LLAMA_SERVICE_IPV4_ADDRESS`           | Servisin dinleyeceği IP adresi. `0.0.0.0` tüm arayüzleri dinler.                  | `0.0.0.0`                         |
+| `LLM_LLAMA_SERVICE_HTTP_PORT`              | HTTP health check sunucusunun portu.                                              | `16070`                           |
+| `LLM_LLAMA_SERVICE_GRPC_PORT`              | gRPC sunucusunun portu.                                                           | `16071`                           |
+| **Model Management**                       |                                                                                   |                                   |
+| `LLM_LLAMA_SERVICE_MODEL_DIR`              | Modellerin indirileceği ve saklanacağı konteyner içindeki dizin.                  | `/models`                         |
+| `LLM_LLAMA_SERVICE_MODEL_ID`               | Hugging Face repo ID'si (ör: `microsoft/Phi-3-mini-4k-instruct-gguf`).          | `microsoft/Phi-3-mini-4k-instruct-gguf` |
+| `LLM_LLAMA_SERVICE_MODEL_FILENAME`         | İndirilecek GGUF dosyasının tam adı.                                              | `Phi-3-mini-4k-instruct-q4.gguf`  |
+| `LLM_LLAMA_SERVICE_MODEL_PATH`             | *[Legacy]* `MODEL_ID` belirtilmezse kullanılacak modelin tam yolu.                  | `""`                              |
+| **Engine & Performance**                   |                                                                                   |                                   |
+| `LLM_LLAMA_SERVICE_GPU_LAYERS`             | GPU'ya yüklenecek model katmanı sayısı. `-1` tüm katmanları yükler.               | `0`                               |
+| `LLM_LLAMA_SERVICE_CONTEXT_SIZE`           | Modelin maksimum context penceresi.                                               | `4096`                            |
+| `LLM_LLAMA_SERVICE_THREADS`                | Token üretimi için kullanılacak CPU thread sayısı.                                | (Donanımın yarısı, max 8)         |
+| **Logging**                                |                                                                                   |                                   |
+| `LLM_LLAMA_SERVICE_LOG_LEVEL`              | Log seviyesi (`trace`, `debug`, `info`, `warn`, `error`, `critical`).           | `info`                            |
+| **Default Sampling**                       | *gRPC isteğinde belirtilmezse kullanılacak varsayılan değerler.*                    |                                   |
+| `LLM_LLAMA_SERVICE_DEFAULT_MAX_TOKENS`     | Varsayılan maksimum üretilecek token sayısı.                                      | `1024`                            |
+| `LLM_LLAMA_SERVICE_DEFAULT_TEMPERATURE`    | Varsayılan sampling sıcaklığı. Yaratıcılığı artırır.                               | `0.8`                             |
+| `LLM_LLAMA_SERVICE_DEFAULT_TOP_K`          | Varsayılan Top-K sampling değeri.                                                 | `40`                              |
+| `LLM_LLAMA_SERVICE_DEFAULT_TOP_P`          | Varsayılan Top-P (nucleus) sampling değeri.                                       | `0.95`                            |
+| `LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY` | Varsayılan tekrar cezası. Tekrar eden metinleri engeller.                           | `1.1`                             |
+
 
 **Örnek `docker-compose.yml` Yapılandırması:**
 

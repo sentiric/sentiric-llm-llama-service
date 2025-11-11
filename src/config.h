@@ -1,4 +1,5 @@
 // src/config.h
+// DÜZELTME: Silinmiş olan varsayılan sampling parametreleri geri eklendi.
 #pragma once
 
 #include <string>
@@ -17,10 +18,10 @@ struct Settings {
 
     // Model & Engine Settings
     std::string model_dir = "/models";
-    std::string model_id = ""; // Varsayılanı boş bırak, compose'dan gelsin
-    std::string model_filename = ""; // Varsayılanı boş bırak, compose'dan gelsin
-    std::string model_path = ""; // ModelManager tarafından doldurulacak olan nihai yol.
-    std::string legacy_model_path = ""; // Eski sistemle uyumluluk için
+    std::string model_id = "";
+    std::string model_filename = "";
+    std::string model_path = "";
+    std::string legacy_model_path = "";
 
     int n_gpu_layers = 0;
     int context_size = 4096;
@@ -28,6 +29,13 @@ struct Settings {
     
     // Logging Settings
     std::string log_level = "info";
+
+    // YENİDEN EKLENDİ: Default Sampling Parameters
+    float default_temperature = 0.8f;
+    int32_t default_top_k = 40;
+    float default_top_p = 0.95f;
+    float default_repeat_penalty = 1.1f;
+    int32_t default_max_tokens = 1024;
 };
 
 inline Settings load_settings() {
@@ -46,6 +54,16 @@ inline Settings load_settings() {
             return default_val;
         }
     };
+    auto get_env_var_as_float = [&](const char* name, float default_val) -> float {
+        const char* val_str = std::getenv(name);
+        if (val_str == nullptr) return default_val;
+        try {
+            return std::stof(val_str);
+        } catch (const std::exception& e) {
+            spdlog::error("Invalid float for env var '{}': {}. Using default {}.", name, e.what(), default_val);
+            return default_val;
+        }
+    };
     
     s.host = get_env_var("LLM_LLAMA_SERVICE_IPV4_ADDRESS", s.host);
     s.http_port = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_PORT", s.http_port);
@@ -60,12 +78,17 @@ inline Settings load_settings() {
     s.context_size = get_env_var_as_int("LLM_LLAMA_SERVICE_CONTEXT_SIZE", s.context_size);
     s.n_threads = get_env_var_as_int("LLM_LLAMA_SERVICE_THREADS", s.n_threads);
     s.log_level = get_env_var("LLM_LLAMA_SERVICE_LOG_LEVEL", s.log_level);
-    
-    // Geriye dönük uyumluluk: Eğer yeni MODEL_ID boşsa ama eski MODEL_PATH doluysa, ID ve filename'i ayıkla.
+
+    // YENİDEN EKLENDİ: Varsayılan sampling parametrelerini ortam değişkenlerinden oku
+    s.default_max_tokens = get_env_var_as_int("LLM_LLAMA_SERVICE_DEFAULT_MAX_TOKENS", s.default_max_tokens);
+    s.default_temperature = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_TEMPERATURE", s.default_temperature);
+    s.default_top_k = get_env_var_as_int("LLM_LLAMA_SERVICE_DEFAULT_TOP_K", s.default_top_k);
+    s.default_top_p = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_TOP_P", s.default_top_p);
+    s.default_repeat_penalty = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY", s.default_repeat_penalty);
+
     if (s.model_id.empty() && !s.legacy_model_path.empty()) {
         spdlog::warn("Using legacy LLM_LLAMA_SERVICE_MODEL_PATH. It's recommended to set MODEL_ID and MODEL_FILENAME instead.");
         std::filesystem::path p(s.legacy_model_path);
-        // model_id'yi boş bırakarak model_manager'ın legacy yolu kullanmasını sağlıyoruz.
         s.model_filename = p.filename().string();
     }
 
