@@ -81,6 +81,7 @@ add_executable(llm_service
     src/http_server.cpp
     src/model_manager.cpp
 )
+add_dependencies(llm_service proto_lib)
 target_include_directories(llm_service PRIVATE src)
 target_link_libraries(llm_service PRIVATE
     proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
