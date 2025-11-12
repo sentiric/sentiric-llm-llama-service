@@ -39,12 +39,19 @@ FetchContent_MakeAvailable(sentiric_contracts)
 set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
+set(PROTO_GENERATED_SRCS
+    "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
+    "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
+)
+set(PROTO_GENERATED_HDRS
+    "${GENERATED_DIR}/sentiric/llm/v1/local.pb.h"
+    "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.h"
+)
+
 add_custom_command(
     OUTPUT
-        "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
-        "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
-        "${GENERATED_DIR}/sentiric/llm/v1/local.pb.h"
-        "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.h"
+        ${PROTO_GENERATED_SRCS}
+        ${PROTO_GENERATED_HDRS}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_DIR}
     COMMAND $<TARGET_FILE:protobuf::protoc>
         --proto_path=${sentiric_contracts_SOURCE_DIR}/proto
@@ -57,9 +64,11 @@ add_custom_command(
 )
 
 add_library(proto_lib STATIC
-    ${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc
-    ${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc
+    ${PROTO_GENERATED_SRCS}
+    ${PROTO_GENERATED_HDRS}
 )
+set_source_files_properties(${PROTO_GENERATED_SRCS} ${PROTO_GENERATED_HDRS} PROPERTIES GENERATED TRUE)
+
 target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
 target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
