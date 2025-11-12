@@ -78,7 +78,7 @@ target_link_libraries(llm_service PRIVATE
     httplib::httplib c-ares::cares Threads::Threads
 )
 if(GGML_CUDA)
-    target_link_libraries(llm_service PRIVATE CUDA::cudart)
+    target_link_libraries(llm_service PRIVATE CUDA::cudart CUDA::cuda_driver)
 endif()
 
 add_executable(llm_cli
@@ -95,5 +95,5 @@ target_link_libraries(llm_cli PRIVATE
     httplib::httplib c-ares::cares Threads::Threads
 )
 if(GGML_CUDA)
-    target_link_libraries(llm_cli PRIVATE CUDA::cudart)
+    target_link_libraries(llm_cli PRIVATE CUDA::cudart CUDA::cuda_driver)
 endif()
