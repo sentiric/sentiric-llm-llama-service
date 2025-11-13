@@ -26,10 +26,12 @@ endif()
 # llama.cpp'yi bir alt dizin olarak ekle
 add_subdirectory(llama.cpp)
 
-# --- KRİTİK DÜZELTME BAŞLANGICI ---
 # llama.cpp'nin başlık dosyası dizinlerini al. 
-# Bu, CMake'in sistemdeki başka bir llama.h'yi bulmasını engeller.
 get_target_property(LLAMA_INCLUDE_DIRS llama INTERFACE_INCLUDE_DIRECTORIES)
+
+# --- KRİTİK DÜZELTME BAŞLANGICI ---
+# FetchContent modülünü dahil et. Bu satır eksikti.
+include(FetchContent)
 # --- KRİTİK DÜZELTME SONU ---
 
 FetchContent_Declare(
@@ -84,13 +86,10 @@ add_executable(llm_service
 )
 add_dependencies(llm_service proto_lib)
 
-# --- KRİTİK DÜZELTME BAŞLANGICI ---
-# Include dizinlerini açıkça belirt
 target_include_directories(llm_service PRIVATE 
     src
     ${LLAMA_INCLUDE_DIRS}
 )
-# --- KRİTİK DÜZELTME SONU ---
 
 target_link_libraries(llm_service PRIVATE
     proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
@@ -110,13 +109,10 @@ add_executable(llm_cli
 )
 add_dependencies(llm_cli proto_lib)
 
-# --- KRİTİK DÜZELTME BAŞLANGICI ---
-# Include dizinlerini açıkça belirt
 target_include_directories(llm_cli PRIVATE 
     src
     ${LLAMA_INCLUDE_DIRS}
 )
-# --- KRİTİK DÜZELTME SONU ---
 
 target_link_libraries(llm_cli PRIVATE
     proto_lib 
