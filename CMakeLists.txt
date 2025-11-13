@@ -35,6 +35,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
+# NİHAİ DÜZELTME: llama.cpp'nin başlık dosyalarını global olarak ekle.
+# Bu komut, bu noktadan sonra tanımlanan TÜM hedeflerin bu yolları görmesini sağlar.
+include_directories(
+    llama.cpp
+    llama.cpp/include
+)
+
 # --- Protobuf Kod Üretimi ---
 set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -82,14 +89,11 @@ add_executable(llm_service
     src/model_manager.cpp
 )
 add_dependencies(llm_service proto_lib)
-# NİHAİ DÜZELTME: llama.cpp başlık dosyalarını açıkça dahil et
-target_include_directories(llm_service PRIVATE 
-    src
-    llama.cpp
-    llama.cpp/include
-)
+target_include_directories(llm_service PRIVATE src)
 target_link_libraries(llm_service PRIVATE
-    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
+    proto_lib 
+    llama 
+    spdlog::spdlog nlohmann_json::nlohmann_json
     httplib::httplib c-ares::cares Threads::Threads
 )
 if(GGML_CUDA)
@@ -105,14 +109,11 @@ add_executable(llm_cli
     src/cli/benchmark.cpp
 )
 add_dependencies(llm_cli proto_lib)
-# NİHAİ DÜZELTME: llama.cpp başlık dosyalarını açıkça dahil et
-target_include_directories(llm_cli PRIVATE 
-    src
-    llama.cpp
-    llama.cpp/include
-)
+target_include_directories(llm_cli PRIVATE src)
 target_link_libraries(llm_cli PRIVATE
-    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
+    proto_lib 
+    llama 
+    spdlog::spdlog nlohmann_json::nlohmann_json
     httplib::httplib c-ares::cares Threads::Threads
 )
 if(GGML_CUDA)
