@@ -3,7 +3,6 @@
 #include "fmt/format.h"
 #include <grpcpp/grpcpp.h>
 #include <string_view>
-// EKLENDİ: Güvenli istemci kimlik bilgileri için gerekli başlıklar
 #include <grpcpp/security/credentials.h>
 #include <fstream>
 #include <sstream>
@@ -36,12 +35,13 @@ struct fmt::formatter<grpc::StatusCode> {
             case grpc::StatusCode::INTERNAL: name = "INTERNAL"; break;
             case grpc::StatusCode::UNAVAILABLE: name = "UNAVAILABLE"; break;
             case grpc::StatusCode::DATA_LOSS: name = "DATA_LOSS"; break;
+            // EKLENDİ: Uyarıyı gidermek için default case
+            default: break;
         }
         return fmt::format_to(ctx.out(), "{} ({})", name, static_cast<int>(code));
     }
 };
 
-// EKLENDİ: Sertifika dosyalarını okumak için yardımcı fonksiyon
 std::string read_file_client(const std::string& filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
@@ -72,12 +72,9 @@ bool GRPCClient::generate_stream(const std::string& prompt,
                                 int max_tokens) {
 
     if (!stub_) {
-        // DEĞİŞTİRİLDİ: InsecureChannelCredentials yerine SslCredentials (mTLS) kullanılıyor.
         std::shared_ptr<grpc::ChannelCredentials> creds;
         try {
             const char* ca_path = std::getenv("GRPC_TLS_CA_PATH");
-            // NOT: CLI, sunucu ile aynı sertifikayı kullanabilir çünkü her ikisi de client ve server rollerini üstlenebilir.
-            // Üretimde, CLI için ayrı bir 'client' sertifikası oluşturulması daha güvenlidir.
             const char* cert_path = std::getenv("LLM_LLAMA_SERVICE_CERT_PATH");
             const char* key_path = std::getenv("LLM_LLAMA_SERVICE_KEY_PATH");
 
@@ -102,7 +99,6 @@ bool GRPCClient::generate_stream(const std::string& prompt,
             creds = grpc::InsecureChannelCredentials();
         }
         channel_ = grpc::CreateChannel(endpoint_, creds);
-        // --- Değişiklik sonu ---
         stub_ = sentiric::llm::v1::LLMLocalService::NewStub(channel_);
     }
 
