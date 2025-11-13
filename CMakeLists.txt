@@ -84,7 +84,7 @@ add_executable(llm_service
 add_dependencies(llm_service proto_lib)
 target_include_directories(llm_service PRIVATE 
     src
-    # EKLENDİ: llama.cpp başlık dosyalarını dahil et
+    # EKLENDİ: llama.cpp başlık dosyalarının yollarını ekle
     llama.cpp
     llama.cpp/include
 )
@@ -107,7 +107,7 @@ add_executable(llm_cli
 add_dependencies(llm_cli proto_lib) # CLI için de bağımlılık eklendi
 target_include_directories(llm_cli PRIVATE 
     src
-    # EKLENDİ: llama.cpp başlık dosyalarını dahil et
+    # EKLENDİ: llama.cpp başlık dosyalarının yollarını ekle
     llama.cpp
     llama.cpp/include
 )

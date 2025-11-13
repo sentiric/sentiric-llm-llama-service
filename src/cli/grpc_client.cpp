@@ -7,7 +7,6 @@
 #include <fstream>
 #include <sstream>
 
-// YENİ: spdlog'a grpc::StatusCode'u nasıl formatlayacağını öğreten uzmanlaşma
 template <>
 struct fmt::formatter<grpc::StatusCode> {
     constexpr auto parse(format_parse_context& ctx) {
@@ -35,7 +34,7 @@ struct fmt::formatter<grpc::StatusCode> {
             case grpc::StatusCode::INTERNAL: name = "INTERNAL"; break;
             case grpc::StatusCode::UNAVAILABLE: name = "UNAVAILABLE"; break;
             case grpc::StatusCode::DATA_LOSS: name = "DATA_LOSS"; break;
-            // EKLENDİ: Uyarıyı gidermek için default case
+            // EKLENDİ: Derleyici uyarısını gidermek için default case
             default: break;
         }
         return fmt::format_to(ctx.out(), "{} ({})", name, static_cast<int>(code));
