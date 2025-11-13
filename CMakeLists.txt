@@ -35,13 +35,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
-# NİHAİ DÜZELTME: llama.cpp'nin başlık dosyalarını global olarak ekle.
-# Bu komut, bu noktadan sonra tanımlanan TÜM hedeflerin bu yolları görmesini sağlar.
-include_directories(
-    llama.cpp
-    llama.cpp/include
-)
-
 # --- Protobuf Kod Üretimi ---
 set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -90,6 +83,11 @@ add_executable(llm_service
 )
 add_dependencies(llm_service proto_lib)
 target_include_directories(llm_service PRIVATE src)
+# NİHAİ DÜZELTME: Derleyiciye include yollarını doğrudan -I flag'i ile ver
+target_compile_options(llm_service PRIVATE
+    -I${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp
+    -I${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/include
+)
 target_link_libraries(llm_service PRIVATE
     proto_lib 
     llama 
@@ -110,6 +108,11 @@ add_executable(llm_cli
 )
 add_dependencies(llm_cli proto_lib)
 target_include_directories(llm_cli PRIVATE src)
+# NİHAİ DÜZELTME: Derleyiciye include yollarını doğrudan -I flag'i ile ver
+target_compile_options(llm_cli PRIVATE
+    -I${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp
+    -I${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/include
+)
 target_link_libraries(llm_cli PRIVATE
     proto_lib 
     llama 
