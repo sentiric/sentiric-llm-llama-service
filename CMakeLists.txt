@@ -23,14 +23,9 @@ if(GGML_CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
 
-# --- NİHAİ DÜZELTME BAŞLANGICI ---
-# llama.cpp'yi bir alt dizin olarak ekle ama PUBLIC başlıklarını yaymasını engelle.
 add_subdirectory(llama.cpp EXCLUDE_FROM_ALL)
-
-# Kütüphanenin ve başlık dosyalarının yollarını manuel olarak al.
 set(LLAMA_LIBRARY llama)
 set(LLAMA_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/include)
-# --- NİHAİ DÜZELTME SONU ---
 
 include(FetchContent)
 FetchContent_Declare(
@@ -42,13 +37,17 @@ FetchContent_MakeAvailable(sentiric_contracts)
 
 set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
-# ... (protobuf generation kısmı aynı, burayı değiştirmeyin)
+set(PROTO_GENERATED_SRCS
+    "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
+    "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
+)
+set(PROTO_GENERATED_HDRS
+    "${GENERATED_DIR}/sentiric/llm/v1/local.pb.h"
+    "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.h"
+)
+
 add_custom_command(
-    OUTPUT
-        ${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
-        "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
-        "${GENERATED_DIR}/sentiric/llm/v1/local.pb.h"
-        "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.h"
+    OUTPUT ${PROTO_GENERATED_SRCS} ${PROTO_GENERATED_HDRS}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${GENERATED_DIR}
     COMMAND $<TARGET_FILE:protobuf::protoc>
         --proto_path=${sentiric_contracts_SOURCE_DIR}/proto
@@ -58,16 +57,14 @@ add_custom_command(
         ${PROTO_FILES}
     DEPENDS ${PROTO_FILES}
 )
+
 add_library(proto_lib STATIC
-    "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
-    "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
-    "${GENERATED_DIR}/sentiric/llm/v1/local.pb.h"
-    "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.h"
+    ${PROTO_GENERATED_SRCS}
+    ${PROTO_GENERATED_HDRS}
 )
-set_source_files_properties("${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc" "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc" "${GENERATED_DIR}/sentiric/llm/v1/local.pb.h" "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.h" PROPERTIES GENERATED TRUE)
+set_source_files_properties(${PROTO_GENERATED_SRCS} ${PROTO_GENERATED_HDRS} PROPERTIES GENERATED TRUE)
 target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
 target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
-# ... (protobuf generation kısmı sonu)
 
 add_executable(llm_service
     src/main.cpp
@@ -78,19 +75,16 @@ add_executable(llm_service
 )
 add_dependencies(llm_service proto_lib)
 
-# --- NİHAİ DÜZELTME BAŞLANGICI ---
 target_include_directories(llm_service PRIVATE 
     src
-    ${LLAMA_INCLUDE_DIR}  # Doğru başlık dizinini zorla
+    ${LLAMA_INCLUDE_DIR}
 )
 target_link_libraries(llm_service PRIVATE
     proto_lib 
-    ${LLAMA_LIBRARY}      # Kütüphaneye doğrudan linkle
+    ${LLAMA_LIBRARY}
     spdlog::spdlog nlohmann_json::nlohmann_json
     httplib::httplib c-ares::cares Threads::Threads
 )
-# --- NİHAİ DÜZELTME SONU ---
-
 if(GGML_CUDA)
     target_link_libraries(llm_service PRIVATE CUDA::cudart CUDA::cuda_driver)
 endif()
@@ -105,19 +99,16 @@ add_executable(llm_cli
 )
 add_dependencies(llm_cli proto_lib)
 
-# --- NİHAİ DÜZELTME BAŞLANGICI ---
 target_include_directories(llm_cli PRIVATE 
     src
-    ${LLAMA_INCLUDE_DIR} # Doğru başlık dizinini zorla
+    ${LLAMA_INCLUDE_DIR}
 )
 target_link_libraries(llm_cli PRIVATE
     proto_lib 
-    ${LLAMA_LIBRARY}     # Kütüphaneye doğrudan linkle
+    ${LLAMA_LIBRARY}
     spdlog::spdlog nlohmann_json::nlohmann_json
     httplib::httplib c-ares::cares Threads::Threads
 )
-# --- NİHAİ DÜZELTME SONU ---
-
 if(GGML_CUDA)
     target_link_libraries(llm_cli PRIVATE CUDA::cudart CUDA::cuda_driver)
 endif()

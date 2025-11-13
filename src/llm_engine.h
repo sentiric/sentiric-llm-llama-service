@@ -12,24 +12,9 @@
 #include <condition_variable>
 #include "sentiric/llm/v1/local.pb.h"
 
-class LlamaContextPool {
-public:
-    LlamaContextPool(llama_model* model, const Settings& settings, size_t pool_size);
-    ~LlamaContextPool();
-    llama_context* acquire();
-    void release(llama_context* ctx);
-
-private:
-    llama_model* model_;
-    const Settings& settings_;
-    std::queue<llama_context*> pool_;
-    std::mutex mutex_;
-    std::condition_variable cv_;
-};
-
 class LLMEngine {
 public:
-    explicit LLMEngine(Settings& settings);
+    explicit LLMEngine(const Settings& settings);
     ~LLMEngine();
     LLMEngine(const LLMEngine&) = delete;
     LLMEngine& operator=(const LLMEngine&) = delete;
@@ -44,8 +29,8 @@ public:
 
 private:
     llama_model* model_ = nullptr;
-    // KALDIRILDI: const llama_vocab* vocab_ = nullptr;
+    llama_context* ctx_ = nullptr; // TEK BİR CONTEXT TUTACAĞIZ, HAVUZ ŞİMDİLİK DEVRE DIŞI
     std::atomic<bool> model_loaded_{false};
-    Settings& settings_;
-    std::unique_ptr<LlamaContextPool> context_pool_;
+    const Settings& settings_;
+    std::mutex engine_mutex_; // EŞZAMANLI İSTEKLERİ KİLİTLEMEK İÇİN
 };

@@ -74,6 +74,12 @@ int main() {
     std::thread grpc_thread;
 
     try {
+        // ModelManager çağrısı BURAYA GERİ GELDİ
+        settings.model_path = ModelManager::ensure_model_is_ready(settings);
+
+        spdlog::info("Configuration: host={}, http_port={}, grpc_port={}", settings.host, settings.http_port, settings.grpc_port);
+        spdlog::info("Model configuration: path={}", settings.model_path);
+
         auto engine = std::make_shared<LLMEngine>(settings);
         if (!engine->is_model_loaded()) {
             spdlog::critical("LLM Engine failed to initialize with a valid model. Shutting down.");
