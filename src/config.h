@@ -98,5 +98,4 @@ inline Settings load_settings() {
     }
 
     return s;
-}
-}
+}; // <-- EKLENDİ: Eksik noktalı virgül

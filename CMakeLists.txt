@@ -1,7 +1,6 @@
 # CMakeLists.txt
 cmake_minimum_required(VERSION 3.20)
 
-# Proje tanımını CUDA'nın varlığına göre koşullu yap
 if(DEFINED GGML_CUDA AND GGML_CUDA)
     project(llm-llama-service CXX CUDA)
 else()
@@ -12,7 +11,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic")
 
-# --- Bağımlılıkları Bul ---
 find_package(gRPC CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
@@ -25,7 +23,6 @@ if(GGML_CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
 
-# --- Alt Projeleri ve Kod Üretimini Yapılandır ---
 add_subdirectory(llama.cpp)
 include(FetchContent)
 FetchContent_Declare(
@@ -35,10 +32,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
-# --- Protobuf Kod Üretimi ---
 set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
-
 set(PROTO_GENERATED_SRCS
     "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
     "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
@@ -73,7 +68,6 @@ target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
 target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
 
-# --- Hedefleri Tanımla ve Linkle ---
 add_executable(llm_service
     src/main.cpp
     src/llm_engine.cpp
@@ -84,9 +78,7 @@ add_executable(llm_service
 add_dependencies(llm_service proto_lib)
 target_include_directories(llm_service PRIVATE src)
 target_link_libraries(llm_service PRIVATE
-    proto_lib 
-    llama 
-    spdlog::spdlog nlohmann_json::nlohmann_json
+    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
     httplib::httplib c-ares::cares Threads::Threads
 )
 if(GGML_CUDA)
