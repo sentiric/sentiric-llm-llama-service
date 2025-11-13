@@ -4,7 +4,8 @@
 #include <vector>
 #include <string>
 #include <algorithm>
-#include "model_manager.h" // BU SATIRI EKLE
+#include "model_manager.h"
+
 // --- LlamaContextPool Implementasyonu ---
 LlamaContextPool::LlamaContextPool(llama_model* model, const Settings& settings, size_t pool_size)
     : model_(model), settings_(settings) {
@@ -47,22 +48,21 @@ llama_context* LlamaContextPool::acquire() {
 void LlamaContextPool::release(llama_context* ctx) {
     if (ctx) {
         std::lock_guard<std::mutex> lock(mutex_);
-        llama_kv_cache_clear(ctx);
+        // DEĞİŞİKLİK: 'llama_kv_cache_clear' yerine 'llama_kv_cache_seq_rm' kullanılıyor.
+        // Bu, b7046 API'si ile uyumludur ve tüm dizileri (sequences) temizler.
+        llama_kv_cache_seq_rm(ctx, -1, -1, -1);
         pool_.push(ctx);
         cv_.notify_one();
     }
 }
 
 // --- LLMEngine Implementasyonu ---
-LLMEngine::LLMEngine(Settings& settings) : settings_(settings) { // const kaldırıldı
+LLMEngine::LLMEngine(Settings& settings) : settings_(settings) {
     spdlog::info("Initializing LLM Engine...");
-
-    // MODEL YÖNETİMİ BURAYA TAŞINDI
     settings_.model_path = ModelManager::ensure_model_is_ready(settings_);
-
+    
     spdlog::info("Initializing llama.cpp backend...");
     llama_backend_init();
-    
     llama_numa_init(settings.numa_strategy);
 
     llama_model_params model_params = llama_model_default_params();
@@ -111,12 +111,11 @@ void LLMEngine::generate_stream(
     if (n_tokens < 0) throw std::runtime_error("Prompt tokenization failed.");
     prompt_tokens.resize(n_tokens);
     
-    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), n_tokens);
+    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), n_tokens, nullptr, 0);
     if (llama_decode(ctx, batch) != 0) {
         throw std::runtime_error("llama_decode failed on prompt");
     }
 
-    // --- KRİTİK HATA DÜZELTMESİ BAŞLANGICI ---
     const auto& params = request.params();
     const bool use_request_params = request.has_params();
 
@@ -127,41 +126,38 @@ void LLMEngine::generate_stream(
     float top_p = use_request_params ? params.top_p() : settings_.default_top_p;
     float repeat_penalty = use_request_params ? params.repetition_penalty() : settings_.default_repeat_penalty;
     
-    llama_sampler* smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    llama_sampler_chain* smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
     struct SamplerReleaser {
-        llama_sampler* s; ~SamplerReleaser() { if(s) llama_sampler_free(s); }
+        llama_sampler_chain* s; ~SamplerReleaser() { if(s) llama_sampler_chain_free(s); }
     } sampler_releaser{smpl};
     
-    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(64, repeat_penalty, 0.0f, 0.0f));
-    llama_sampler_chain_add(smpl, llama_sampler_init_top_k(top_k));
-    llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
-    llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
-    // --- KRİTİK HATA DÜZELTMESİ SONU ---
+    llama_sampler_chain_add_sampler(smpl, llama_sampler_repetition_penalty_init(smpl, prompt_tokens.data(), prompt_tokens.size(), repeat_penalty));
+    llama_sampler_chain_add_sampler(smpl, llama_sampler_top_k_init(smpl, top_k));
+    llama_sampler_chain_add_sampler(smpl, llama_sampler_top_p_init(smpl, top_p, 1));
+    llama_sampler_chain_add_sampler(smpl, llama_sampler_temperature_init(smpl, temperature));
+    llama_sampler_chain_add_sampler(smpl, llama_sampler_greedy_init(smpl));
 
     int n_decode = 0;
-    int n_ctx_used = llama_memory_seq_pos_max(llama_get_memory(ctx), 0) + 1;
-    while (n_ctx_used < (int32_t)llama_n_ctx(ctx) && n_decode < max_tokens) {
+    while (llama_kv_cache_seq_pos(ctx, 0) < (int32_t)llama_n_ctx(ctx) && n_decode < max_tokens) {
         if (should_stop_callback()) {
             spdlog::warn("Stream generation stopped by client cancellation.");
             break;
         }
 
-        llama_token new_token_id = llama_sampler_sample(smpl, ctx, -1);
-        llama_sampler_accept(smpl, new_token_id);
+        llama_token new_token_id = llama_sampler_chain_sample(smpl, ctx, -1);
+        llama_sampler_chain_accept(smpl, new_token_id);
 
-        if (new_token_id == llama_vocab_eos(vocab)) break;
+        if (new_token_id == llama_token_eos(model_)) break;
         
         char piece_buf[64] = {0};
-        int n_chars = llama_token_to_piece(vocab, new_token_id, piece_buf, sizeof(piece_buf), 0, false);
+        int n_chars = llama_token_to_piece(model_, new_token_id, piece_buf, sizeof(piece_buf));
         if (n_chars < 0) throw std::runtime_error("llama_token_to_piece failed");
         on_token_callback(std::string(piece_buf, n_chars));
 
-        llama_batch next_token_batch = llama_batch_get_one(&new_token_id, 1);
+        llama_batch next_token_batch = llama_batch_get_one(&new_token_id, 1, nullptr, 0);
         if (llama_decode(ctx, next_token_batch) != 0) {
              throw std::runtime_error("Failed to decode next token");
         }
-        n_ctx_used++;
         n_decode++;
     }
 }
