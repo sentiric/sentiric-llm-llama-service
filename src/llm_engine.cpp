@@ -1,13 +1,14 @@
 // src/llm_engine.cpp
-// DÜZELTME: llama_backend_init() çağrısı argümansız olarak düzeltildi.
 #include "llm_engine.h"
 #include "spdlog/spdlog.h"
 #include <stdexcept>
 #include <vector>
 #include <string>
 #include <algorithm>
+// EKLENDİ: Dinamik örnekleyici parametreleri için
+#include "llama_sampling.h"
 
-// --- LlamaContextPool Implementasyonu ---
+// --- LlamaContextPool Implementasyonu (Değişiklik yok) ---
 
 LlamaContextPool::LlamaContextPool(llama_model* model, const Settings& settings, size_t pool_size)
     : model_(model), settings_(settings) {
@@ -55,7 +56,6 @@ llama_context* LlamaContextPool::acquire() {
 void LlamaContextPool::release(llama_context* ctx) {
     if (ctx) {
         std::lock_guard<std::mutex> lock(mutex_);
-        // DÜZELTİLDİ: Artık doğru fonksiyon adı ve memory objesi ile çağrılıyor.
         llama_memory_seq_rm(llama_get_memory(ctx), -1, -1, -1);
         pool_.push(ctx);
         cv_.notify_one();
@@ -63,14 +63,12 @@ void LlamaContextPool::release(llama_context* ctx) {
 }
 
 
-// --- LLMEngine Implementasyonu ---
+// --- LLMEngine Implementasyonu (Değişiklikler burada) ---
 
 LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
     spdlog::info("Initializing llama.cpp backend...");
 
-    // DÜZELTME: Bu fonksiyon artık argüman almıyor.
     llama_backend_init();
-    // NUMA desteğini ayrıca başlat. Bu, özellikle çoklu GPU/CPU sistemlerinde faydalıdır.
     llama_numa_init(GGML_NUMA_STRATEGY_DISTRIBUTE);
 
     llama_model_params model_params = llama_model_default_params();
@@ -84,10 +82,11 @@ LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
     }
     
     vocab_ = llama_model_get_vocab(model_);
-    sampler_ = llama_sampler_init_greedy();
-    if (!vocab_ || !sampler_) {
+    // DEĞİŞTİRİLDİ: Global sampler artık oluşturulmuyor, her istekte dinamik olarak yaratılacak.
+    // sampler_ = llama_sampler_init_greedy(); // BU SATIR SİLİNDİ
+    if (!vocab_) {
         llama_model_free(model_);
-        throw std::runtime_error("Failed to initialize vocab or sampler.");
+        throw std::runtime_error("Failed to initialize vocab.");
     }
 
     try {
@@ -97,18 +96,15 @@ LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
         spdlog::info("✅ LLM Engine initialized successfully.");
     } catch (const std::exception& e) {
         model_loaded_ = false;
-        if (sampler_) llama_sampler_free(sampler_);
         llama_model_free(model_);
         model_ = nullptr;
         vocab_ = nullptr;
-        sampler_ = nullptr;
         throw;
     }
 }
 
 LLMEngine::~LLMEngine() {
     context_pool_.reset();
-    if (sampler_) llama_sampler_free(sampler_);
     if (model_) llama_model_free(model_);
     llama_backend_free();
     spdlog::info("LLM Engine shut down.");
@@ -128,11 +124,34 @@ void LLMEngine::generate_stream(
         throw std::runtime_error("Failed to acquire a llama_context from the pool.");
     }
 
+    // RAII sarmalayıcısı ile context'in otomatik iade edilmesini sağla
     struct ContextReleaser {
         LlamaContextPool* pool;
         llama_context* ctx;
         ~ContextReleaser() { if (pool && ctx) pool->release(ctx); }
     } releaser{context_pool_.get(), ctx};
+
+    // --- EKLENDİ: Dinamik Örnekleyici (Sampler) Yapılandırması ---
+    llama_sampler_params sparams;
+    const auto& params = request.params();
+
+    sparams.temp = params.has_temperature() ? params.temperature() : settings_.default_temperature;
+    sparams.top_k = params.has_top_k() ? params.top_k() : settings_.default_top_k;
+    sparams.top_p = params.has_top_p() ? params.top_p() : settings_.default_top_p;
+    sparams.penalty_repeat = params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty;
+    // Diğer parametreler de benzer şekilde eklenebilir.
+
+    llama_sampler* sampler = llama_sampler_init_chain_default_with_params(&sparams);
+    if (!sampler) {
+        throw std::runtime_error("Failed to initialize dynamic sampler chain.");
+    }
+    
+    // RAII sarmalayıcısı ile sampler'ın otomatik temizlenmesini sağla
+    struct SamplerReleaser {
+        llama_sampler* s;
+        ~SamplerReleaser() { if (s) llama_sampler_free(s); }
+    } sampler_releaser{sampler};
+    // --- Değişiklik Sonu ---
 
     std::vector<llama_token> prompt_tokens(request.prompt().size());
     int n_tokens = llama_tokenize(vocab_, request.prompt().c_str(), request.prompt().size(), prompt_tokens.data(), prompt_tokens.size(), true, false);
@@ -165,10 +184,9 @@ void LLMEngine::generate_stream(
             break;
         }
 
-        llama_token new_token_id = llama_sampler_sample(sampler_, ctx, -1);
-        
-        // DÜZELTİLDİ: Gereksiz 'ctx' argümanı kaldırıldı.
-        llama_sampler_accept(sampler_, new_token_id);
+        // DEĞİŞTİRİLDİ: Global `sampler_` yerine isteğe özel `sampler` kullanılıyor.
+        llama_token new_token_id = llama_sampler_sample(sampler, ctx, -1);
+        llama_sampler_accept(sampler, new_token_id);
 
         if (llama_vocab_is_eog(vocab_, new_token_id)) {
             break;

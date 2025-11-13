@@ -52,18 +52,5 @@ grpc::Status GrpcServer::LocalGenerateStream(
     return grpc::Status::OK;
 }
 
-void run_grpc_server(std::shared_ptr<LLMEngine> engine, int port) {
-    std::string address = "0.0.0.0:" + std::to_string(port);
-    GrpcServer service(engine);
-    grpc::ServerBuilder builder;
-    builder.AddListeningPort(address, grpc::InsecureServerCredentials());
-    builder.RegisterService(&service);
-
-    std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
-    if (!server) {
-        spdlog::critical("gRPC server failed to start on {}", address);
-        return;
-    }
-    spdlog::info("🚀 gRPC server listening on {}", address);
-    server->Wait();
-}
+// run_grpc_server fonksiyonu bir önceki adımda src/main.cpp'ye taşındığı için
+// burada artık bulunmuyor. Bu, kodun temiz halidir.

@@ -25,7 +25,7 @@ private:
     llama_model* model_;
     const Settings& settings_;
     std::queue<llama_context*> pool_;
-    std::mutex mutex_; // DÜZELTİLDİ
+    std::mutex mutex_;
     std::condition_variable cv_;
 };
 
@@ -48,7 +48,8 @@ public:
 private:
     llama_model* model_ = nullptr;
     const llama_vocab* vocab_ = nullptr;
-    llama_sampler* sampler_ = nullptr;
+    // DEĞİŞTİRİLDİ: Global sampler kaldırıldı.
+    // llama_sampler* sampler_ = nullptr;
 
     std::atomic<bool> model_loaded_{false};
     Settings settings_;
