@@ -47,9 +47,7 @@ public:
 
 private:
     llama_model* model_ = nullptr;
-    const llama_vocab* vocab_ = nullptr;
-    // DEĞİŞTİRİLDİ: Global sampler kaldırıldı.
-    // llama_sampler* sampler_ = nullptr;
+    // vocab ve sampler artık her istekte dinamik olarak ele alınacak
 
     std::atomic<bool> model_loaded_{false};
     Settings settings_;
