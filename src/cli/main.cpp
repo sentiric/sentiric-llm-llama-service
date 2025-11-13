@@ -48,7 +48,6 @@ int main(int argc, char** argv) {
     std::string command = argv[1];
     std::map<std::string, std::string> options;
     
-    // Seçenekleri parse et
     for (int i = 2; i < argc; i++) {
         std::string arg = argv[i];
         if (arg.substr(0, 2) == "--") {
@@ -76,7 +75,15 @@ int main(int argc, char** argv) {
             }
             
             std::cout << "👤 Kullanıcı: " << prompt << "\n";
-            bool success = client.generate_stream(prompt);
+            std::cout << "🤖 AI Yanıtı: " << std::flush;
+            // DÜZELTME: generate_stream artık 2 argüman bekliyor.
+            // İkinci argüman olarak token'ları ekrana basan bir lambda veriyoruz.
+            bool success = client.generate_stream(prompt, 
+                [](const std::string& token) {
+                    std::cout << token << std::flush;
+                }
+            );
+            std::cout << std::endl;
             
             if (!success) {
                 spdlog::error("Generation başarısız");
@@ -84,6 +91,7 @@ int main(int argc, char** argv) {
             }
             
         } else if (command == "health") {
+            // ... (geri kalan kod aynı)
             sentiric_llm_cli::HealthChecker checker(grpc_endpoint, http_endpoint);
             checker.print_detailed_status();
             
