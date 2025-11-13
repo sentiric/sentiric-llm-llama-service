@@ -1,12 +1,13 @@
 # Dockerfile
-# Runtime imajına 'curl' ekler.
 # --- Derleme Aşaması ---
 FROM ubuntu:24.04 AS builder
 
+# 1. Temel bağımlılıkları kur (En az değişen katman)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential curl zip unzip tar \
     pkg-config ninja-build ca-certificates python3
 
+# 2. Vcpkg'yi kur (Nadiren değişir)
 ARG VCPKG_VERSION=2024.05.24
 RUN curl -L "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSION}.tar.gz" -o vcpkg.tar.gz && \
     mkdir -p /opt/vcpkg && \
@@ -16,14 +17,19 @@ RUN curl -L "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSIO
 
 WORKDIR /app
 
+# 3. Bağımlılık manifest'ini kopyala ve kur (vcpkg.json değiştiğinde bu katman yeniden çalışır)
 COPY vcpkg.json .
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
+# 4. llama.cpp'yi klonla (Nadiren değişir, ancak kodumuz değiştiğinde yeniden klonlanması gerekebilir)
 RUN git clone https://github.com/ggerganov/llama.cpp.git llama.cpp
 
+# 5. Proje kaynak kodunu ve build script'ini kopyala (En sık değişen katmanlar)
+# BU ADIMLARDAN BİRİ DEĞİŞTİĞİNDE, AŞAĞIDAKİ TÜM ADIMLAR YENİDEN ÇALIŞIR.
 COPY src ./src
 COPY CMakeLists.txt .
 
+# 6. Projeyi derle (Kod her değiştiğinde bu adım yeniden çalışacaktır)
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
