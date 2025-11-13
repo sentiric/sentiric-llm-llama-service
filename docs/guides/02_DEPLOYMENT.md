@@ -75,7 +75,7 @@ Servisi yapılandırmak için aşağıdaki ortam değişkenlerini kullanın. Tü
 | Değişken                                   | Açıklama                                                                          | Varsayılan Değer                  |
 | ------------------------------------------ | --------------------------------------------------------------------------------- | --------------------------------- |
 | **Network**                                |                                                                                   |                                   |
-| `LLM_LLAMA_SERVICE_IPV4_ADDRESS`           | Servisin dinleyeceği IP adresi. `0.0.0.0` tüm arayüzleri dinler.                  | `0.0.0.0`                         |
+| `LLM_LLAMA_SERVICE_LISTEN_ADDRESS`           | Servisin dinleyeceği IP adresi. `0.0.0.0` tüm arayüzleri dinler.                  | `0.0.0.0`                         |
 | `LLM_LLAMA_SERVICE_HTTP_PORT`              | HTTP health check sunucusunun portu.                                              | `16070`                           |
 | `LLM_LLAMA_SERVICE_GRPC_PORT`              | gRPC sunucusunun portu.                                                           | `16071`                           |
 | **Model Management**                       |                                                                                   |                                   |
@@ -105,11 +105,11 @@ services:
   llm-llama-service:
     # ...
     environment:
-      - LLM_LLAMA_SERVICE_IPV4_ADDRESS=0.0.0.0
+      - LLM_LLAMA_SERVICE_LISTEN_ADDRESS=0.0.0.0
       - LLM_LLAMA_SERVICE_HTTP_PORT=16070
       - LLM_LLAMA_SERVICE_GRPC_PORT=16071
-      - LLM_LLAMA_SERVICE_THREADS=4
-      - LLM_LLAMA_SERVICE_LOG_LEVEL=debug
+      - LLM_LLAMA_SERVICE_THREADS=1
+      - LLM_LLAMA_SERVICE_LOG_LEVEL=info
 ```
 
 ### Resource Limits

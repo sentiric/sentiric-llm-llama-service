@@ -1,20 +1,28 @@
 # docker-compose.yml (BASE)
 # Bu dosya, servisin ortak yapılandırmasını içerir ve tek başına çalıştırılamaz.
 # CPU veya GPU profili ile birleştirilmelidir.
+networks:
+  sentiric-net:
+    name: "${NETWORK_NAME:-sentiric-net}"
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${NETWORK_SUBNET:-10.88.0.0/16}
+          gateway: ${NETWORK_GATEWAY:-10.88.0.1}
+
+volumes:
+  #  [capability-llm]: Büyük Dil Modeli Yetenekleri (LLM Capabilities)
+  # --------------------------------------------------  
+  llm_models:
 
 services:
   llm-llama-service:
-    container_name: llm-llama-service
-    ports:
-      - "127.0.0.1:${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}:${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}"
-      - "127.0.0.1:${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}:${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}"
-    volumes:
-      - ./models:/models
     environment:
       # --- Network Ayarları ---
-      - LLM_LLAMA_SERVICE_IPV4_ADDRESS=0.0.0.0
+      - LLM_LLAMA_SERVICE_LISTEN_ADDRESS=0.0.0.0
       - LLM_LLAMA_SERVICE_HTTP_PORT=${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}
       - LLM_LLAMA_SERVICE_GRPC_PORT=${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}
+      - LLM_LLAMA_SERVICE_METRICS_PORT=${LLM_LLAMA_SERVICE_METRICS_PORT:-16072}
       
       # --- Model Yönetimi ---
       - LLM_LLAMA_SERVICE_MODEL_DIR=/models
@@ -32,8 +40,26 @@ services:
       - LLM_LLAMA_SERVICE_DEFAULT_TEMPERATURE=${LLM_LLAMA_SERVICE_DEFAULT_TEMPERATURE:-0.8}
       - LLM_LLAMA_SERVICE_DEFAULT_TOP_K=${LLM_LLAMA_SERVICE_DEFAULT_TOP_K:-40}
       - LLM_LLAMA_SERVICE_DEFAULT_TOP_P=${LLM_LLAMA_SERVICE_DEFAULT_TOP_P:-0.95}
-      - LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY=${LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY:-1.1}
-      
+      - LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY=${LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY:-1.1}  
+
+      - GRPC_TLS_CA_PATH=/sentiric-certificates/certs/ca.crt
+      - LLM_LLAMA_SERVICE_CERT_PATH=/sentiric-certificates/certs/llm-llama-service-chain.crt
+      - LLM_LLAMA_SERVICE_KEY_PATH=/sentiric-certificates/certs/llm-llama-service.key
+
+    volumes:
+      - ../sentiric-certificates:/sentiric-certificates:ro # SERTİFİKA MOUNT'U    
+      - llm_models:/models  
+    ports:
+      - "${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}:${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}"
+      - "${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}:${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}"
+      - "${LLM_LLAMA_SERVICE_METRICS_PORT:-16072}:${LLM_LLAMA_SERVICE_METRICS_PORT:-16072}"      
+    networks:
+      sentiric-net:
+        ipv4_address: ${LLM_LLAMA_SERVICE_IPV4_ADDRESS:-10.88.60.7}
+    # dns:
+    #   - ${DISCOVERY_SERVICE_IPV4_ADDRESS}
+    # dns_search:
+    #   - ${DISCOVERY_DNS_SEARCH_DOMAIN}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}/health"]

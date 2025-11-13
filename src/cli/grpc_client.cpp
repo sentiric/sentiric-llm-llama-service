@@ -1,8 +1,12 @@
 #include "grpc_client.h"
 #include "spdlog/spdlog.h"
-#include "fmt/format.h" // YENİ: fmt kütüphanesini dahil et
+#include "fmt/format.h"
 #include <grpcpp/grpcpp.h>
 #include <string_view>
+// EKLENDİ: Güvenli istemci kimlik bilgileri için gerekli başlıklar
+#include <grpcpp/security/credentials.h>
+#include <fstream>
+#include <sstream>
 
 // YENİ: spdlog'a grpc::StatusCode'u nasıl formatlayacağını öğreten uzmanlaşma
 template <>
@@ -37,6 +41,16 @@ struct fmt::formatter<grpc::StatusCode> {
     }
 };
 
+// EKLENDİ: Sertifika dosyalarını okumak için yardımcı fonksiyon
+std::string read_file_client(const std::string& filepath) {
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        throw std::runtime_error("File could not be opened for client: " + filepath);
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
 
 namespace sentiric_llm_cli {
 
@@ -58,7 +72,37 @@ bool GRPCClient::generate_stream(const std::string& prompt,
                                 int max_tokens) {
 
     if (!stub_) {
-        channel_ = grpc::CreateChannel(endpoint_, grpc::InsecureChannelCredentials());
+        // DEĞİŞTİRİLDİ: InsecureChannelCredentials yerine SslCredentials (mTLS) kullanılıyor.
+        std::shared_ptr<grpc::ChannelCredentials> creds;
+        try {
+            const char* ca_path = std::getenv("GRPC_TLS_CA_PATH");
+            // NOT: CLI, sunucu ile aynı sertifikayı kullanabilir çünkü her ikisi de client ve server rollerini üstlenebilir.
+            // Üretimde, CLI için ayrı bir 'client' sertifikası oluşturulması daha güvenlidir.
+            const char* cert_path = std::getenv("LLM_LLAMA_SERVICE_CERT_PATH");
+            const char* key_path = std::getenv("LLM_LLAMA_SERVICE_KEY_PATH");
+
+            if (!ca_path || !cert_path || !key_path) {
+                spdlog::warn("gRPC TLS environment variables not set for CLI. Using insecure credentials.");
+                creds = grpc::InsecureChannelCredentials();
+            } else {
+                spdlog::info("Loading TLS credentials for gRPC client...");
+                std::string root_ca = read_file_client(ca_path);
+                std::string client_cert = read_file_client(cert_path);
+                std::string client_key = read_file_client(key_path);
+
+                grpc::SslCredentialsOptions ssl_opts;
+                ssl_opts.pem_root_certs = root_ca;
+                ssl_opts.pem_private_key = client_key;
+                ssl_opts.pem_cert_chain = client_cert;
+                creds = grpc::SslCredentials(ssl_opts);
+                spdlog::info("gRPC client configured to use mTLS.");
+            }
+        } catch (const std::runtime_error& e) {
+            spdlog::error("Failed to create channel credentials: {}. Using insecure.", e.what());
+            creds = grpc::InsecureChannelCredentials();
+        }
+        channel_ = grpc::CreateChannel(endpoint_, creds);
+        // --- Değişiklik sonu ---
         stub_ = sentiric::llm::v1::LLMLocalService::NewStub(channel_);
     }
 
@@ -97,7 +141,6 @@ bool GRPCClient::generate_stream(const std::string& prompt,
         auto status = reader->Finish();
         if (!status.ok()) {
             if (status.error_code() != grpc::StatusCode::CANCELLED) {
-                 // DÜZELTME: Artık status.error_code() formatlanabilir.
                  spdlog::warn("GRPC stream finished with status [{}]: {}", status.error_code(), status.error_message());
             }
         }

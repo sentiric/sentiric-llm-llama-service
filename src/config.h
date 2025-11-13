@@ -65,7 +65,7 @@ inline Settings load_settings() {
         }
     };
     
-    s.host = get_env_var("LLM_LLAMA_SERVICE_IPV4_ADDRESS", s.host);
+    s.host = get_env_var("LLM_LLAMA_SERVICE_LISTEN_ADDRESS", s.host);
     s.http_port = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_PORT", s.http_port);
     s.grpc_port = get_env_var_as_int("LLM_LLAMA_SERVICE_GRPC_PORT", s.grpc_port);
     

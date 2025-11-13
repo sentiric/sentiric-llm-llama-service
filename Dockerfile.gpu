@@ -3,7 +3,7 @@
 
 # --- Derleme Aşaması ---
 # NVIDIA'nın resmi CUDA geliştirme imajını kullan
-FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04 AS builder
+FROM nvidia/cuda:13.0.2-cudnn-devel-ubuntu24.04 AS builder
 
 # Gerekli temel araçları ve vcpkg bağımlılıklarını kur
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -37,7 +37,7 @@ RUN cmake --build build --target all -j $(nproc)
 
 # --- Çalışma Aşaması ---
 # NVIDIA'nın CUDA runtime imajını kullan (geliştirme imajından daha küçük)
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04 AS runtime
+FROM nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04 AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libgomp1 curl && \

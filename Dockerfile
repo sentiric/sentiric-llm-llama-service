@@ -1,7 +1,7 @@
 # Dockerfile
 # Runtime imajına 'curl' ekler.
 # --- Derleme Aşaması ---
-FROM ubuntu:22.04 AS builder
+FROM ubuntu:24.04 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential curl zip unzip tar \
@@ -30,7 +30,7 @@ RUN cmake -B build \
 RUN cmake --build build --target all -j $(nproc)
 
 # --- Çalışma Aşaması ---
-FROM ubuntu:22.04 AS runtime
+FROM ubuntu:24.04 AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libgomp1 curl && \
