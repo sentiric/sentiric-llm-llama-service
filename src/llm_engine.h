@@ -44,7 +44,7 @@ public:
 
 private:
     llama_model* model_ = nullptr;
-    const llama_vocab* vocab_ = nullptr; // YENİ EKLENDİ: Sözlük pointer'ı
+    // KALDIRILDI: const llama_vocab* vocab_ = nullptr;
     std::atomic<bool> model_loaded_{false};
     Settings& settings_;
     std::unique_ptr<LlamaContextPool> context_pool_;
