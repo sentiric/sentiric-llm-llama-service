@@ -40,17 +40,17 @@ llama_context* LlamaContextPool::acquire() {
     cv_.wait(lock, [this] { return !pool_.empty(); });
     llama_context* ctx = pool_.front();
     pool_.pop();
-    // Context'i kullanmadan önce içindeki tokenları temizle
-    llama_reset_timings(ctx);
     return ctx;
 }
 
 void LlamaContextPool::release(llama_context* ctx) {
     if (ctx) {
         std::lock_guard<std::mutex> lock(mutex_);
-        // Not: Bu versiyonda güvenli bir KV cache temizleme yöntemi `llama.h`'de yok.
-        // `acquire` anında `llama_reset_timings` ile basit bir sıfırlama yapıyoruz.
-        // Daha karmaşık senaryolar için bu kısım yeniden değerlendirilebilir.
+        // Not: b7046'da güvenli bir public KV cache temizleme yöntemi yok.
+        // Bu yüzden context'i serbest bırakıp yeniden oluşturmak en güvenli yoldur.
+        // Performans için bu bir sonraki adımda iyileştirilebilir.
+        // Şimdilik, sadece geri koyuyoruz ve state'in bir sonraki kullanımda
+        // üzerine yazılacağını varsayıyoruz.
         pool_.push(ctx);
         cv_.notify_one();
     }
@@ -102,16 +102,17 @@ void LLMEngine::generate_stream(
         ~ContextReleaser() { if (pool && ctx) pool->release(ctx); }
     } releaser{context_pool_.get(), ctx};
 
+    // Her kullanımdan önce context'in KV cache'ini sıfırla.
+    llama_kv_cache_clear(ctx);
+
     std::vector<llama_token> prompt_tokens(request.prompt().length());
     int n_tokens = llama_tokenize(model_, request.prompt().c_str(), request.prompt().length(), prompt_tokens.data(), prompt_tokens.size(), true);
     if (n_tokens < 0) { throw std::runtime_error("Tokenization failed."); }
     prompt_tokens.resize(n_tokens);
 
     // Prompt'u işle
-    for (size_t i = 0; i < prompt_tokens.size(); ++i) {
-        if (llama_eval(ctx, &prompt_tokens[i], 1, i) != 0) {
-            throw std::runtime_error("Failed to eval prompt token");
-        }
+    if (llama_eval(ctx, prompt_tokens.data(), n_tokens, 0) != 0) {
+        throw std::runtime_error("Failed to eval prompt");
     }
 
     const auto& params = request.params();
@@ -120,12 +121,8 @@ void LLMEngine::generate_stream(
     float temperature = use_request_params ? params.temperature() : settings_.default_temperature;
     int32_t top_k = use_request_params ? params.top_k() : settings_.default_top_k;
     float top_p = use_request_params ? params.top_p() : settings_.default_top_p;
-    float repeat_penalty = use_request_params ? params.repetition_penalty() : settings_.default_repeat_penalty;
     
     int n_decoded = 0;
-    std::vector<llama_token> last_n_tokens(llama_n_ctx(ctx), 0);
-    std::copy(prompt_tokens.begin(), prompt_tokens.end(), last_n_tokens.end() - n_tokens);
-
     while (llama_get_kv_cache_token_count(ctx) < (int32_t)llama_n_ctx(ctx) && n_decoded < max_tokens) {
         if (should_stop_callback()) { break; }
 
@@ -139,25 +136,24 @@ void LLMEngine::generate_stream(
         }
         llama_token_data_array candidates_p = { candidates.data(), candidates.size(), false };
 
-        llama_sample_repetition_penalty(ctx, &candidates_p, last_n_tokens.data() + last_n_tokens.size() - llama_n_ctx(ctx), llama_n_ctx(ctx), repeat_penalty);
+        // SADECE TEMEL API FONKSİYONLARI KULLANILIYOR
         llama_sample_top_k(ctx, &candidates_p, top_k, 1);
+        llama_sample_tail_free(ctx, &candidates_p, 1.0f, 1);
+        llama_sample_typical(ctx, &candidates_p, 1.0f, 1);
         llama_sample_top_p(ctx, &candidates_p, top_p, 1);
         llama_sample_temperature(ctx, &candidates_p, temperature);
-        llama_token new_token_id = llama_sample_token_greedy(ctx, &candidates_p);
+        llama_token new_token_id = llama_sample_token(ctx, &candidates_p);
 
         if (new_token_id == llama_token_eos(model_)) { break; }
         
         char piece_buf[8] = {0};
-        llama_token_to_piece(ctx, new_token_id, piece_buf, sizeof(piece_buf));
+        llama_token_to_str(ctx, new_token_id, piece_buf, sizeof(piece_buf));
         on_token_callback(std::string(piece_buf));
         
         if (llama_eval(ctx, &new_token_id, 1, llama_get_kv_cache_token_count(ctx)) != 0) {
              throw std::runtime_error("Failed to eval next token");
         }
         
-        last_n_tokens.erase(last_n_tokens.begin());
-        last_n_tokens.push_back(new_token_id);
-
         n_decoded++;
     }
 }

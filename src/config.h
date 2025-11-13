@@ -81,8 +81,8 @@ inline Settings load_settings() {
     s.context_size = get_env_var_as_uint("LLM_LLAMA_SERVICE_CONTEXT_SIZE", s.context_size);
     s.n_threads = get_env_var_as_uint("LLM_LLAMA_SERVICE_THREADS", s.n_threads);
     s.n_threads_batch = get_env_var_as_uint("LLM_LLAMA_SERVICE_THREADS_BATCH", s.n_threads_batch);
-    s.n_batch = get_env_var_as_uint("LLM_LLAMA_SERVICE_BATCH_SIZE", s.n_batch);
-    s.n_ubatch = get_env_var_as_uint("LLM_LLAMA_SERVICE_UBATCH_SIZE", s.n_ubatch);
+    // s.n_batch = get_env_var_as_uint("LLM_LLAMA_SERVICE_BATCH_SIZE", s.n_batch);
+    // s.n_ubatch = get_env_var_as_uint("LLM_LLAMA_SERVICE_UBATCH_SIZE", s.n_ubatch);
     s.log_level = get_env_var("LLM_LLAMA_SERVICE_LOG_LEVEL", s.log_level);
 
     s.default_max_tokens = get_env_var_as_int("LLM_LLAMA_SERVICE_DEFAULT_MAX_TOKENS", s.default_max_tokens);
