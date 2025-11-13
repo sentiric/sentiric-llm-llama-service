@@ -82,14 +82,11 @@ add_executable(llm_service
     src/model_manager.cpp
 )
 add_dependencies(llm_service proto_lib)
-target_include_directories(llm_service PRIVATE 
-    src
-    # EKLENDİ: llama.cpp başlık dosyalarının yollarını ekle
-    llama.cpp
-    llama.cpp/include
-)
+target_include_directories(llm_service PRIVATE src)
 target_link_libraries(llm_service PRIVATE
-    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
+    proto_lib 
+    llama # DEĞİŞİKLİK: 'llama' hedefini linklemek, onun PUBLIC/INTERFACE include dizinlerini otomatik olarak miras alır.
+    spdlog::spdlog nlohmann_json::nlohmann_json
     httplib::httplib c-ares::cares Threads::Threads
 )
 if(GGML_CUDA)
@@ -104,15 +101,12 @@ add_executable(llm_cli
     src/cli/health_check.cpp
     src/cli/benchmark.cpp
 )
-add_dependencies(llm_cli proto_lib) # CLI için de bağımlılık eklendi
-target_include_directories(llm_cli PRIVATE 
-    src
-    # EKLENDİ: llama.cpp başlık dosyalarının yollarını ekle
-    llama.cpp
-    llama.cpp/include
-)
+add_dependencies(llm_cli proto_lib)
+target_include_directories(llm_cli PRIVATE src)
 target_link_libraries(llm_cli PRIVATE
-    proto_lib llama spdlog::spdlog nlohmann_json::nlohmann_json
+    proto_lib 
+    llama # DEĞİŞİKLİK: 'llama' hedefini linklemek, onun PUBLIC/INTERFACE include dizinlerini otomatik olarak miras alır.
+    spdlog::spdlog nlohmann_json::nlohmann_json
     httplib::httplib c-ares::cares Threads::Threads
 )
 if(GGML_CUDA)
