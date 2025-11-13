@@ -36,16 +36,31 @@ All detailed project documentation is located in the `/docs` directory.
 -   4GB+ RAM
 -   Git
 
-### Running the Service
+### Running the Service (CPU)
 
+#### For Development (Building from source)
 ```bash
 # Clone the repository
 git clone https://github.com/sentiric/sentiric-llm-llama-service.git
 cd sentiric-llm-llama-service
 
-# Build and run the service
+# Build and run the service (uses docker-compose.override.yml automatically)
 docker compose up --build -d
+```
 
+#### For Production (Pulling pre-built image)
+```bash
+# Pull the latest CPU image and run
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+```
+
+### Running the Service (GPU)
+
+For GPU instructions and other advanced scenarios, please refer to the **[Deployment Guide](./docs/guides/02_DEPLOYMENT.md)**.
+
+### Verifying the Service
+
+```bash
 # Check service health (wait up to 1-2 minutes for the model to load)
 curl http://localhost:16070/health
 # Expected output: {"engine":"llama.cpp","model_ready":true,"status":"healthy"}
@@ -53,5 +68,4 @@ curl http://localhost:16070/health
 # Test with the CLI tool
 docker compose exec llm-llama-service llm_cli generate "Hello, what is your name?"
 ```
-
 ---

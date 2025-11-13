@@ -1,6 +1,6 @@
 # docker-compose.override.yml
-# GELİŞTİRME dosyası. 'docker compose up' komutu çalıştırıldığında
-# bu dosya otomatik olarak ana dosyayı ezer ve yerel build'i tetikler.
+# GELİŞTİRME dosyası. 'docker compose up --build' komutu çalıştırıldığında
+# bu dosya otomatik olarak temel dosyayı ezer ve yerel CPU build'ini tetikler.
 services:
   llm-llama-service:
     build:

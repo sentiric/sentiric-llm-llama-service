@@ -1,0 +1,8 @@
+# docker-compose.gpu.override.yml
+# GELİŞTİRME dosyası. Yerel GPU build'i için manuel olarak kullanılır.
+# Kullanım: docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml up --build -d
+services:
+  llm-llama-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu

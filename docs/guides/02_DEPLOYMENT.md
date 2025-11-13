@@ -1,48 +1,69 @@
 # 🚀 Deployment Rehberi
 
-Bu servis, GitHub Actions aracılığıyla otomatik olarak `ghcr.io/sentiric/sentiric-llm-llama-service` adresine Docker imajı olarak yayınlanır. Üretim ortamında dağıtım yapmanın en iyi yolu bu önceden oluşturulmuş imajı kullanmaktır.
+Bu servis, esnek bir `docker-compose` yapısı kullanarak farklı senaryolarda kolayca dağıtılabilir. Bu rehber, hem üretim (pre-built imajları kullanarak) hem de geliştirme (kaynaktan derleyerek) ortamları için adımları açıklar.
 
-## Sistem Gereksinimleri
--   **Docker**: 20.10+
--   **Docker Compose**: 2.0+ (opsiyonel, `docker run` da kullanılabilir)
--   **RAM**: 4GB minimum
--   **Depolama**: Model dosyası için ~3GB boş alan
+## Mimari Yaklaşımı: Temel + Profil + Geçersiz Kılma
 
-## Üretim Dağıtımı (Production Deployment)
+Tekrarlardan kaçınmak ve yapılandırmayı basitleştirmek için aşağıdaki mimariyi kullanıyoruz:
+- **`docker-compose.yml`:** Tüm ortak yapılandırmaları içeren temel dosyadır.
+- **`docker-compose.cpu.yml` / `docker-compose.gpu.yml`:** Sadece CPU veya GPU'ya özel farkları (imaj adı, kaynaklar) tanımlayan "profil" dosyalarıdır.
+- **`docker-compose.override.yml` / `docker-compose.gpu.override.yml`:** Sadece yerel geliştirme için kaynaktan derleme (`build`) talimatlarını içeren "geçersiz kılma" dosyalarıdır.
 
-1.  **`docker-compose.yml` Dosyasını Hazırlayın:**
-    Projenin kök dizinindeki `docker-compose.yml` dosyası, üretim dağıtımı için tasarlanmıştır. Bu dosyayı sunucunuza kopyalayın.
+---
 
-2.  **Ortam Değişkenlerini Ayarlayın (Opsiyonel):**
-    Gerekirse, `docker-compose.yml` dosyasının yanına bir `.env` dosyası oluşturarak veya doğrudan sistem ortam değişkenlerini ayarlayarak konfigürasyonu özelleştirin. (Tüm değişkenler için `Configuration` bölümüne bakın.)
+## 1. Üretim Dağıtımı (Pre-built İmajları Çekerek)
 
-3.  **Servisi Başlatın:**
-    `docker-compose.yml`'nin bulunduğu dizinde aşağıdaki komutu çalıştırın.
+Bu senaryo, GitHub Container Registry'den (ghcr.io) hazır imajları çeker. En hızlı ve en kararlı yöntemdir.
 
-    ```bash
-    # En güncel imajı çek ve servisi başlat
-    docker compose up -d
-    ```
-    Bu komut, `build` yapmaz, bunun yerine GHCR'den `:latest` etiketli imajı çeker.
-
-4.  **Doğrulama:**
-    Servisin başlaması, modelin indirilmesi nedeniyle birkaç dakika sürebilir.
-
-    ```bash
-    # Konteyner durumunu kontrol et
-    docker compose ps
-
-    # Servis hazır olduğunda health check yap
-    curl http://localhost:16070/health
-    ```
-
-## Geliştirme Ortamı (Development)
-
-Geliştirme yaparken kaynak kodundan build yapmak için, projenin içindeki `docker-compose.override.yml` dosyası otomatik olarak kullanılır.
+### 1.1. CPU Üzerinde Çalıştırma
 
 ```bash
-# Geliştirme ortamında, yerel kaynak kodunu kullanarak build et ve başlat
+# Temel ve CPU profili dosyalarını kullanarak servisi başlat
+# Bu komut, 'ghcr.io/sentiric/sentiric-llm-llama-service:latest' imajını çeker
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+```
+
+### 1.2. GPU Üzerinde Çalıştırma (NVIDIA)
+
+```bash
+# Temel ve GPU profili dosyalarını kullanarak servisi başlat
+# Bu komut, 'ghcr.io/sentiric/sentiric-llm-llama-service:latest-gpu' imajını çeker
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+---
+
+## 2. Geliştirme Ortamı (Kaynaktan Derleyerek)
+
+Bu senaryo, yerel kod değişikliklerinizi test etmek için kullanılır.
+
+### 2.1. CPU Üzerinde Derleme ve Çalıştırma
+
+`docker-compose.override.yml` dosyası, `docker compose` tarafından otomatik olarak algılanır.
+
+```bash
+# Bu komut, Dockerfile kullanarak yerel bir imaj oluşturur ve servisi başlatır
 docker compose up --build -d
+```
+
+### 2.2. GPU Üzerinde Derleme ve Çalıştırma (NVIDIA)
+
+GPU derlemesi için geçersiz kılma dosyasını manuel olarak belirtmemiz gerekir.
+
+```bash
+# Temel, GPU profili ve GPU geçersiz kılma dosyalarını birleştirerek servisi başlat
+# Bu komut, Dockerfile.gpu kullanarak yerel bir imaj oluşturur
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml up --build -d
+```
+
+---
+
+## 3. Servisi Durdurma
+
+Hangi profille başlattığınızdan bağımsız olarak, servisi durdurmak için:
+
+```bash
+docker compose down
 ```
 
 ## Configuration
