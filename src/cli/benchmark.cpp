@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <thread>
 #include <future>
+#include <atomic> // YENİ EKLENDİ
 #include "benchmark.h"
 #include "spdlog/spdlog.h"
 
@@ -16,16 +17,21 @@ BenchmarkResult Benchmark::run_performance_test(int iterations, const std::strin
 
     BenchmarkResult result;
     result.total_requests = iterations;
+    long long total_tokens_generated = 0; // Toplam token sayısını tutmak için
+    
     auto total_start = std::chrono::steady_clock::now();
+    double total_response_time_ms = 0;
 
     for (int i = 0; i < iterations; i++) {
         spdlog::info("Test {}/{} çalıştırılıyor...", i + 1, iterations);
 
         auto start_time = std::chrono::steady_clock::now();
+        std::atomic<int> current_run_tokens = 0;
 
         bool success = client_->generate_stream(prompt,
-            [](const std::string& token) {
-                // Token callback - benchmark için boş bırakıldı
+            [&](const std::string& token) {
+                // Her token (parçası) geldiğinde sayacı artır
+                current_run_tokens++;
             },
             []() { return false; } // durdurma callback
         );
@@ -35,6 +41,8 @@ BenchmarkResult Benchmark::run_performance_test(int iterations, const std::strin
             end_time - start_time).count();
 
         result.response_times.push_back(response_time);
+        total_response_time_ms += response_time;
+        total_tokens_generated += current_run_tokens.load();
 
         if (success) {
             result.successful_requests++;
@@ -47,17 +55,25 @@ BenchmarkResult Benchmark::run_performance_test(int iterations, const std::strin
     result.total_duration = std::chrono::duration_cast<std::chrono::seconds>(total_end - total_start);
 
     // İstatistikleri hesapla
-    double total_time = 0;
-    for (double t : result.response_times) total_time += t;
-    result.average_response_time_ms = total_time / iterations;
-    result.tokens_per_second = (iterations * 50) / (total_time / 1000.0); // yaklaşık
+    result.average_response_time_ms = total_response_time_ms / iterations;
+    
+    // DOĞRU HESAPLAMA
+    double total_time_seconds = total_response_time_ms / 1000.0;
+    if (total_time_seconds > 0) {
+        result.tokens_per_second = total_tokens_generated / total_time_seconds;
+    } else {
+        result.tokens_per_second = 0;
+    }
+    
     result.error_rate = ((iterations - result.successful_requests) * 100.0) / iterations;
+    result.total_tokens_generated = total_tokens_generated;
 
     spdlog::info("✅ Performans testi tamamlandı");
     return result;
 }
 
 BenchmarkResult Benchmark::run_concurrent_test(int concurrent_connections, int requests_per_connection) {
+    // Bu fonksiyonun implementasyonu aynı kalabilir.
     spdlog::info("⚡ Eşzamanlı test başlıyor ({} bağlantı, {} istek/bağlantı)...",
                 concurrent_connections, requests_per_connection);
 
@@ -86,7 +102,7 @@ BenchmarkResult Benchmark::run_concurrent_test(int concurrent_connections, int r
     result.total_duration = std::chrono::duration_cast<std::chrono::seconds>(total_end - total_start);
 
     result.error_rate = ((result.total_requests - result.successful_requests) * 100.0) / result.total_requests;
-    result.tokens_per_second = (result.successful_requests * 50) / result.total_duration.count();
+    result.tokens_per_second = (result.successful_requests * 50) / result.total_duration.count(); // Yaklaşık değer kalabilir
 
     spdlog::info("✅ Eşzamanlı test tamamlandı");
     return result;
@@ -105,9 +121,10 @@ void Benchmark::generate_report(const BenchmarkResult& result, const std::string
     *output << "========================\n";
     *output << "Toplam İstek: " << result.total_requests << "\n";
     *output << "Başarılı İstek: " << result.successful_requests << "\n";
+    *output << "Toplam Üretilen Token: " << result.total_tokens_generated << "\n"; // YENİ EKLENDİ
     *output << "Hata Oranı: " << std::fixed << std::setprecision(2) << result.error_rate << "%\n";
     *output << "Ortalama Yanıt Süresi: " << result.average_response_time_ms << " ms\n";
-    *output << "Token/Saniye: " << std::fixed << std::setprecision(2) << result.tokens_per_second << "\n";
+    *output << "Token/Saniye (TPS): " << std::fixed << std::setprecision(2) << result.tokens_per_second << "\n"; // Adı güncellendi
     *output << "Toplam Süre: " << result.total_duration.count() << " saniye\n";
     *output << "========================\n";
 

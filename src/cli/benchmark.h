@@ -13,6 +13,7 @@ struct BenchmarkResult {
     double average_response_time_ms;
     double tokens_per_second;
     double error_rate;
+    long long total_tokens_generated; // YENİ EKLENDİ
     std::chrono::seconds total_duration;
     std::vector<double> response_times;
 };
