@@ -14,8 +14,9 @@ LlamaContextPool::LlamaContextPool(llama_model* model, const Settings& settings,
         llama_context_params ctx_params = llama_context_default_params();
         ctx_params.n_ctx = settings.context_size;
         ctx_params.n_threads = settings.n_threads;
-        ctx_params.n_threads_batch = settings.n_threads_batch; // Önerilen yeni parametre
+        ctx_params.n_threads_batch = settings.n_threads_batch;
         ctx_params.n_batch = settings.n_batch;
+        ctx_params.n_ubatch = settings.n_ubatch;
 
         llama_context* ctx = llama_init_from_model(model_, ctx_params);
         if (ctx) {
@@ -101,12 +102,13 @@ void LLMEngine::generate_stream(
     const llama_vocab* vocab = llama_model_get_vocab(model_);
 
     std::vector<llama_token> prompt_tokens;
-    prompt_tokens.resize(request.prompt().length());
+    prompt_tokens.resize(request.prompt().length() + 1);
     int n_tokens = llama_tokenize(vocab, request.prompt().c_str(), request.prompt().length(), prompt_tokens.data(), prompt_tokens.size(), true, false);
     if (n_tokens < 0) throw std::runtime_error("Prompt tokenization failed.");
     prompt_tokens.resize(n_tokens);
-
-    if (llama_decode(ctx, llama_batch_get_one(prompt_tokens.data(), n_tokens))) {
+    
+    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), n_tokens);
+    if (llama_decode(ctx, batch)) {
         throw std::runtime_error("llama_decode failed on prompt");
     }
 
@@ -125,7 +127,7 @@ void LLMEngine::generate_stream(
     llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
 
     int n_decode = 0;
-    while (llama_kv_cache_n(ctx) < (int32_t)llama_n_ctx(ctx) && n_decode < max_tokens) {
+    while (llama_memory_seq_pos_max(llama_get_memory(ctx), 0) + 1 < (int32_t)llama_n_ctx(ctx) && n_decode < max_tokens) {
         if (should_stop_callback()) {
             spdlog::warn("Stream generation stopped by client cancellation.");
             break;
@@ -137,11 +139,12 @@ void LLMEngine::generate_stream(
         if (new_token_id == llama_vocab_eos(vocab)) break;
         
         char piece_buf[64];
-        int n_chars = llama_token_to_piece(vocab, new_token_id, piece_buf, sizeof(piece_buf), 0, true);
+        int n_chars = llama_token_to_piece(vocab, new_token_id, piece_buf, sizeof(piece_buf), 0, false);
         if (n_chars < 0) throw std::runtime_error("llama_token_to_piece failed");
         on_token_callback(std::string(piece_buf, n_chars));
 
-        if (llama_decode(ctx, llama_batch_get_one(&new_token_id, 1))) {
+        llama_batch next_token_batch = llama_batch_get_one(&new_token_id, 1);
+        if (llama_decode(ctx, next_token_batch)) {
              throw std::runtime_error("Failed to decode next token");
         }
         n_decode++;

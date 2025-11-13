@@ -8,7 +8,7 @@
 #include "spdlog/spdlog.h"
 #include <algorithm>
 #include <filesystem>
-#include "llama.h" // ggml_numa_strategy için
+#include "llama.h"
 
 struct Settings {
     // Network Settings
@@ -26,9 +26,9 @@ struct Settings {
     int n_gpu_layers = 0;
     int context_size = 4096;
     int n_threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency() / 2));
-    // YENİ EKLENDİ: Modern llama.cpp için batching parametreleri
-    int n_batch = 512;
-    int n_ubatch = 512;
+    int n_threads_batch = std::max(1u, std::min(8u, std::thread::hardware_concurrency() / 2)); // EKLENDİ
+    int n_batch = 512;      // EKLENDİ
+    int n_ubatch = 512;     // EKLENDİ
     ggml_numa_strategy numa_strategy = GGML_NUMA_STRATEGY_DISABLED;
     
     // Logging Settings
@@ -41,7 +41,6 @@ struct Settings {
     float default_repeat_penalty = 1.1f;
     int32_t default_max_tokens = 1024;
 };
-
 
 inline Settings load_settings() {
     Settings s;
@@ -82,9 +81,11 @@ inline Settings load_settings() {
     s.n_gpu_layers = get_env_var_as_int("LLM_LLAMA_SERVICE_GPU_LAYERS", s.n_gpu_layers);
     s.context_size = get_env_var_as_int("LLM_LLAMA_SERVICE_CONTEXT_SIZE", s.context_size);
     s.n_threads = get_env_var_as_int("LLM_LLAMA_SERVICE_THREADS", s.n_threads);
+    s.n_threads_batch = get_env_var_as_int("LLM_LLAMA_SERVICE_THREADS_BATCH", s.n_threads_batch);
+    s.n_batch = get_env_var_as_int("LLM_LLAMA_SERVICE_BATCH_SIZE", s.n_batch);
+    s.n_ubatch = get_env_var_as_int("LLM_LLAMA_SERVICE_UBATCH_SIZE", s.n_ubatch);
     s.log_level = get_env_var("LLM_LLAMA_SERVICE_LOG_LEVEL", s.log_level);
 
-    // YENİDEN EKLENDİ: Varsayılan sampling parametrelerini ortam değişkenlerinden oku
     s.default_max_tokens = get_env_var_as_int("LLM_LLAMA_SERVICE_DEFAULT_MAX_TOKENS", s.default_max_tokens);
     s.default_temperature = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_TEMPERATURE", s.default_temperature);
     s.default_top_k = get_env_var_as_int("LLM_LLAMA_SERVICE_DEFAULT_TOP_K", s.default_top_k);
@@ -98,4 +99,4 @@ inline Settings load_settings() {
     }
 
     return s;
-}; // <-- EKLENDİ: Eksik noktalı virgül
+};
