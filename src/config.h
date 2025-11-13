@@ -25,8 +25,8 @@ struct Settings {
     uint32_t context_size = 4096;
     uint32_t n_threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency() / 2));
     uint32_t n_threads_batch = std::max(1u, std::min(8u, std::thread::hardware_concurrency() / 2));
-    uint32_t n_batch = 512;
-    uint32_t n_ubatch = 512;
+    // uint32_t n_batch = 512;
+    // uint32_t n_ubatch = 512;
     ggml_numa_strategy numa_strategy = GGML_NUMA_STRATEGY_DISABLED;
     
     std::string log_level = "info";
