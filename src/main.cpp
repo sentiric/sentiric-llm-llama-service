@@ -80,7 +80,7 @@ int main() {
     std::thread grpc_thread;
 
     try {
-        settings.model_path = ModelManager::ensure_model_is_ready(settings);
+        // settings.model_path = ModelManager::ensure_model_is_ready(settings);
 
         spdlog::info("Configuration: host={}, http_port={}, grpc_port={}", settings.host, settings.http_port, settings.grpc_port);
         spdlog::info("Model configuration: path={}", settings.model_path);

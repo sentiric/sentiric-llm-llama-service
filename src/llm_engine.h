@@ -30,7 +30,7 @@ private:
 
 class LLMEngine {
 public:
-    explicit LLMEngine(const Settings& settings);
+    explicit LLMEngine(Settings& settings); 
     ~LLMEngine();
 
     LLMEngine(const LLMEngine&) = delete;
@@ -47,6 +47,6 @@ public:
 private:
     llama_model* model_ = nullptr;
     std::atomic<bool> model_loaded_{false};
-    Settings settings_;
+    Settings& settings_;
     std::unique_ptr<LlamaContextPool> context_pool_;
 };

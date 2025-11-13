@@ -4,7 +4,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
-
+#include "model_manager.h" // BU SATIRI EKLE
 // --- LlamaContextPool Implementasyonu ---
 LlamaContextPool::LlamaContextPool(llama_model* model, const Settings& settings, size_t pool_size)
     : model_(model), settings_(settings) {
@@ -54,9 +54,15 @@ void LlamaContextPool::release(llama_context* ctx) {
 }
 
 // --- LLMEngine Implementasyonu ---
-LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
+LLMEngine::LLMEngine(Settings& settings) : settings_(settings) { // const kaldırıldı
+    spdlog::info("Initializing LLM Engine...");
+
+    // MODEL YÖNETİMİ BURAYA TAŞINDI
+    settings_.model_path = ModelManager::ensure_model_is_ready(settings_);
+
     spdlog::info("Initializing llama.cpp backend...");
     llama_backend_init();
+    
     llama_numa_init(settings.numa_strategy);
 
     llama_model_params model_params = llama_model_default_params();
