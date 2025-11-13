@@ -16,7 +16,6 @@ class LlamaContextPool {
 public:
     LlamaContextPool(llama_model* model, const Settings& settings, size_t pool_size);
     ~LlamaContextPool();
-
     llama_context* acquire();
     void release(llama_context* ctx);
 
@@ -30,9 +29,8 @@ private:
 
 class LLMEngine {
 public:
-    explicit LLMEngine(Settings& settings); 
+    explicit LLMEngine(Settings& settings);
     ~LLMEngine();
-
     LLMEngine(const LLMEngine&) = delete;
     LLMEngine& operator=(const LLMEngine&) = delete;
 
@@ -46,6 +44,7 @@ public:
 
 private:
     llama_model* model_ = nullptr;
+    const llama_vocab* vocab_ = nullptr; // YENİ EKLENDİ: Sözlük pointer'ı
     std::atomic<bool> model_loaded_{false};
     Settings& settings_;
     std::unique_ptr<LlamaContextPool> context_pool_;

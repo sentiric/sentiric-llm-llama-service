@@ -15,10 +15,7 @@ LlamaContextPool::LlamaContextPool(llama_model* model, const Settings& settings,
         ctx_params.n_ctx = settings.context_size;
         ctx_params.n_threads = settings.n_threads;
         ctx_params.n_threads_batch = settings.n_threads_batch; 
-        ctx_params.n_batch = settings.n_batch;
-        ctx_params.n_ubatch = settings.n_ubatch;
-
-        llama_context* ctx = llama_init_from_model(model_, ctx_params);
+        llama_context* ctx = llama_new_context_with_model(model_, ctx_params);
         if (ctx) {
             pool_.push(ctx);
         } else {
@@ -48,9 +45,9 @@ llama_context* LlamaContextPool::acquire() {
 void LlamaContextPool::release(llama_context* ctx) {
     if (ctx) {
         std::lock_guard<std::mutex> lock(mutex_);
-        // DEĞİŞİKLİK: 'llama_kv_cache_clear' yerine 'llama_kv_cache_seq_rm' kullanılıyor.
-        // Bu, b7046 API'si ile uyumludur ve tüm dizileri (sequences) temizler.
-        llama_kv_cache_seq_rm(ctx, -1, -1, -1);
+        // B7046 UYUMLULUĞU: Bu versiyonda KV cache'i temizlemenin en güvenli yolu
+        // tüm tokenları ve state'i sıfırlamaktır.
+        llama_kv_cache_clear(ctx);
         pool_.push(ctx);
         cv_.notify_one();
     }
@@ -62,14 +59,15 @@ LLMEngine::LLMEngine(Settings& settings) : settings_(settings) {
     settings_.model_path = ModelManager::ensure_model_is_ready(settings_);
     
     spdlog::info("Initializing llama.cpp backend...");
-    llama_backend_init();
-    llama_numa_init(settings.numa_strategy);
+    llama_backend_init(settings.numa_strategy);
 
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = settings.n_gpu_layers;
     
-    model_ = llama_model_load_from_file(settings.model_path.c_str(), model_params);
+    model_ = llama_load_model_from_file(settings.model_path.c_str(), model_params);
     if (!model_) throw std::runtime_error("Model loading failed from path: " + settings.model_path);
+
+    vocab_ = llama_get_vocab(model_); // Sözlüğü burada alıyoruz
 
     try {
         size_t pool_size = settings.n_threads > 0 ? settings.n_threads : 1;
@@ -77,14 +75,14 @@ LLMEngine::LLMEngine(Settings& settings) : settings_(settings) {
         model_loaded_ = true;
         spdlog::info("✅ LLM Engine initialized successfully.");
     } catch (const std::exception& e) {
-        llama_model_free(model_); model_ = nullptr;
+        llama_free_model(model_); model_ = nullptr;
         throw;
     }
 }
 
 LLMEngine::~LLMEngine() {
     context_pool_.reset();
-    if (model_) llama_model_free(model_);
+    if (model_) llama_free_model(model_);
     llama_backend_free();
     spdlog::info("LLM Engine shut down.");
 }
@@ -103,15 +101,13 @@ void LLMEngine::generate_stream(
         ~ContextReleaser() { if (pool && ctx) pool->release(ctx); }
     } releaser{context_pool_.get(), ctx};
 
-    const llama_vocab* vocab = llama_model_get_vocab(model_);
-
-    std::vector<llama_token> prompt_tokens;
-    prompt_tokens.resize(request.prompt().length() + 1);
-    int n_tokens = llama_tokenize(vocab, request.prompt().c_str(), request.prompt().length(), prompt_tokens.data(), prompt_tokens.size(), true, false);
+    std::vector<llama_token> prompt_tokens(request.prompt().length());
+    int n_tokens = llama_tokenize(model_, request.prompt().c_str(), request.prompt().length(), prompt_tokens.data(), prompt_tokens.size(), true);
     if (n_tokens < 0) throw std::runtime_error("Prompt tokenization failed.");
     prompt_tokens.resize(n_tokens);
-    
-    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), n_tokens, nullptr, 0);
+
+    // B7046 UYUMLULUĞU: llama_batch_get_one 2 argüman alır
+    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), n_tokens);
     if (llama_decode(ctx, batch) != 0) {
         throw std::runtime_error("llama_decode failed on prompt");
     }
@@ -126,38 +122,49 @@ void LLMEngine::generate_stream(
     float top_p = use_request_params ? params.top_p() : settings_.default_top_p;
     float repeat_penalty = use_request_params ? params.repetition_penalty() : settings_.default_repeat_penalty;
     
-    llama_sampler_chain* smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    struct SamplerReleaser {
-        llama_sampler_chain* s; ~SamplerReleaser() { if(s) llama_sampler_chain_free(s); }
-    } sampler_releaser{smpl};
-    
-    llama_sampler_chain_add_sampler(smpl, llama_sampler_repetition_penalty_init(smpl, prompt_tokens.data(), prompt_tokens.size(), repeat_penalty));
-    llama_sampler_chain_add_sampler(smpl, llama_sampler_top_k_init(smpl, top_k));
-    llama_sampler_chain_add_sampler(smpl, llama_sampler_top_p_init(smpl, top_p, 1));
-    llama_sampler_chain_add_sampler(smpl, llama_sampler_temperature_init(smpl, temperature));
-    llama_sampler_chain_add_sampler(smpl, llama_sampler_greedy_init(smpl));
-
     int n_decode = 0;
-    while (llama_kv_cache_seq_pos(ctx, 0) < (int32_t)llama_n_ctx(ctx) && n_decode < max_tokens) {
+    int n_past = n_tokens;
+
+    // B7046 UYUMLULUK DÜZELTMESİ: Manuel örnekleme döngüsü
+    while (n_past < (int32_t)llama_n_ctx(ctx) && n_decode < max_tokens) {
         if (should_stop_callback()) {
             spdlog::warn("Stream generation stopped by client cancellation.");
             break;
         }
 
-        llama_token new_token_id = llama_sampler_chain_sample(smpl, ctx, -1);
-        llama_sampler_chain_accept(smpl, new_token_id);
+        auto logits = llama_get_logits(ctx);
+        auto n_vocab = llama_n_vocab(model_);
+
+        std::vector<llama_token_data> candidates;
+        candidates.reserve(n_vocab);
+        for (llama_token token_id = 0; token_id < n_vocab; token_id++) {
+            candidates.emplace_back(llama_token_data{token_id, logits[token_id], 0.0f});
+        }
+        llama_token_data_array candidates_p = { candidates.data(), candidates.size(), false };
+
+        // Örnekleme (sampling) adımları
+        llama_sample_repetition_penalty(ctx, &candidates_p, prompt_tokens.data(), prompt_tokens.size(), repeat_penalty);
+        llama_sample_top_k(ctx, &candidates_p, top_k, 1);
+        llama_sample_top_p(ctx, &candidates_p, top_p, 1);
+        llama_sample_temperature(ctx, &candidates_p, temperature);
+        llama_token new_token_id = llama_sample_token(ctx, &candidates_p);
 
         if (new_token_id == llama_token_eos(model_)) break;
         
-        char piece_buf[64] = {0};
-        int n_chars = llama_token_to_piece(model_, new_token_id, piece_buf, sizeof(piece_buf));
-        if (n_chars < 0) throw std::runtime_error("llama_token_to_piece failed");
-        on_token_callback(std::string(piece_buf, n_chars));
+        // B7046 UYUMLULUĞU: llama_token_to_piece vocab* alır
+        char piece_buf[8] = {0};
+        llama_token_to_piece(ctx, new_token_id, piece_buf, sizeof(piece_buf));
+        on_token_callback(std::string(piece_buf));
 
-        llama_batch next_token_batch = llama_batch_get_one(&new_token_id, 1, nullptr, 0);
-        if (llama_decode(ctx, next_token_batch) != 0) {
+        prompt_tokens.push_back(new_token_id);
+        
+        batch = llama_batch_get_one(&new_token_id, 1);
+        batch.n_past = n_past;
+
+        if (llama_decode(ctx, batch) != 0) {
              throw std::runtime_error("Failed to decode next token");
         }
+        n_past++;
         n_decode++;
     }
 }
