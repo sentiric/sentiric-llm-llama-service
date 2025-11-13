@@ -1,5 +1,4 @@
 // src/config.h
-// DÜZELTME: Silinmiş olan varsayılan sampling parametreleri geri eklendi.
 #pragma once
 
 #include <string>
@@ -9,6 +8,7 @@
 #include "spdlog/spdlog.h"
 #include <algorithm>
 #include <filesystem>
+#include "llama.h" // ggml_numa_strategy için
 
 struct Settings {
     // Network Settings
@@ -26,17 +26,22 @@ struct Settings {
     int n_gpu_layers = 0;
     int context_size = 4096;
     int n_threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency() / 2));
+    // YENİ EKLENDİ: Modern llama.cpp için batching parametreleri
+    int n_batch = 512;
+    int n_ubatch = 512;
+    ggml_numa_strategy numa_strategy = GGML_NUMA_STRATEGY_DISABLED;
     
     // Logging Settings
     std::string log_level = "info";
 
-    // YENİDEN EKLENDİ: Default Sampling Parameters
+    // Default Sampling Parameters
     float default_temperature = 0.8f;
     int32_t default_top_k = 40;
     float default_top_p = 0.95f;
     float default_repeat_penalty = 1.1f;
     int32_t default_max_tokens = 1024;
 };
+
 
 inline Settings load_settings() {
     Settings s;
@@ -93,4 +98,5 @@ inline Settings load_settings() {
     }
 
     return s;
+}
 }
