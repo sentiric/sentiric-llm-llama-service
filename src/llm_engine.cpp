@@ -5,8 +5,9 @@
 #include <vector>
 #include <string>
 #include <algorithm>
-// EKLENDİ: Dinamik örnekleyici parametreleri için
-#include "llama_sampling.h"
+
+// KALDIRILDI: Bu başlık dosyası kütüphanenin dahili kullanımına özeldir.
+// #include "llama_sampling.h" 
 
 // --- LlamaContextPool Implementasyonu (Değişiklik yok) ---
 
@@ -56,18 +57,17 @@ llama_context* LlamaContextPool::acquire() {
 void LlamaContextPool::release(llama_context* ctx) {
     if (ctx) {
         std::lock_guard<std::mutex> lock(mutex_);
-        llama_memory_seq_rm(llama_get_memory(ctx), -1, -1, -1);
+        llama_kv_cache_clear(ctx); // KV cache'i temizle
         pool_.push(ctx);
         cv_.notify_one();
     }
 }
 
 
-// --- LLMEngine Implementasyonu (Değişiklikler burada) ---
+// --- LLMEngine Implementasyonu ---
 
 LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
     spdlog::info("Initializing llama.cpp backend...");
-
     llama_backend_init();
     llama_numa_init(GGML_NUMA_STRATEGY_DISTRIBUTE);
 
@@ -82,8 +82,6 @@ LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
     }
     
     vocab_ = llama_model_get_vocab(model_);
-    // DEĞİŞTİRİLDİ: Global sampler artık oluşturulmuyor, her istekte dinamik olarak yaratılacak.
-    // sampler_ = llama_sampler_init_greedy(); // BU SATIR SİLİNDİ
     if (!vocab_) {
         llama_model_free(model_);
         throw std::runtime_error("Failed to initialize vocab.");
@@ -124,87 +122,69 @@ void LLMEngine::generate_stream(
         throw std::runtime_error("Failed to acquire a llama_context from the pool.");
     }
 
-    // RAII sarmalayıcısı ile context'in otomatik iade edilmesini sağla
     struct ContextReleaser {
         LlamaContextPool* pool;
         llama_context* ctx;
         ~ContextReleaser() { if (pool && ctx) pool->release(ctx); }
     } releaser{context_pool_.get(), ctx};
 
-    // --- EKLENDİ: Dinamik Örnekleyici (Sampler) Yapılandırması ---
-    llama_sampler_params sparams;
+    // --- NİHAİ DÜZELTME: Doğru Public API'yi kullanarak sampling context'i oluştur ---
     const auto& params = request.params();
+    llama_sampling_params sampling_params;
+    sampling_params.temp = params.has_temperature() ? params.temperature() : settings_.default_temperature;
+    sampling_params.top_k = params.has_top_k() ? params.top_k() : settings_.default_top_k;
+    sampling_params.top_p = params.has_top_p() ? params.top_p() : settings_.default_top_p;
+    sampling_params.penalty_repeat = params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty;
+    // Diğer parametreler de buraya eklenebilir
 
-    sparams.temp = params.has_temperature() ? params.temperature() : settings_.default_temperature;
-    sparams.top_k = params.has_top_k() ? params.top_k() : settings_.default_top_k;
-    sparams.top_p = params.has_top_p() ? params.top_p() : settings_.default_top_p;
-    sparams.penalty_repeat = params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty;
-    // Diğer parametreler de benzer şekilde eklenebilir.
-
-    llama_sampler* sampler = llama_sampler_init_chain_default_with_params(&sparams);
-    if (!sampler) {
-        throw std::runtime_error("Failed to initialize dynamic sampler chain.");
+    struct llama_sampling_context* sampler_ctx = llama_sampling_init(sampling_params);
+    if (!sampler_ctx) {
+        throw std::runtime_error("Failed to initialize sampling context.");
     }
-    
-    // RAII sarmalayıcısı ile sampler'ın otomatik temizlenmesini sağla
-    struct SamplerReleaser {
-        llama_sampler* s;
-        ~SamplerReleaser() { if (s) llama_sampler_free(s); }
-    } sampler_releaser{sampler};
-    // --- Değişiklik Sonu ---
 
-    std::vector<llama_token> prompt_tokens(request.prompt().size());
-    int n_tokens = llama_tokenize(vocab_, request.prompt().c_str(), request.prompt().size(), prompt_tokens.data(), prompt_tokens.size(), true, false);
+    struct SamplerReleaser {
+        struct llama_sampling_context* s_ctx;
+        ~SamplerReleaser() { if (s_ctx) llama_sampling_free(s_ctx); }
+    } sampler_releaser{sampler_ctx};
+    // --- Değişiklik sonu ---
+
+    std::vector<llama_token> prompt_tokens(request.prompt().size() + 1); // Add BOS token
+    int n_tokens = llama_tokenize(model_, request.prompt().c_str(), request.prompt().size(), prompt_tokens.data(), prompt_tokens.size(), true, false);
     if (n_tokens < 0) {
         throw std::runtime_error("Prompt tokenization failed.");
     }
     prompt_tokens.resize(n_tokens);
 
-    uint32_t n_ctx = llama_n_ctx(ctx);
-    if (prompt_tokens.size() > n_ctx - 4) {
-         throw std::runtime_error("Prompt is too long.");
-    }
-
-    llama_batch batch = llama_batch_get_one(prompt_tokens.data(), prompt_tokens.size());
-
-    if (llama_decode(ctx, batch) != 0) {
+    if (llama_decode(ctx, llama_batch_get_one(prompt_tokens.data(), n_tokens, 0, 0))) {
         throw std::runtime_error("llama_decode failed on prompt");
     }
 
     int32_t max_tokens = settings_.default_max_tokens;
-    if (request.has_params() && request.params().has_max_new_tokens()) {
+    if (request.has_params() && request.params().has_max_new_tokens() && request.params().max_new_tokens() > 0) {
         max_tokens = request.params().max_new_tokens();
     }
     
     int n_decode = 0;
     
-    while (n_decode < max_tokens) {
+    while (llama_get_kv_cache_token_count(ctx) < settings_.context_size && n_decode < max_tokens) {
         if (should_stop_callback()) {
             spdlog::warn("Stream generation stopped by client cancellation.");
             break;
         }
 
-        // DEĞİŞTİRİLDİ: Global `sampler_` yerine isteğe özel `sampler` kullanılıyor.
-        llama_token new_token_id = llama_sampler_sample(sampler, ctx, -1);
-        llama_sampler_accept(sampler, new_token_id);
+        llama_token new_token_id = llama_sampling_sample(sampler_ctx, ctx, nullptr);
+        llama_sampling_accept(sampler_ctx, ctx, new_token_id, true);
 
-        if (llama_vocab_is_eog(vocab_, new_token_id)) {
+        if (new_token_id == llama_token_eos(model_)) {
             break;
         }
         
-        char piece[128];
-        int n_chars = llama_token_to_piece(vocab_, new_token_id, piece, sizeof(piece), 0, false);
-        if (n_chars < 0) {
-            throw std::runtime_error("llama_token_to_piece failed.");
+        std::string token_str = llama_token_to_piece(ctx, new_token_id);
+        on_token_callback(token_str);
+
+        if (llama_decode(ctx, llama_batch_get_one(&new_token_id, 1, llama_get_kv_cache_token_count(ctx), 0))) {
+             throw std::runtime_error("Failed to decode next token");
         }
-        on_token_callback(std::string(piece, n_chars));
-
-        batch = llama_batch_get_one(&new_token_id, 1);
-
-        n_decode += 1;
-
-        if (llama_decode(ctx, batch) != 0) {
-            throw std::runtime_error("Failed to decode next token");
-        }
+        n_decode++;
     }
 }
