@@ -13,11 +13,9 @@
 #include <fstream>
 #include <sstream>
 
-// SPDLOG BAŞLIKLARI EKLENDİ
+// GÜNCELLENDİ: Sadece gerekli spdlog başlıkları
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/sinks/json_sink.h>
-
 
 namespace {
     std::promise<void> shutdown_promise;
@@ -27,9 +25,7 @@ void signal_handler(int signal) {
     spdlog::warn("Signal {} received. Initiating graceful shutdown...", signal);
     try {
         shutdown_promise.set_value();
-    } catch (const std::future_error&) {
-        // Promise zaten set edilmişse görmezden gel.
-    }
+    } catch (const std::future_error&) {}
 }
 
 std::string read_file(const std::string& filepath) {
@@ -42,29 +38,27 @@ std::string read_file(const std::string& filepath) {
     return buffer.str();
 }
 
-// YENİ FONKSİYON: Ortama duyarlı loglamayı yapılandırır.
+// GÜNCELLENDİ: json_sink.h bağımlılığı olmadan loglamayı yapılandırır.
 void setup_logging() {
     const char* env_p = std::getenv("ENV");
     std::string env = env_p ? std::string(env_p) : "development";
-
+    auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    
     if (env == "production") {
-        auto sink = std::make_shared<spdlog::sinks::stdout_json_sink_mt>();
-        // Standart alanlar: servis adı, versiyon vb. eklenebilir.
-        // Bu pattern, logları JSON nesneleri olarak formatlar.
-        auto logger = std::make_shared<spdlog::logger>("llm-llama-service", sink);
-        spdlog::set_default_logger(logger);
-        // Üretim logları için pattern'e gerek yok, json_sink hallediyor.
+        // JSON formatını manuel olarak bir pattern ile belirliyoruz.
+        // Bu, json_sink.h başlığına olan ihtiyacı ortadan kaldırır.
+        sink->set_pattern(R"({"timestamp":"%Y-%m-%dT%T.%fZ","level":"%l","service":"llm-llama-service","message":"%v"})");
     } else {
         // Geliştirme: Renkli, okunabilir konsol logları
-        auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-        auto logger = std::make_shared<spdlog::logger>("llm-llama-service", sink);
-        logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
-        spdlog::set_default_logger(logger);
+        sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
     }
+    
+    auto logger = std::make_shared<spdlog::logger>("llm-llama-service", sink);
+    spdlog::set_default_logger(logger);
 }
 
+
 int main() {
-    // Loglama, diğer her şeyden ÖNCE yapılandırılmalı.
     setup_logging();
 
     signal(SIGINT, signal_handler);
@@ -80,11 +74,6 @@ int main() {
     std::thread grpc_thread;
 
     try {
-        // settings.model_path = ModelManager::ensure_model_is_ready(settings);
-
-        spdlog::info("Configuration: host={}, http_port={}, grpc_port={}", settings.host, settings.http_port, settings.grpc_port);
-        spdlog::info("Model configuration: path={}", settings.model_path);
-
         auto engine = std::make_shared<LLMEngine>(settings);
         if (!engine->is_model_loaded()) {
             spdlog::critical("LLM Engine failed to initialize with a valid model. Shutting down.");
