@@ -14,12 +14,10 @@ LlamaContextPool::LlamaContextPool(llama_model* model, const Settings& settings,
     }
     for (size_t i = 0; i < pool_size; ++i) {
         llama_context_params ctx_params = llama_context_default_params();
-        ctx_params.n_ctx = settings.context_size;
-        ctx_params.n_threads = settings.n_threads;
-        ctx_params.n_threads_batch = settings.n_threads;
-        ctx_params.n_batch = settings.n_batch;
-        ctx_params.n_ubatch = settings.n_ubatch;
-
+        ctx_params.n_ctx = settings_.context_size;
+        ctx_params.n_threads = settings_.n_threads;
+        ctx_params.n_threads_batch = settings_.n_threads;
+        
         llama_context* ctx = llama_new_context_with_model(model_, ctx_params);
         if (ctx) {
             pool_.push(ctx);
@@ -55,7 +53,7 @@ llama_context* LlamaContextPool::acquire() {
 void LlamaContextPool::release(llama_context* ctx) {
     if (ctx) {
         std::lock_guard<std::mutex> lock(mutex_);
-        llama_kv_cache_seq_rm(ctx, 0, -1, -1);
+        llama_kv_cache_seq_rm(ctx, -1, -1, -1);
         pool_.push(ctx);
         cv_.notify_one();
     }
@@ -66,22 +64,23 @@ void LlamaContextPool::release(llama_context* ctx) {
 
 LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
     spdlog::info("Initializing llama.cpp backend...");
+
     llama_backend_init();
-    llama_numa_init(settings.numa_strategy);
+    llama_numa_init(GGML_NUMA_STRATEGY_DISTRIBUTE);
 
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = settings.n_gpu_layers;
+    model_params.n_gpu_layers = settings_.n_gpu_layers;
     
-    model_ = llama_load_model_from_file(settings.model_path.c_str(), model_params);
+    model_ = llama_load_model_from_file(settings_.model_path.c_str(), model_params);
     
     if (!model_) {
         model_loaded_ = false;
-        throw std::runtime_error("Model loading failed from path: " + settings.model_path);
+        throw std::runtime_error("Model loading failed from path: " + settings_.model_path);
     }
 
     try {
-        size_t pool_size = settings.n_threads > 0 ? settings.n_threads : 1;
-        context_pool_ = std::make_unique<LlamaContextPool>(model_, settings, pool_size);
+        size_t pool_size = settings_.n_threads > 0 ? settings_.n_threads : 1;
+        context_pool_ = std::make_unique<LlamaContextPool>(model_, settings_, pool_size);
         model_loaded_ = true;
         spdlog::info("✅ LLM Engine initialized successfully.");
     } catch (const std::exception& e) {
@@ -109,16 +108,22 @@ void LLMEngine::generate_stream(
     const std::function<bool()>& should_stop_callback) {
     
     llama_context* ctx = context_pool_->acquire();
-    if (!ctx) throw std::runtime_error("Failed to acquire a llama_context from the pool.");
+    if (!ctx) {
+        throw std::runtime_error("Failed to acquire a llama_context from the pool.");
+    }
+
     struct ContextReleaser {
-        LlamaContextPool* pool; llama_context* ctx;
+        LlamaContextPool* pool;
+        llama_context* ctx;
         ~ContextReleaser() { if (pool && ctx) pool->release(ctx); }
     } releaser{context_pool_.get(), ctx};
 
     std::vector<llama_token> prompt_tokens;
-    prompt_tokens.resize(request.prompt().length());
+    prompt_tokens.resize(settings_.context_size);
     int n_tokens = llama_tokenize(model_, request.prompt().c_str(), request.prompt().length(), prompt_tokens.data(), prompt_tokens.size(), true, false);
-    if (n_tokens < 0) throw std::runtime_error("Prompt tokenization failed.");
+    if (n_tokens < 0) {
+        throw std::runtime_error("Prompt is too long for tokenization buffer.");
+    }
     prompt_tokens.resize(n_tokens);
 
     if (llama_decode(ctx, llama_batch_get_one(prompt_tokens.data(), n_tokens, 0, 0))) {
@@ -126,28 +131,34 @@ void LLMEngine::generate_stream(
     }
 
     const auto& params = request.params();
-    int32_t max_tokens = (params.has_max_new_tokens() && params.max_new_tokens() > 0) ? params.max_new_tokens() : settings_.default_max_tokens;
+    int32_t max_tokens = settings_.default_max_tokens;
+    if (request.has_params() && request.params().has_max_new_tokens() && request.params().max_new_tokens() > 0) {
+        max_tokens = request.params().max_new_tokens();
+    }
     
-    auto* vocab = llama_get_vocab(model_);
     llama_token_data_array candidates;
     candidates.data = new llama_token_data[llama_n_vocab(model_)];
     candidates.size = llama_n_vocab(model_);
     candidates.sorted = false;
+    
     struct CandidatesCleaner {
         llama_token_data* data;
         ~CandidatesCleaner() { delete[] data; }
     } cleaner{candidates.data};
 
     int n_decode = 0;
-    while (llama_get_kv_cache_token_count(ctx) < (int32_t)llama_n_ctx(ctx) && n_decode < max_tokens) {
+    while (llama_get_kv_cache_token_count(ctx) < settings_.context_size && n_decode < max_tokens) {
         if (should_stop_callback()) {
             spdlog::warn("Stream generation stopped by client cancellation.");
             break;
         }
 
         auto* logits = llama_get_logits_ith(ctx, llama_get_kv_cache_token_count(ctx) - 1);
-        for (llama_token id = 0; id < (int)candidates.size; ++id) {
-            candidates.data[id] = {id, logits[id], 0.0f};
+        
+        for (llama_token token_id = 0; token_id < (llama_token)candidates.size; ++token_id) {
+            candidates.data[token_id].id = token_id;
+            candidates.data[token_id].logit = logits[token_id];
+            candidates.data[token_id].p = 0.0f;
         }
 
         llama_sample_repetition_penalties(ctx, &candidates, prompt_tokens.data(), prompt_tokens.size(), params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty, 64, 1.0f);
@@ -157,7 +168,9 @@ void LLMEngine::generate_stream(
         
         llama_token new_token_id = llama_sample_token_greedy(ctx, &candidates);
 
-        if (new_token_id == llama_token_eos(model_)) break;
+        if (new_token_id == llama_token_eos(model_)) {
+            break;
+        }
         
         on_token_callback(llama_token_to_piece(ctx, new_token_id));
         prompt_tokens.push_back(new_token_id);
