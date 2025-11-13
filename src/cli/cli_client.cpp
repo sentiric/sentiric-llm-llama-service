@@ -7,23 +7,20 @@
 
 namespace sentiric_llm_cli {
 
-// Constructor
 CLIClient::CLIClient(const std::string& grpc_endpoint, const std::string& http_endpoint)
     : grpc_endpoint_(grpc_endpoint), http_endpoint_(http_endpoint) {
     grpc_client_ = std::make_unique<GRPCClient>(grpc_endpoint_);
     http_client_ = std::make_unique<HTTPClient>(http_endpoint_);
 }
 
-// Destructor (unique_ptr'lar için otomatik temizlik yeterli)
 CLIClient::~CLIClient() = default;
 
-// gRPC İşlemleri
+// GÜNCELLENDİ: İmplementasyon yeni imzaya uyarlandı.
 bool CLIClient::generate_stream(const std::string& prompt, 
-                                std::function<void(const std::string&)> on_token,
-                                float temperature,
-                                int max_tokens) {
+                                const std::function<void(const std::string&)>& on_token) {
     if (!grpc_client_) return false;
-    return grpc_client_->generate_stream(prompt, on_token, temperature, max_tokens);
+    // Varsayılan temperature ve max_tokens değerleri GRPCClient katmanına iletiliyor.
+    return grpc_client_->generate_stream(prompt, on_token);
 }
 
 // HTTP İşlemleri

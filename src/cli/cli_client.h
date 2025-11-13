@@ -6,7 +6,6 @@
 
 namespace sentiric_llm_cli {
 
-// Forward declarations to reduce header dependencies
 class GRPCClient;
 class HTTPClient;
 
@@ -16,11 +15,9 @@ public:
               const std::string& http_endpoint = "localhost:16070");
     ~CLIClient();
     
-    // GRPC İşlemleri
+    // GÜNCELLENDİ: İmza, benchmark'ın ve basit kullanımın ihtiyaçlarına göre düzeltildi.
     bool generate_stream(const std::string& prompt, 
-                         std::function<void(const std::string&)> on_token = nullptr,
-                         float temperature = 0.8f,
-                         int max_tokens = 2048);
+                         const std::function<void(const std::string&)>& on_token);
     
     // HTTP İşlemleri
     bool health_check();
@@ -36,7 +33,6 @@ private:
     std::string http_endpoint_;
     int timeout_seconds_ = 30;
 
-    // Use unique_ptr for pimpl-like pattern
     std::unique_ptr<GRPCClient> grpc_client_;
     std::unique_ptr<HTTPClient> http_client_;
 };
