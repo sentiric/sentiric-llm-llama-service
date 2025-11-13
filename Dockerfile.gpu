@@ -23,7 +23,11 @@ WORKDIR /app
 COPY vcpkg.json .
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-RUN git clone https://github.com/ggerganov/llama.cpp.git llama.cpp
+# 4. llama.cpp'yi klonla ve belirli bir versiyona sabitle (BUILD STABILITY)
+ARG LLAMA_CPP_VERSION=b7046
+RUN git clone https://github.com/ggml-org/llama.cpp.git llama.cpp && \
+    cd llama.cpp && \
+    git checkout ${LLAMA_CPP_VERSION}
 
 COPY src ./src
 COPY CMakeLists.txt .

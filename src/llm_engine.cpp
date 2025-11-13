@@ -110,19 +110,28 @@ void LLMEngine::generate_stream(
         throw std::runtime_error("llama_decode failed on prompt");
     }
 
+    // --- KRİTİK HATA DÜZELTMESİ BAŞLANGICI ---
     const auto& params = request.params();
-    int32_t max_tokens = (params.has_max_new_tokens() && params.max_new_tokens() > 0) ? params.max_new_tokens() : settings_.default_max_tokens;
+    const bool use_request_params = request.has_params();
+
+    int32_t max_tokens = use_request_params && params.max_new_tokens() > 0 
+        ? params.max_new_tokens() : settings_.default_max_tokens;
+    float temperature = use_request_params ? params.temperature() : settings_.default_temperature;
+    int32_t top_k = use_request_params ? params.top_k() : settings_.default_top_k;
+    float top_p = use_request_params ? params.top_p() : settings_.default_top_p;
+    float repeat_penalty = use_request_params ? params.repetition_penalty() : settings_.default_repeat_penalty;
     
     llama_sampler* smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
     struct SamplerReleaser {
         llama_sampler* s; ~SamplerReleaser() { if(s) llama_sampler_free(s); }
     } sampler_releaser{smpl};
     
-    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(64, params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty, 0.0f, 0.0f));
-    llama_sampler_chain_add(smpl, llama_sampler_init_top_k(params.has_top_k() ? params.top_k() : settings_.default_top_k));
-    llama_sampler_chain_add(smpl, llama_sampler_init_top_p(params.has_top_p() ? params.top_p() : settings_.default_top_p, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_temp(params.has_temperature() ? params.temperature() : settings_.default_temperature));
+    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(64, repeat_penalty, 0.0f, 0.0f));
+    llama_sampler_chain_add(smpl, llama_sampler_init_top_k(top_k));
+    llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p, 1));
+    llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
+    // --- KRİTİK HATA DÜZELTMESİ SONU ---
 
     int n_decode = 0;
     int n_ctx_used = llama_memory_seq_pos_max(llama_get_memory(ctx), 0) + 1;

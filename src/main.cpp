@@ -7,13 +7,17 @@
 #include <thread>
 #include <memory>
 #include <csignal>
-#include <spdlog/spdlog.h>
 #include <future>
 #include <grpcpp/grpcpp.h>
-// EKLENDİ: Güvenli sunucu kimlik bilgileri için gerekli başlıklar
 #include <grpcpp/security/server_credentials.h>
 #include <fstream>
 #include <sstream>
+
+// SPDLOG BAŞLIKLARI EKLENDİ
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/sinks/json_sink.h>
+
 
 namespace {
     std::promise<void> shutdown_promise;
@@ -28,7 +32,6 @@ void signal_handler(int signal) {
     }
 }
 
-// EKLENDİ: Sertifika dosyalarını okumak için yardımcı fonksiyon
 std::string read_file(const std::string& filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
@@ -39,7 +42,31 @@ std::string read_file(const std::string& filepath) {
     return buffer.str();
 }
 
+// YENİ FONKSİYON: Ortama duyarlı loglamayı yapılandırır.
+void setup_logging() {
+    const char* env_p = std::getenv("ENV");
+    std::string env = env_p ? std::string(env_p) : "development";
+
+    if (env == "production") {
+        auto sink = std::make_shared<spdlog::sinks::stdout_json_sink_mt>();
+        // Standart alanlar: servis adı, versiyon vb. eklenebilir.
+        // Bu pattern, logları JSON nesneleri olarak formatlar.
+        auto logger = std::make_shared<spdlog::logger>("llm-llama-service", sink);
+        spdlog::set_default_logger(logger);
+        // Üretim logları için pattern'e gerek yok, json_sink hallediyor.
+    } else {
+        // Geliştirme: Renkli, okunabilir konsol logları
+        auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        auto logger = std::make_shared<spdlog::logger>("llm-llama-service", sink);
+        logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
+        spdlog::set_default_logger(logger);
+    }
+}
+
 int main() {
+    // Loglama, diğer her şeyden ÖNCE yapılandırılmalı.
+    setup_logging();
+
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
@@ -68,7 +95,6 @@ int main() {
         GrpcServer grpc_service(engine);
         grpc::ServerBuilder builder;
 
-        // DEĞİŞTİRİLDİ: InsecureCredentials yerine SslServerCredentials (mTLS) kullanılıyor.
         const char* ca_path = std::getenv("GRPC_TLS_CA_PATH");
         const char* cert_path = std::getenv("LLM_LLAMA_SERVICE_CERT_PATH");
         const char* key_path = std::getenv("LLM_LLAMA_SERVICE_KEY_PATH");
@@ -92,7 +118,6 @@ int main() {
             builder.AddListeningPort(grpc_address, creds);
             spdlog::info("gRPC server configured to use mTLS.");
         }
-        // --- Değişiklik sonu ---
 
         builder.RegisterService(&grpc_service);
         grpc_server_ptr = builder.BuildAndStart();

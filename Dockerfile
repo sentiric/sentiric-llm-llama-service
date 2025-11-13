@@ -1,4 +1,3 @@
-# Dockerfile
 # --- Derleme Aşaması ---
 FROM ubuntu:24.04 AS builder
 
@@ -21,8 +20,11 @@ WORKDIR /app
 COPY vcpkg.json .
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# 4. llama.cpp'yi klonla (Nadiren değişir, ancak kodumuz değiştiğinde yeniden klonlanması gerekebilir)
-RUN git clone https://github.com/ggerganov/llama.cpp.git llama.cpp
+# 4. llama.cpp'yi klonla ve belirli bir versiyona sabitle (BUILD STABILITY)
+ARG LLAMA_CPP_VERSION=b7046
+RUN git clone https://github.com/ggml-org/llama.cpp.git llama.cpp && \
+    cd llama.cpp && \
+    git checkout ${LLAMA_CPP_VERSION}
 
 # 5. Proje kaynak kodunu ve build script'ini kopyala (En sık değişen katmanlar)
 # BU ADIMLARDAN BİRİ DEĞİŞTİĞİNDE, AŞAĞIDAKİ TÜM ADIMLAR YENİDEN ÇALIŞIR.
