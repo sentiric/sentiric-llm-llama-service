@@ -6,7 +6,6 @@
 #include <algorithm>
 
 // --- LlamaContextPool Implementasyonu ---
-
 LlamaContextPool::LlamaContextPool(llama_model* model, const Settings& settings, size_t pool_size)
     : model_(model), settings_(settings) {
     if (!model) throw std::runtime_error("LlamaContextPool: model pointer is null.");
@@ -16,8 +15,7 @@ LlamaContextPool::LlamaContextPool(llama_model* model, const Settings& settings,
         ctx_params.n_threads = settings.n_threads;
         ctx_params.n_threads_batch = settings.n_threads_batch;
         ctx_params.n_batch = settings.n_batch;
-        ctx_params.n_ubatch = settings.n_ubatch;
-
+        
         llama_context* ctx = llama_init_from_model(model_, ctx_params);
         if (ctx) {
             pool_.push(ctx);
@@ -55,7 +53,6 @@ void LlamaContextPool::release(llama_context* ctx) {
 }
 
 // --- LLMEngine Implementasyonu ---
-
 LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
     spdlog::info("Initializing llama.cpp backend...");
     llama_backend_init();
@@ -108,7 +105,7 @@ void LLMEngine::generate_stream(
     prompt_tokens.resize(n_tokens);
     
     llama_batch batch = llama_batch_get_one(prompt_tokens.data(), n_tokens);
-    if (llama_decode(ctx, batch)) {
+    if (llama_decode(ctx, batch) != 0) {
         throw std::runtime_error("llama_decode failed on prompt");
     }
 
@@ -138,13 +135,13 @@ void LLMEngine::generate_stream(
 
         if (new_token_id == llama_vocab_eos(vocab)) break;
         
-        char piece_buf[64];
+        char piece_buf[64] = {0};
         int n_chars = llama_token_to_piece(vocab, new_token_id, piece_buf, sizeof(piece_buf), 0, false);
         if (n_chars < 0) throw std::runtime_error("llama_token_to_piece failed");
         on_token_callback(std::string(piece_buf, n_chars));
 
         llama_batch next_token_batch = llama_batch_get_one(&new_token_id, 1);
-        if (llama_decode(ctx, next_token_batch)) {
+        if (llama_decode(ctx, next_token_batch) != 0) {
              throw std::runtime_error("Failed to decode next token");
         }
         n_decode++;
