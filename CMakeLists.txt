@@ -35,6 +35,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
+# NİHAİ DÜZELTME: llama.cpp'nin başlık dosyalarını global olarak ekle.
+# Bu komut, bu noktadan sonra tanımlanan TÜM hedeflerin bu yolları görmesini sağlar.
+include_directories(
+    llama.cpp
+    llama.cpp/include
+)
+
 # --- Protobuf Kod Üretimi ---
 set(PROTO_FILES "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto")
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
