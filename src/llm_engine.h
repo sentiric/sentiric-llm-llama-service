@@ -12,7 +12,6 @@
 #include <condition_variable>
 #include "sentiric/llm/v1/local.pb.h"
 
-// Eşzamanlı istekleri yönetmek için bir context havuzu.
 class LlamaContextPool {
 public:
     LlamaContextPool(llama_model* model, const Settings& settings, size_t pool_size);
@@ -47,8 +46,6 @@ public:
 
 private:
     llama_model* model_ = nullptr;
-    // vocab ve sampler artık her istekte dinamik olarak ele alınacak
-
     std::atomic<bool> model_loaded_{false};
     Settings settings_;
     std::unique_ptr<LlamaContextPool> context_pool_;

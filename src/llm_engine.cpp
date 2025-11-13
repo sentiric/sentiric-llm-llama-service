@@ -22,7 +22,6 @@ LlamaContextPool::LlamaContextPool(llama_model* model, const Settings& settings,
         if (ctx) {
             pool_.push(ctx);
         } else {
-            // Başarısızlık durumunda önceden oluşturulmuş context'leri temizle
             while(!pool_.empty()) {
                 llama_free(pool_.front());
                 pool_.pop();
@@ -54,7 +53,6 @@ llama_context* LlamaContextPool::acquire() {
 void LlamaContextPool::release(llama_context* ctx) {
     if (ctx) {
         std::lock_guard<std::mutex> lock(mutex_);
-        // GÜNCEL API: Tüm sequence'lar için KV cache'i temizle
         llama_kv_cache_seq_rm(ctx, -1, -1, -1);
         pool_.push(ctx);
         cv_.notify_one();
@@ -94,7 +92,7 @@ LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
 }
 
 LLMEngine::~LLMEngine() {
-    context_pool_.reset(); // Önce context'leri temizle
+    context_pool_.reset();
     if (model_) llama_free_model(model_);
     llama_backend_free();
     spdlog::info("LLM Engine shut down.");
@@ -128,12 +126,10 @@ void LLMEngine::generate_stream(
     }
     prompt_tokens.resize(n_tokens);
 
-    // Prompt'u işle
     if (llama_decode(ctx, llama_batch_get_one(prompt_tokens.data(), n_tokens, 0, 0))) {
         throw std::runtime_error("llama_decode failed on prompt");
     }
 
-    // Parametreleri ayarla
     const auto& params = request.params();
     int32_t max_tokens = settings_.default_max_tokens;
     if (request.has_params() && request.params().has_max_new_tokens() && request.params().max_new_tokens() > 0) {
@@ -157,7 +153,6 @@ void LLMEngine::generate_stream(
             break;
         }
 
-        // Bir sonraki token için logitleri al
         auto* logits = llama_get_logits_ith(ctx, llama_get_kv_cache_token_count(ctx) - 1);
         
         for (llama_token token_id = 0; token_id < (llama_token)candidates.size; ++token_id) {
@@ -166,7 +161,6 @@ void LLMEngine::generate_stream(
             candidates.data[token_id].p = 0.0f;
         }
 
-        // Sampling parametrelerini uygula
         llama_sample_repetition_penalties(ctx, &candidates, prompt_tokens.data(), prompt_tokens.size(), params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty, 64, 1.0f);
         llama_sample_top_k(ctx, &candidates, params.has_top_k() ? params.top_k() : settings_.default_top_k, 1);
         llama_sample_top_p(ctx, &candidates, params.has_top_p() ? params.top_p() : settings_.default_top_p, 1);
