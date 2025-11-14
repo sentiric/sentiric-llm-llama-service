@@ -1,16 +1,16 @@
 # 🧠 Sentiric LLM Llama Service
 
-**Production-ready** C++ local LLM inference service. Built for high performance, concurrency, and reliability.
+**Production-ready** C++ local LLM inference service. Built for high performance, true concurrency, and reliability.
 
 [![CI - Build and Push Docker Image](https://github.com/sentiric/sentiric-llm-llama-service/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/sentiric/sentiric-llm-llama-service/actions/workflows/build-and-push.yml)
 
 ## 🚀 Features
 
--   ✅ **High Performance**: Concurrent request handling via a context pool.
--   ✅ **gRPC Streaming**: Real-time, token-by-token generation.
--   ✅ **HTTP Health Check**: `/health` endpoint for robust monitoring.
--   ✅ **Modern C++ & llama.cpp**: Built on a modern C++17 stack using the latest `llama.cpp` backend.
--   ✅ **Dockerized**: Deploys as a minimal and efficient Docker container.
+-   ✅ **True Concurrency**: High-performance, concurrent request handling via a `LlamaContextPool`. The service can process multiple requests in parallel, maximizing hardware utilization.
+-   ✅ **gRPC Streaming**: Real-time, token-by-token generation for interactive applications.
+-   ✅ **HTTP Health Check**: `/health` endpoint for robust monitoring and orchestration.
+-   ✅ **Modern C++ & llama.cpp**: Built on a modern C++17 stack using a stable, recent version of the `llama.cpp` backend.
+-   ✅ **Dockerized & Optimized**: Deploys as a minimal and efficient multi-stage Docker container for both CPU and NVIDIA GPU.
 -   ✅ **CLI Tool**: Includes `llm_cli` for testing, benchmarking, and health checks.
 
 ---

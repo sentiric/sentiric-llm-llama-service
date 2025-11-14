@@ -1,4 +1,4 @@
-# 🏗️ Sistem Mimarisi
+# 🏗️ Sistem Mimarisi (Rev. 2)
 
 ## 1. Sistem Diyagramı
 
@@ -9,14 +9,14 @@ graph TD
     subgraph Clients
         A[llm_cli]
         B[Python Client]
-        C[...]
+        C[llm-gateway]
     end
 
     subgraph LLM Service Container
         direction LR
         subgraph "API Endpoints"
-            gRPC_Server[gRPC Server]
-            HTTP_Server[HTTP Server]
+            gRPC_Server[gRPC Server (mTLS)]
+            HTTP_Server[HTTP Server (Health)]
         end
 
         LLM_Engine[LLM Engine]
@@ -31,12 +31,12 @@ graph TD
     end
 
     subgraph "llama.cpp Backend"
-        libllama[libllama.so + deps]
-        ModelFile[(Phi-3 GGUF Model)]
+        libllama[libllama.so + common]
+        ModelFile[(GGUF Model)]
     end
     
     Clients -- gRPC / HTTP --> LLM Service Container
-    LlamaContextPool -- "Acquires/Releases" --> libllama
+    LlamaContextPool -- "Acquires/Releases Context" --> libllama
     libllama -- "Loads/Interacts" --> ModelFile
 
     classDef client fill:#d4edda,stroke:#155724
@@ -50,21 +50,19 @@ graph TD
 
 ## 2. Eşzamanlılık Modeli (Concurrency)
 
-Mimari, bir **context havuzu (`LlamaContextPool`)** kullanarak gerçek eşzamanlılık sağlar:
+Mimari, bir **context havuzu (`LlamaContextPool`)** kullanarak gerçek eşzamanlılık sağlar. Bu, servisin en kritik performans bileşenidir.
 
--   Servis başladığında, `LLM_THREADS` sayısı kadar `llama_context` oluşturulur ve havuza eklenir.
--   Her gelen gRPC isteği, havuzdan boşta bir `llama_context` talep eder.
--   İstek, bu context'i kullanarak token üretme işlemini gerçekleştirir. Bu sırada diğer istekler, havuzdaki diğer boş context'leri kullanarak paralel olarak işlenebilir.
--   İşlem bittiğinde, context'in KV cache'i `llama_memory_seq_rm` ile temizlenir ve tekrar havuza bırakılır. Bu, bir sonraki isteğin temiz bir state ile başlamasını garanti eder.
+-   **İlklendirme:** Servis başladığında, `LLM_LLAMA_SERVICE_THREADS` ortam değişkeni ile belirlenen sayıda `llama_context` oluşturulur ve havuza eklenir.
+-   **İstek İşleme:** Her gelen gRPC isteği, havuzdan boşta bir `llama_context` "kiralar". Bu sırada diğer istekler, havuzdaki diğer boş context'leri kullanarak **paralel olarak** işlenir.
+-   **Kaynak İadesi ve Temizlik (Kritik Adım):** İşlem bittiğinde veya istemci bağlantıyı kapattığında, kullanılan context'in KV cache'i `llama_kv_cache_seq_rm(ctx, -1, 0, -1)` çağrısı ile **mutlaka temizlenir** ve context tekrar havuza bırakılır. Bu, bir sonraki isteğin, önceki isteğin "hafızası" olmadan temiz bir state ile başlamasını garanti eder. Bu adımın atlanması, state sızıntısına (state leak) ve hatalı çıktılara yol açar.
 
 ## 3. Build ve Bağımlılık Mimarisi
 
 Sistem, bağımlılıkları derleme anında çözümleyen, taşınabilir ve kendi kendine yeten (self-contained) bir Docker imaj yapısı kullanır.
 
 1.  **vcpkg Kurulumu:** `vcpkg` paket yöneticisi, `vcpkg.json` dosyasında belirtilen C++ kütüphanelerini (`gRPC`, `spdlog` vb.) derler.
-2.  **`llama.cpp` Klonlama:** `ggerganov/llama.cpp` reposunun en güncel `master` branch'i, derleme ortamına klonlanır.
-3.  **Uygulama Derlemesi:** Projenin ana kodu, `vcpkg` ve anlık derlenen `llama.cpp` kütüphanelerine karşı derlenir.
-4.  **Runtime İmajı:** Minimal bir Ubuntu imajı üzerine sadece çalıştırılabilir dosyalar ve `llama.cpp`'nin gerektirdiği paylaşılan kütüphaneler (`*.so`) kopyalanır ve `ldconfig` ile linklenir.
-
+2.  **`llama.cpp` Klonlama:** `Dockerfile` içinde belirtilen **sabit bir commit hash'i** kullanılarak `ggerganov/llama.cpp` reposu klonlanır. Bu, tekrarlanabilir ve stabil build'leri garanti eder.
+3.  **Uygulama Derlemesi:** Projenin ana kodu (`llm_service`, `llm_cli`), `vcpkg` kütüphanelerine ve anlık derlenen `llama` ve `common` kütüphanelerine karşı derlenir. `CMakeLists.txt`, `LLAMA_BUILD_COMMON=ON` bayrağını ayarlayarak `common` kütüphanesinin derlenmesini zorunlu kılar.
+4.  **Runtime İmajı:** Minimal bir `ubuntu` veya `nvidia/cuda` runtime imajı üzerine sadece çalıştırılabilir dosyalar ve `llama.cpp`'nin gerektirdiği paylaşılan kütüphaneler (`*.so`) kopyalanır ve `ldconfig` ile linklenir.
 
 ---
