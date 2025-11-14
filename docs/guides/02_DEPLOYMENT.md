@@ -67,6 +67,30 @@ Hangi profille başlattığınızdan bağımsız olarak, servisi durdurmak için
 docker compose down
 ```
 
+## 4. Kaynak Gereksinimleri ve Ölçeklendirme Notları
+
+Bu servis, `LlamaContextPool` mimarisi sayesinde gerçek eşzamanlılık sunar. Ancak bu, kaynak kullanımı üzerinde doğrudan bir etkiye sahiptir.
+
+### Temel Formül
+
+Gerekli toplam bellek (RAM veya VRAM), aşağıdaki formülle kabaca tahmin edilebilir:
+
+**Toplam Bellek ≈ Model Boyutu + ( `LLM_LLAMA_SERVICE_THREADS` × Her Context için KV Cache Boyutu )**
+
+-   **Model Boyutu:** Kullandığınız GGUF dosyasının boyutu.
+-   **KV Cache Boyutu:** Bu, `context_size` ve modelin mimarisine bağlıdır. `phi-3-mini-4k-instruct-q4.gguf` için `4096` context ile yaklaşık **1.5 GB**'tır.
+
+### Örnek Senaryolar
+
+-   **CPU (16GB RAM):** `LLM_LLAMA_SERVICE_THREADS=3` ayarıyla:
+    `~2.3 GB (Model) + (3 * ~1.5 GB) = ~6.8 GB` RAM sadece servis için gereklidir. İşletim sistemi ve diğer servislerle birlikte bu, 16 GB'lık bir sistemde yavaşlamaya (swapping) neden olabilir. Eşzamanlılık seviyesini, mevcut sistem belleğine göre dikkatli bir şekilde ayarlayın.
+
+-   **GPU (6GB VRAM):** `LLM_LLAMA_SERVICE_THREADS=3` ve `n_gpu_layers=-1` (tam offload) ayarıyla:
+    `~2.3 GB (Model) + (3 * ~1.5 GB) = ~6.8 GB` VRAM gereklidir. Bu, 6 GB VRAM'i aşar ve `out of memory` hatasına yol açar.
+    -   **Çözüm:** Bu donanımda eşzamanlılığı sağlamak için ya `LLM_LLAMA_SERVICE_THREADS` sayısını `1` veya `2` gibi VRAM'e sığacak bir değere düşürün ya da modelin sadece bir kısmını GPU'ya offload edin (`n_gpu_layers`).
+
+**Öneri:** Üretim ortamında, hedeflenen eşzamanlılık seviyesine yetecek kadar RAM veya VRAM kaynağı ayarlanmalıdır. Geliştirme ortamında, `LLM_LLAMA_SERVICE_THREADS` değişkenini `1` olarak ayarlayarak sıralı ama stabil bir şekilde çalışabilirsiniz.
+
 ## Configuration
 
 ### Environment Variables
