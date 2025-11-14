@@ -1,26 +1,10 @@
 # docker-compose.gpu.override.yml
-# GELİŞTİRME dosyası. 'docker compose -f ... up --build' ve 'run' için kullanılır.
 services:
-  # Ana servis (docker compose up ile çalışır)
   llm-llama-service:
     build:
       context: .
       dockerfile: Dockerfile.gpu
+    image: sentiric/llm-llama-service:local-gpu
     environment:
-      # Geliştirme ortamında havuz boyutunu donanıma göre ayarla
       - LLM_LLAMA_SERVICE_THREADS=1
       - LLM_LLAMA_SERVICE_THREADS_BATCH=1
-
-  # CLI aracı için görev çalıştırıcı servis (docker compose run ile çalışır)
-  llm-cli:
-    # Derlenmiş olan GPU imajını temel alır
-    image: ghcr.io/sentiric/sentiric-llm-llama-service:latest-gpu
-    networks:
-      - sentiric-net
-    volumes:
-      - ../sentiric-certificates:/sentiric-certificates:ro
-    # ÖNEMLİ: CLI'nin mTLS için ihtiyaç duyduğu ortam değişkenleri
-    environment:
-      - GRPC_TLS_CA_PATH=/sentiric-certificates/certs/ca.crt
-      - LLM_LLAMA_SERVICE_CERT_PATH=/sentiric-certificates/certs/llm-llama-service-chain.crt
-      - LLM_LLAMA_SERVICE_KEY_PATH=/sentiric-certificates/certs/llm-llama-service.key

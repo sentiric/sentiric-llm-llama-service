@@ -13,8 +13,8 @@ public:
     GRPCClient(const std::string& endpoint);
     ~GRPCClient();
     
-    bool connect();
-    bool is_connected() const;
+    // DÜZELTİLDİ: const kaldırıldı.
+    bool is_connected();
     
     bool generate_stream(const std::string& prompt,
                         std::function<void(const std::string&)> on_token,
@@ -24,6 +24,7 @@ public:
     void set_timeout(int seconds);
 
 private:
+    void ensure_channel_is_ready(); // YENİ yardımcı metod
     std::string endpoint_;
     int timeout_seconds_ = 30;
     std::unique_ptr<sentiric::llm::v1::LLMLocalService::Stub> stub_;

@@ -1,16 +1,20 @@
 # docker-compose.gpu.yml
-# Üretim ortamında GPU imajını çekmek için kullanılır.
-# Kullanım: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# Üretim ortamında GPU imajını çekmek ve GPU kaynaklarını ayırmak için kullanılır.
+
+# x- (uzantı) alanları, YAML çapaları gibi davranarak kod tekrarını önler.
+x-gpu-resources: &gpu-resources
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+
 services:
   llm-llama-service:
     image: ghcr.io/sentiric/sentiric-llm-llama-service:latest-gpu
     environment:
-      # GPU için varsayılan katman sayısını ezer
       - LLM_LLAMA_SERVICE_GPU_LAYERS=${LLM_LLAMA_SERVICE_GPU_LAYERS:-28}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    # GPU kaynaklarını referans göster
+    <<: *gpu-resources

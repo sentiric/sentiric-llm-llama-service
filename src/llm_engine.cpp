@@ -169,7 +169,7 @@ void LLMEngine::generate_stream(
         if (llama_vocab_is_eog(vocab, new_token_id)) { break; }
         
         char piece_buf[64] = {0};
-        int n_piece = llama_token_to_piece(vocab, new_token_id, piece_buf, sizeof(piece_buf), 0, false);
+        int n_piece = llama_token_to_piece(vocab, new_token_id, piece_buf, sizeof(piece_buf), 0, true);
         if (n_piece > 0) {
             on_token_callback(std::string(piece_buf, n_piece));
         }

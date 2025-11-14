@@ -13,7 +13,6 @@
 #include <fstream>
 #include <sstream>
 
-// GÜNCELLENDİ: Sadece gerekli spdlog başlıkları
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -38,18 +37,14 @@ std::string read_file(const std::string& filepath) {
     return buffer.str();
 }
 
-// GÜNCELLENDİ: json_sink.h bağımlılığı olmadan loglamayı yapılandırır.
 void setup_logging() {
     const char* env_p = std::getenv("ENV");
     std::string env = env_p ? std::string(env_p) : "development";
     auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     
     if (env == "production") {
-        // JSON formatını manuel olarak bir pattern ile belirliyoruz.
-        // Bu, json_sink.h başlığına olan ihtiyacı ortadan kaldırır.
         sink->set_pattern(R"({"timestamp":"%Y-%m-%dT%T.%fZ","level":"%l","service":"llm-llama-service","message":"%v"})");
     } else {
-        // Geliştirme: Renkli, okunabilir konsol logları
         sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
     }
     
@@ -74,7 +69,6 @@ int main() {
     std::thread grpc_thread;
 
     try {
-        // ModelManager çağrısı BURAYA GERİ GELDİ
         settings.model_path = ModelManager::ensure_model_is_ready(settings);
 
         spdlog::info("Configuration: host={}, http_port={}, grpc_port={}", settings.host, settings.http_port, settings.grpc_port);

@@ -26,7 +26,10 @@
 
 ## Geliştirme Sırasında Sık Kullanılan Komutlar
 
-### Servisi Başlatma
+### 1. Servisi Derleme ve Başlatma
+
+Her kod değişikliğinden sonra bu komut çalıştırılmalıdır.
+
 ```bash
 # CPU için
 docker compose up --build -d
@@ -35,52 +38,31 @@ docker compose up --build -d
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml up --build -d
 ```
 
-### `llm_cli` Aracını Kullanma (mTLS Ortamında)
+### 2. `llm_cli` Aracını Çalıştırma
 
-**ÖNEMLİ:** llm_cli aracını çalıştırmak için docker compose exec yerine docker compose run komutunu kullanın. docker-compose.override.yml dosyaları, llm-cli adında, mTLS için gerekli ortam değişkenlerini içeren özel bir servis tanımlar.
+`llm_cli`'yi çalıştırmak için `docker compose run` komutu kullanılır. Bu komut, ilgili ortam için (`cpu` veya `gpu`) tek seferlik bir konteyner başlatır.
 
-Bu yöntem, komutları basitleştirir ve ortam değişkeni sızıntısını önler.
+#### CPU Ortamında CLI Kullanımı
 
-Bunun için projenin kök dizininde, `docker-compose.yml` tarafından kullanılan tüm ortam değişkenlerini içeren bir `.env` dosyası oluşturun:
-
-**`.env` dosyası örneği:**
-```env
-# Network
-NETWORK_NAME=sentiric-net
-NETWORK_SUBNET=10.88.0.0/16
-NETWORK_GATEWAY=10.88.0.1
-LLM_LLAMA_SERVICE_IPV4_ADDRESS=10.88.60.7
-
-# Ports
-LLM_LLAMA_SERVICE_HTTP_PORT=16070
-LLM_LLAMA_SERVICE_GRPC_PORT=16071
-LLM_LLAMA_SERVICE_METRICS_PORT=16072
-
-# Security (mTLS) - Bu yollar, yerel makinenizdeki `sentiric-certificates` reposunun konumuna göre ayarlanmalıdır.
-GRPC_TLS_CA_PATH=../sentiric-certificates/certs/ca.crt
-LLM_LLAMA_SERVICE_CERT_PATH=../sentiric-certificates/certs/llm-llama-service-chain.crt
-LLM_LLAMA_SERVICE_KEY_PATH=../sentiric-certificates/certs/llm-llama-service.key
-
-# Diğer servis değişkenleri...
-```
-
-`.env` dosyası oluşturulduktan sonra, `llm_cli`'yi çalıştırmak için doğru komut şudur:
+CPU için ek bir dosyaya gerek yoktur. `docker-compose.override.yml` dosyası, `llm_cli` için gerekli tanımı içerir (bir sonraki adımda ekleyeceğiz).
 
 ```bash
-# --env-file parametresi, .env dosyasındaki değişkenleri exec komutuna aktarır
-docker compose exec --env-file .env llm-llama-service llm_cli <komut>
+# CPU'da CLI çalıştırma
+docker compose run --rm llm-cli llm_cli <komut>
 ```
 
-**Örnek `generate` komutu (CPU veya GPU):**
+#### GPU Ortamında CLI Kullanımı
+
+GPU ortamında `llm-cli`'yi çalıştırmak için, `docker-compose.run.gpu.yml` dosyasını özel olarak belirtmeniz gerekir. Bu dosya, konteynere GPU erişimi sağlar ve çalışan servisin ağına bağlanır.
+
 ```bash
-# `run --rm` komutu, `llm-cli` servisini çalıştırır, komutu yürütür ve sonra konteyneri kaldırır.
-docker compose run --rm llm-cli llm_cli generate "Merhaba dünya"
+# GPU'da CLI çalıştırma
+docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli <komut>
 ```
 
-Örnek health komutu:
-
+**Örnek `generate` komutu (GPU):**
 ```bash
-docker compose run --rm llm-cli llm_cli health
+docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli generate "GPU erişimiyle çalışıyor."
 ```
 
 ---
