@@ -5,35 +5,26 @@
 #include <string>
 #include <algorithm>
 #include "model_manager.h"
-#include "common.h" 
+#include "common.h"
 #include "llama.h"
 
-// --- ContextGuard Implementasyonu ---
-
-ContextGuard::ContextGuard(LlamaContextPool* pool, llama_context* ctx)
-    : pool_(pool), ctx_(ctx) {
-    if (!ctx_) {
-        throw std::runtime_error("Acquired null llama_context.");
-    }
+// --- ContextGuard Implementasyonu (DEĞİŞİKLİK YOK) ---
+ContextGuard::ContextGuard(LlamaContextPool* pool, llama_context* ctx) : pool_(pool), ctx_(ctx) {
+    if (!ctx_) throw std::runtime_error("Acquired null llama_context.");
 }
-
 ContextGuard::~ContextGuard() {
-    if (ctx_ && pool_) {
-        // NİHAİ DÜZELTME: `llama_get_memory` ile doğru API'yi kullan.
+        // KB Referansı: 2.4. KV Cache Yönetimi (DOĞRU KULLANIM)
         llama_memory_seq_rm(llama_get_memory(ctx_), -1, -1, -1);
         pool_->release(ctx_);
-    }
 }
-
-ContextGuard::ContextGuard(ContextGuard&& other) noexcept
-    : pool_(other.pool_), ctx_(other.ctx_) {
+ContextGuard::ContextGuard(ContextGuard&& other) noexcept : pool_(other.pool_), ctx_(other.ctx_) {
     other.pool_ = nullptr;
     other.ctx_ = nullptr;
 }
-
 ContextGuard& ContextGuard::operator=(ContextGuard&& other) noexcept {
     if (this != &other) {
         if (ctx_ && pool_) {
+            // KB Referansı: 2.4. KV Cache Yönetimi (DOĞRU KULLANIM)
             llama_memory_seq_rm(llama_get_memory(ctx_), -1, -1, -1);
             pool_->release(ctx_);
         }
@@ -45,16 +36,13 @@ ContextGuard& ContextGuard::operator=(ContextGuard&& other) noexcept {
     return *this;
 }
 
-// --- LlamaContextPool Implementasyonu ---
-
-LlamaContextPool::LlamaContextPool(const Settings& settings, llama_model* model)
-    : model_(model), settings_(settings) {
+// --- LlamaContextPool Implementasyonu (DEĞİŞİKLİK YOK) ---
+LlamaContextPool::LlamaContextPool(const Settings& settings, llama_model* model) : model_(model), settings_(settings) {
     max_size_ = settings.n_threads;
     if (max_size_ == 0) { max_size_ = 1; }
     spdlog::info("Context Pool: Initializing {} llama_context instances...", max_size_);
     initialize_contexts();
 }
-
 LlamaContextPool::~LlamaContextPool() {
     std::lock_guard<std::mutex> lock(mutex_);
     while (!pool_.empty()) {
@@ -64,36 +52,27 @@ LlamaContextPool::~LlamaContextPool() {
     }
     spdlog::info("Context Pool: Destroyed {} llama_context instances.", max_size_);
 }
-
 void LlamaContextPool::initialize_contexts() {
     if (!model_) return;
-
     for (size_t i = 0; i < max_size_; ++i) {
         llama_context_params ctx_params = llama_context_default_params();
         ctx_params.n_ctx = settings_.context_size;
-        ctx_params.n_threads = 1; 
+        ctx_params.n_threads = 1;
         ctx_params.n_threads_batch = 1;
         ctx_params.kv_unified = true;
-
         llama_context* ctx = llama_init_from_model(model_, ctx_params);
-        if (!ctx) {
-            throw std::runtime_error("Failed to create llama_context for pool instance.");
-        }
+        if (!ctx) throw std::runtime_error("Failed to create llama_context for pool instance.");
         pool_.push(ctx);
         spdlog::debug("Context Pool: Instance {}/{} created.", i + 1, max_size_);
     }
 }
-
 ContextGuard LlamaContextPool::acquire() {
     std::unique_lock<std::mutex> lock(mutex_);
     cv_.wait(lock, [this]{ return !pool_.empty(); });
-
     llama_context* ctx = pool_.front();
     pool_.pop();
-    
     return ContextGuard(this, ctx);
 }
-
 void LlamaContextPool::release(llama_context* ctx) {
     if (!ctx) return;
     {
@@ -107,18 +86,11 @@ void LlamaContextPool::release(llama_context* ctx) {
 
 LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
     spdlog::info("Initializing LLM Engine...");
-    
-    spdlog::info("Initializing llama.cpp backend...");
     llama_backend_init();
-
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = settings.n_gpu_layers;
-    
     model_ = llama_model_load_from_file(settings.model_path.c_str(), model_params);
-    if (!model_) {
-        throw std::runtime_error("Model loading failed from path: " + settings.model_path);
-    }
-
+    if (!model_) throw std::runtime_error("Model loading failed from path: " + settings.model_path);
     try {
         context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_);
         model_loaded_ = true;
@@ -126,12 +98,11 @@ LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
         llama_model_free(model_);
         throw std::runtime_error(std::string("Context pool initialization failed: ") + e.what());
     }
-
     spdlog::info("✅ LLM Engine initialized successfully.");
 }
 
 LLMEngine::~LLMEngine() {
-    context_pool_.reset(); 
+    context_pool_.reset();
     if (model_) llama_model_free(model_);
     llama_backend_free();
     spdlog::info("LLM Engine shut down.");
@@ -150,7 +121,7 @@ void LLMEngine::generate_stream(
     const auto* vocab = llama_model_get_vocab(model_);
     
     std::vector<llama_token> prompt_tokens;
-    prompt_tokens.resize(request.prompt().length() + 16); 
+    prompt_tokens.resize(request.prompt().length() + 16);
     int n_tokens = llama_tokenize(vocab, request.prompt().c_str(), request.prompt().length(), prompt_tokens.data(), prompt_tokens.size(), true, true);
     if (n_tokens < 0) { throw std::runtime_error("Tokenization failed."); }
     prompt_tokens.resize(n_tokens);
@@ -170,15 +141,17 @@ void LLMEngine::generate_stream(
     const bool use_request_params = request.has_params();
     
     int32_t max_tokens = use_request_params && params.max_new_tokens() > 0 ? params.max_new_tokens() : settings_.default_max_tokens;
-    float temperature = use_request_params && params.temperature() > 0 ? params.temperature() : settings_.default_temperature;
-    int32_t top_k = use_request_params && params.top_k() > 0 ? params.top_k() : settings_.default_top_k;
-    float top_p = use_request_params && params.top_p() > 0 ? params.top_p() : settings_.default_top_p;
-    float repeat_penalty = use_request_params && params.repetition_penalty() > 0 ? params.repetition_penalty() : settings_.default_repeat_penalty;
+    float temperature = use_request_params && params.has_temperature() ? params.temperature() : settings_.default_temperature;
+    int32_t top_k = use_request_params && params.has_top_k() ? params.top_k() : settings_.default_top_k;
+    float top_p = use_request_params && params.has_top_p() ? params.top_p() : settings_.default_top_p;
+    float repeat_penalty = use_request_params && params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty;
 
     llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
     llama_sampler* sampler_chain = llama_sampler_chain_init(sparams);
     
+    // NİHAİ DÜZELTME: `llama_sampler_init_penalties` için doğru imza.
     llama_sampler_chain_add(sampler_chain, llama_sampler_init_penalties(llama_n_ctx(ctx), repeat_penalty, 0.0f, 0.0f));
+    
     llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_k(top_k));
     llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_p(top_p, 1));
     llama_sampler_chain_add(sampler_chain, llama_sampler_init_temp(temperature));

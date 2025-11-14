@@ -66,6 +66,6 @@ curl http://localhost:16070/health
 # Expected output: {"engine":"llama.cpp","model_ready":true,"status":"healthy"}
 
 # Test with the CLI tool
-docker compose exec llm-llama-service llm_cli generate "Hello, what is your name?"
+docker compose run --rm llm-cli llm_cli generate "mTLS bağlantısı bu sefer gerçekten başarılı mı?"
 ```
 ---

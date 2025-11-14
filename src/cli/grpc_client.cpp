@@ -34,7 +34,6 @@ struct fmt::formatter<grpc::StatusCode> {
             case grpc::StatusCode::INTERNAL: name = "INTERNAL"; break;
             case grpc::StatusCode::UNAVAILABLE: name = "UNAVAILABLE"; break;
             case grpc::StatusCode::DATA_LOSS: name = "DATA_LOSS"; break;
-            // EKLENDİ: Derleyici uyarısını gidermek için default case
             default: break;
         }
         return fmt::format_to(ctx.out(), "{} ({})", name, static_cast<int>(code));
@@ -54,16 +53,24 @@ std::string read_file_client(const std::string& filepath) {
 namespace sentiric_llm_cli {
 
 GRPCClient::GRPCClient(const std::string& endpoint) 
-    : endpoint_(endpoint) {
-}
+    : endpoint_(endpoint) {}
 
-GRPCClient::~GRPCClient() {
-}
+GRPCClient::~GRPCClient() {}
 
 bool GRPCClient::is_connected() const {
-    if (!channel_) return false;
-    return channel_->WaitForConnected(std::chrono::system_clock::now() + std::chrono::seconds(1));
+    if (!channel_) {
+        // Kanal hiç oluşturulmamışsa, geçici bir bağlantı denemesi yap
+        try {
+            auto creds = grpc::InsecureChannelCredentials(); // Sadece bağlantı testi için
+            auto temp_channel = grpc::CreateChannel(endpoint_, creds);
+            return temp_channel->WaitForConnected(std::chrono::system_clock::now() + std::chrono::seconds(1));
+        } catch (...) {
+            return false;
+        }
+    }
+    return channel_->GetState(true) == GRPC_CHANNEL_READY;
 }
+
 
 bool GRPCClient::generate_stream(const std::string& prompt,
                                 std::function<void(const std::string&)> on_token,
@@ -110,34 +117,34 @@ bool GRPCClient::generate_stream(const std::string& prompt,
         sentiric::llm::v1::LocalGenerateStreamRequest request;
         request.set_prompt(prompt);
         
-        auto* params = request.mutable_params();
-        params->set_temperature(temperature);
-        params->set_max_new_tokens(max_tokens);
-        params->set_top_k(40);
-        params->set_top_p(0.95f);
+        // TEMİZLENMİŞ KOD: Eğer parametreler varsayılan değerlerinden farklıysa,
+        // isteğe ekle. Bu, `llm_cli`'nin ileride bu parametreleri
+        // komut satırından almasına olanak tanır.
+        if (temperature != 0.8f || max_tokens != 2048) {
+            auto* params = request.mutable_params();
+            params->set_temperature(temperature);
+            params->set_max_new_tokens(max_tokens);
+            // Diğer parametreler için de benzer kontroller eklenebilir.
+        }
         
         grpc::ClientContext context;
+        context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(timeout_seconds_));
         
         auto reader = stub_->LocalGenerateStream(&context, request);
         sentiric::llm::v1::LocalGenerateStreamResponse response;
         
-        std::cout << "\n🤖 AI Yanıtı: ";
         while (reader->Read(&response)) {
             if (response.has_token()) {
                 std::string token = response.token();
-                std::cout << token << std::flush;
                 if (on_token) {
                     on_token(token);
                 }
             }
         }
-        std::cout << std::endl;
         
         auto status = reader->Finish();
-        if (!status.ok()) {
-            if (status.error_code() != grpc::StatusCode::CANCELLED) {
-                 spdlog::warn("GRPC stream finished with status [{}]: {}", status.error_code(), status.error_message());
-            }
+        if (!status.ok() && status.error_code() != grpc::StatusCode::CANCELLED) {
+             spdlog::warn("GRPC stream finished with status [{}]: {}", status.error_code(), status.error_message());
         }
         
         return true;
