@@ -43,7 +43,8 @@ Bu senaryo, yerel kod değişikliklerinizi test etmek için kullanılır.
 
 ```bash
 # Bu komut, Dockerfile kullanarak yerel bir imaj oluşturur ve servisi başlatır
-docker compose up --build -d
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml -f docker-compose.override.yml up --build -d
+
 ```
 
 ### 2.2. GPU Üzerinde Derleme ve Çalıştırma (NVIDIA)

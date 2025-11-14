@@ -27,14 +27,15 @@ RUN git clone https://github.com/ggml-org/llama.cpp.git llama.cpp && \
     git checkout ${LLAMA_CPP_VERSION}
 
 # 5. Proje kaynak kodunu ve build script'ini kopyala (En sık değişen katmanlar)
-# BU ADIMLARDAN BİRİ DEĞİŞTİĞİNDE, AŞAĞIDAKİ TÜM ADIMLAR YENİDEN ÇALIŞIR.
 COPY src ./src
 COPY CMakeLists.txt .
 
 # 6. Projeyi derle (Kod her değiştiğinde bu adım yeniden çalışacaktır)
+# DÜZELTME: -DLLAMA_CURL=OFF eklendi
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake
+    -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
+    -DLLAMA_CURL=OFF
 RUN cmake --build build --target all -j $(nproc)
 
 # --- Çalışma Aşaması ---

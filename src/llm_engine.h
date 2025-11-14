@@ -11,7 +11,62 @@
 #include <queue>
 #include <condition_variable>
 #include "sentiric/llm/v1/local.pb.h"
+#include <stdexcept>
 
+// İleri bildirim
+class LlamaContextPool;
+
+/**
+ * @brief ContextGuard: RAII deseni ile LlamaContext yönetimini sağlar.
+ */
+class ContextGuard {
+public:
+    ContextGuard(LlamaContextPool* pool, llama_context* ctx);
+    ~ContextGuard(); // Tanımı .cpp dosyasında
+
+    // Kopyalama yasak
+    ContextGuard(const ContextGuard&) = delete;
+    ContextGuard& operator=(const ContextGuard&) = delete;
+
+    // Taşıma (move) operasyonları
+    ContextGuard(ContextGuard&& other) noexcept;
+    ContextGuard& operator=(ContextGuard&& other) noexcept;
+    
+    llama_context* operator->() const { return ctx_; }
+    llama_context* get() const { return ctx_; }
+
+private:
+    LlamaContextPool* pool_;
+    llama_context* ctx_;
+};
+
+/**
+ * @brief LlamaContextPool: Eşzamanlı istekleri işlemek için llama_context'leri yönetir.
+ */
+class LlamaContextPool {
+public:
+    LlamaContextPool(const Settings& settings, llama_model* model);
+    ~LlamaContextPool();
+
+    ContextGuard acquire();
+    void release(llama_context* ctx);
+    size_t size() const { return max_size_; }
+
+private:
+    llama_model* model_;
+    const Settings& settings_;
+    size_t max_size_;
+
+    std::queue<llama_context*> pool_;
+    std::mutex mutex_;
+    std::condition_variable cv_;
+
+    void initialize_contexts();
+};
+
+/**
+ * @brief LLMEngine: Tüm LLM operasyonlarının ana arayüzü.
+ */
 class LLMEngine {
 public:
     explicit LLMEngine(const Settings& settings);
@@ -28,9 +83,8 @@ public:
     bool is_model_loaded() const;
 
 private:
-    llama_model* model_ = nullptr;
-    llama_context* ctx_ = nullptr; // TEK BİR CONTEXT TUTACAĞIZ, HAVUZ ŞİMDİLİK DEVRE DIŞI
-    std::atomic<bool> model_loaded_{false};
     const Settings& settings_;
-    std::mutex engine_mutex_; // EŞZAMANLI İSTEKLERİ KİLİTLEMEK İÇİN
+    llama_model* model_ = nullptr;
+    std::atomic<bool> model_loaded_{false};
+    std::unique_ptr<LlamaContextPool> context_pool_;
 };
