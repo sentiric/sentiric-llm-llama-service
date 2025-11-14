@@ -22,16 +22,12 @@ if(GGML_CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
 
-# DÜZELTME: llama.cpp'ye 'common' kütüphanesini derlemesi gerektiğini söylüyoruz.
 set(LLAMA_BUILD_COMMON ON CACHE BOOL "Force building of common library" FORCE)
-
-# add_subdirectory komutu artık 'common' hedefini oluşturacak.
 add_subdirectory(llama.cpp)
 
 set(LLAMA_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/include)
 set(LLAMA_COMMON_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp/common)
 
-# Protobuf kısmı aynı
 include(FetchContent)
 FetchContent_Declare(
   sentiric_contracts
@@ -71,7 +67,6 @@ set_source_files_properties(${PROTO_GENERATED_SRCS} ${PROTO_GENERATED_HDRS} PROP
 target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
 target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
-# Ana servis
 add_executable(llm_service
     src/main.cpp
     src/llm_engine.cpp
@@ -97,7 +92,6 @@ if(GGML_CUDA)
     target_link_libraries(llm_service PRIVATE CUDA::cudart CUDA::cuda_driver)
 endif()
 
-# CLI aracı
 add_executable(llm_cli
     src/cli/main.cpp
     src/cli/cli_client.cpp
@@ -123,3 +117,4 @@ target_link_libraries(llm_cli PRIVATE
 if(GGML_CUDA)
     target_link_libraries(llm_cli PRIVATE CUDA::cudart CUDA::cuda_driver)
 endif()
+

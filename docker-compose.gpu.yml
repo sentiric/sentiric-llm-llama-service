@@ -15,6 +15,8 @@ services:
   llm-llama-service:
     image: ghcr.io/sentiric/sentiric-llm-llama-service:latest-gpu
     environment:
-      - LLM_LLAMA_SERVICE_GPU_LAYERS=${LLM_LLAMA_SERVICE_GPU_LAYERS:-28}
+      - LLM_LLAMA_SERVICE_GPU_LAYERS=${LLM_LLAMA_SERVICE_GPU_LAYERS:--1}
+      # YENİ EKLENDİ: Konteynerin GPU'yu görmesini garanti eder.
+      - NVIDIA_VISIBLE_DEVICES=all
     # GPU kaynaklarını referans göster
     <<: *gpu-resources

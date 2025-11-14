@@ -1,12 +1,12 @@
 # --- Derleme Aşaması ---
 FROM ubuntu:24.04 AS builder
 
-# 1. Temel bağımlılıkları kur (En az değişen katman)
+# 1. Temel bağımlılıkları kur
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential curl zip unzip tar \
     pkg-config ninja-build ca-certificates python3
 
-# 2. Vcpkg'yi kur (Nadiren değişir)
+# 2. Vcpkg'yi kur
 ARG VCPKG_VERSION=2024.05.24
 RUN curl -L "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSION}.tar.gz" -o vcpkg.tar.gz && \
     mkdir -p /opt/vcpkg && \
@@ -16,22 +16,21 @@ RUN curl -L "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSIO
 
 WORKDIR /app
 
-# 3. Bağımlılık manifest'ini kopyala ve kur (vcpkg.json değiştiğinde bu katman yeniden çalışır)
+# 3. Bağımlılık manifest'ini kopyala ve kur
 COPY vcpkg.json .
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# 4. llama.cpp'yi klonla ve belirli bir versiyona sabitle (BUILD STABILITY)
+# 4. llama.cpp'yi klonla ve belirli bir versiyona sabitle
 ARG LLAMA_CPP_VERSION=92bb442ad999a0d52df0af2730cd861012e8ac5c
 RUN git clone https://github.com/ggml-org/llama.cpp.git llama.cpp && \
     cd llama.cpp && \
     git checkout ${LLAMA_CPP_VERSION}
 
-# 5. Proje kaynak kodunu ve build script'ini kopyala (En sık değişen katmanlar)
+# 5. Proje kaynak kodunu ve build script'ini kopyala
 COPY src ./src
 COPY CMakeLists.txt .
 
-# 6. Projeyi derle (Kod her değiştiğinde bu adım yeniden çalışacaktır)
-# DÜZELTME: -DLLAMA_CURL=OFF eklendi
+# 6. Projeyi derle
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \

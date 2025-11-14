@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
             for (const auto& arg : command_args) {
                 prompt += arg + " ";
             }
-            prompt.pop_back(); // Son boşluğu kaldır
+            prompt.pop_back();
 
             sentiric_llm_cli::CLIClient client(grpc_endpoint, http_endpoint);
             
@@ -109,7 +109,6 @@ int main(int argc, char** argv) {
                 spdlog::error("Generation başarısız.");
                 return 1;
             }
-            
         } else if (command == "health") {
             sentiric_llm_cli::HealthChecker checker(grpc_endpoint, http_endpoint);
             checker.print_detailed_status();
