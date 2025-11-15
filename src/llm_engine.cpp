@@ -4,16 +4,17 @@
 #include <vector>
 #include <string>
 #include <algorithm>
-#include "model_manager.h" // DEĞİŞİKLİK: ModelManager başlık dosyası eklendi.
+#include "model_manager.h"
 #include "common.h"
 #include "llama.h"
+#include "prompt_formatter.h" // YENİ EKLENDİ: Prompt formatter'ı dahil et.
 
-// --- ContextGuard Implementasyonu (DEĞİŞİKLİK YOK) ---
+// --- ContextGuard ve LlamaContextPool implementasyonları (DEĞİŞİKLİK YOK) ---
+// ... (Bu kısımlar önceki versiyon ile aynı)
 ContextGuard::ContextGuard(LlamaContextPool* pool, llama_context* ctx) : pool_(pool), ctx_(ctx) {
     if (!ctx_) throw std::runtime_error("Acquired null llama_context.");
 }
 ContextGuard::~ContextGuard() {
-        // KB Referansı: 2.4. KV Cache Yönetimi (DOĞRU KULLANIM)
         llama_memory_seq_rm(llama_get_memory(ctx_), -1, -1, -1);
         pool_->release(ctx_);
 }
@@ -24,7 +25,6 @@ ContextGuard::ContextGuard(ContextGuard&& other) noexcept : pool_(other.pool_), 
 ContextGuard& ContextGuard::operator=(ContextGuard&& other) noexcept {
     if (this != &other) {
         if (ctx_ && pool_) {
-            // KB Referansı: 2.4. KV Cache Yönetimi (DOĞRU KULLANIM)
             llama_memory_seq_rm(llama_get_memory(ctx_), -1, -1, -1);
             pool_->release(ctx_);
         }
@@ -35,8 +35,6 @@ ContextGuard& ContextGuard::operator=(ContextGuard&& other) noexcept {
     }
     return *this;
 }
-
-// --- LlamaContextPool Implementasyonu (DEĞİŞİKLİK YOK) ---
 LlamaContextPool::LlamaContextPool(const Settings& settings, llama_model* model) : model_(model), settings_(settings) {
     max_size_ = settings.n_threads;
     if (max_size_ == 0) { max_size_ = 1; }
@@ -83,25 +81,19 @@ void LlamaContextPool::release(llama_context* ctx) {
 }
 
 // --- LLMEngine Implementasyonu ---
-
-// DEĞİŞİKLİK: Constructor main.cpp'den sorumluluk devraldı.
 LLMEngine::LLMEngine(Settings& settings) : settings_(settings) {
     spdlog::info("Initializing LLM Engine...");
-
-    // DEĞİŞİKLİK: Modelin indirilmesi veya doğrulanması sorumluluğu artık LLMEngine'e ait.
     try {
         settings_.model_path = ModelManager::ensure_model_is_ready(settings_);
         spdlog::info("Model successfully located at: {}", settings_.model_path);
     } catch (const std::exception& e) {
         throw std::runtime_error(std::string("Model preparation failed: ") + e.what());
     }
-
     llama_backend_init();
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = settings_.n_gpu_layers; // settings -> settings_
+    model_params.n_gpu_layers = settings_.n_gpu_layers;
     model_ = llama_model_load_from_file(settings_.model_path.c_str(), model_params);
     if (!model_) throw std::runtime_error("Model loading failed from path: " + settings_.model_path);
-    
     try {
         context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_);
         model_loaded_ = true;
@@ -111,17 +103,14 @@ LLMEngine::LLMEngine(Settings& settings) : settings_(settings) {
     }
     spdlog::info("✅ LLM Engine initialized successfully.");
 }
-
 LLMEngine::~LLMEngine() {
     context_pool_.reset();
     if (model_) llama_model_free(model_);
     llama_backend_free();
     spdlog::info("LLM Engine shut down.");
 }
-
 bool LLMEngine::is_model_loaded() const { return model_loaded_.load(); }
 
-// generate_stream fonksiyonu (DEĞİŞİKLİK YOK)
 void LLMEngine::generate_stream(
     const sentiric::llm::v1::LocalGenerateStreamRequest& request,
     const std::function<void(const std::string&)>& on_token_callback,
@@ -130,14 +119,20 @@ void LLMEngine::generate_stream(
     ContextGuard guard = context_pool_->acquire();
     llama_context* ctx = guard.get();
 
+    // DEĞİŞİKLİK: Ham prompt'u formatlıyoruz.
+    const std::string formatted_prompt = PromptFormatter::format(request.prompt());
+    
     const auto* vocab = llama_model_get_vocab(model_);
     
     std::vector<llama_token> prompt_tokens;
-    prompt_tokens.resize(request.prompt().length() + 16);
-    int n_tokens = llama_tokenize(vocab, request.prompt().c_str(), request.prompt().length(), prompt_tokens.data(), prompt_tokens.size(), true, true);
+    // Formatted prompt'un boyutuna göre resize yapıyoruz.
+    prompt_tokens.resize(formatted_prompt.length() + 16);
+    // Tokenize edilecek metin artık formatlanmış prompt.
+    int n_tokens = llama_tokenize(vocab, formatted_prompt.c_str(), formatted_prompt.length(), prompt_tokens.data(), prompt_tokens.size(), true, true);
     if (n_tokens < 0) { throw std::runtime_error("Tokenization failed."); }
     prompt_tokens.resize(n_tokens);
 
+    // ... (generate_stream fonksiyonunun geri kalanı DEĞİŞİKLİK YOK)
     llama_batch batch = llama_batch_init(n_tokens, 0, 1);
     for(int i = 0; i < n_tokens; ++i) {
         common_batch_add(batch, prompt_tokens[i], i, {0}, false);
@@ -177,6 +172,7 @@ void LLMEngine::generate_stream(
         llama_token new_token_id = llama_sampler_sample(sampler_chain, ctx, -1);
         llama_sampler_accept(sampler_chain, new_token_id);
         
+        // ÖNEMLİ: Modelin cevabını bitirdiğini gösteren EOS token'ını kontrol et.
         if (llama_vocab_is_eog(vocab, new_token_id)) { break; }
         
         char piece_buf[64] = {0};

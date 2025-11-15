@@ -62,7 +62,34 @@ docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli <komut>
 
 **Örnek `generate` komutu (GPU):**
 ```bash
-docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli generate "GPU erişimiyle çalışıyor."
+docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli generate "Sen, Sentiric platformunda çalışan, yardımsever ve profesyonel bir AI asistansın. Cevapların her zaman kısa (en fazla 2 cümle), net ve samimi olsun." --timeout 120
 ```
+
+```bash
+docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli generate "Kullanıcıyı ismiyle ({user_name}) sıcak bir şekilde karşıla ve nasıl yardımcı olabileceğini tek bir kısa cümlede sor." --timeout 120
+```
+
+```bash
+docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli generate "Yeni bir kullanıcıyı sıcak bir şekilde karşıla ve nasıl yardımcı olabileceğini tek bir kısa cümlede sor." --timeout 120
+```
+
+```bash
+docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli generate "Yeni bir kullanıcıyı sıcak bir şekilde karşıla ve nasıl yardımcı olabileceğini tek bir kısa cümlede sor."
+```
+
+```bash
+docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli generate "Sana sağlanan "### İlgili Bilgiler" metnindeki bilgileri kullanarak kullanıcının sorusuna cevap ver. Eğer aradığı bilgi metinde yoksa, bunu kibarca "Bu konuda size yardımcı olacak detaylı bilgiye sahip değilim, farklı bir konuda yardımcı olabilir miyim?" gibi bir ifadeyle belirt. Cevapların her zaman kısa (en fazla 2 cümle), net ve samimi olsun. Asla tahmin yürütme.\n\n### İlgili Bilgiler:\n{context}\n\n### Kullanıcının Sorusu:\n{query}\n\n### Cevap:" --timeout 120
+```
+
+```bash
+docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli generate "Sana sağlanan "### İlgili Bilgiler" metnindeki bilgileri kullanarak kullanıcının sorusuna cevap ver. Eğer aradığı bilgi metinde yoksa, bunu kibarca belirt. Cevapların her zaman kısa (en fazla 2 cümle), net ve samimi olsun. Asla tahmin yürütme.\n\n### İlgili Bilgiler:\n{context}\n\n### Kullanıcının Sorusu:\n{query}\n\n### Cevap:" --timeout 120
+```
+
+Kayıtlı Türkçe templates tablosu
+---
+('PROMPT_SYSTEM_DEFAULT', 'system', 'tr', 'system_prompt', 'Sen, Sentiric platformunda çalışan, yardımsever ve profesyonel bir AI asistansın. Cevapların her zaman kısa (en fazla 2 cümle), net ve samimi olsun. Asla bir yapay zeka olduğunu belirtme. Aşağıdaki konuşma geçmişine göre diyaloğa devam et.', 'Varsayılan Türkçe sistem promptu (RAG bilgisi olmadığında kullanılır)'),
+('PROMPT_WELCOME_KNOWN_USER', 'system', 'tr', 'prompt', 'Kullanıcıyı ismiyle ({user_name}) sıcak bir şekilde karşıla ve nasıl yardımcı olabileceğini tek bir kısa cümlede sor.', 'Tanınan kullanıcı için doğal ve kısa Türkçe karşılama promptu'),
+('PROMPT_WELCOME_GUEST', 'system', 'tr', 'prompt', 'Yeni bir kullanıcıyı sıcak bir şekilde karşıla ve nasıl yardımcı olabileceğini tek bir kısa cümlede sor.', 'Misafir kullanıcı için doğal ve kısa Türkçe karşılama promptu'),
+('PROMPT_SYSTEM_RAG', 'system', 'tr', 'system_prompt', 'Sana sağlanan "### İlgili Bilgiler" metnindeki bilgileri kullanarak kullanıcının sorusuna cevap ver. Eğer aradığı bilgi metinde yoksa, bunu kibarca "Bu konuda size yardımcı olacak detaylı bilgiye sahip değilim, farklı bir konuda yardımcı olabilir miyim?" gibi bir ifadeyle belirt. Asla tahmin yürütme.\n\n### İlgili Bilgiler:\n{context}\n\n### Kullanıcının Sorusu:\n{query}\n\n### Cevap:', 'RAG için hem doğal hem de güvenli Türkçe sistem promptu'),
 
 ---

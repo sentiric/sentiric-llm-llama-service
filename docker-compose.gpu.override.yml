@@ -5,6 +5,3 @@ services:
       context: .
       dockerfile: Dockerfile.gpu
     image: sentiric/llm-llama-service:local-gpu
-    environment:
-      - LLM_LLAMA_SERVICE_THREADS=1
-      - LLM_LLAMA_SERVICE_THREADS_BATCH=1

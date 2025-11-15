@@ -1,0 +1,6 @@
+Müşteri adı: Ahmet Yılmaz
+Rezervasyon tarihi: 14 Kasım 2025
+Konaklama: 2 gece, standart oda
+Rezervasyon durumu: Onaylandı
+Ödeme durumu: Ödeme girişte alınacak
+Ek not: Müşteri geç giriş yapacağını belirtti.

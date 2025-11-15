@@ -66,6 +66,6 @@ curl http://localhost:16070/health
 # Expected output: {"engine":"llama.cpp","model_ready":true,"status":"healthy"}
 
 # Test with the CLI tool
-docker compose run --rm llm-cli llm_cli generate "mTLS bağlantısı bu sefer gerçekten başarılı mı?"
+docker compose run --rm llm-cli llm_cli generate "Sen, Sentiric platformunda çalışan, yardımsever ve profesyonel bir AI asistansın. Cevapların her zaman kısa (en fazla 2 cümle), net ve samimi olsun." --timeout 120
 ```
 ---

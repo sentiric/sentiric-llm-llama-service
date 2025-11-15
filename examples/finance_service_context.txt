@@ -1,0 +1,7 @@
+Müşteri adı: Ece Çetin
+Son işlem türü: Havale
+Tarih: 14 Kasım 2025
+Tutar: 12.500 TL
+Alıcı: Caner Yıldız
+İşlem durumu: Başarıyla tamamlandı
+Ek işlem notu: Müşteri aynı gün içerisinde döviz dönüşüm işlemi de yaptı.

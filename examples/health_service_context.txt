@@ -1,0 +1,8 @@
+Hasta adı: Selin Arıca
+Son test tarihi: 10 Kasım 2025
+Testler: Kan tahlili, Vitamin D analizi, TSH ölçümü
+Sonuçlar:
+- Kan tahlili: Normal aralıklarda
+- Vitamin D: Düşük
+- TSH: Hafif yüksek
+Doktorun yorumu: Vitamin D takviyesi önerildi, TSH için 1 ay sonra tekrar test planlandı.

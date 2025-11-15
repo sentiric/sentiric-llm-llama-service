@@ -6,9 +6,6 @@ services:
       context: .
       dockerfile: Dockerfile
     image: sentiric/llm-llama-service:local-cpu 
-    environment:
-      - LLM_LLAMA_SERVICE_THREADS=1
-      - LLM_LLAMA_SERVICE_THREADS_BATCH=1
     networks:
       - sentiric-net
 
