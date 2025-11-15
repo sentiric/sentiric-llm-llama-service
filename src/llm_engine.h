@@ -69,7 +69,10 @@ private:
  */
 class LLMEngine {
 public:
-    explicit LLMEngine(const Settings& settings);
+    // DEĞİŞİKLİK: Constructor artık const olmayan bir referans alıyor.
+    // Bu, motorun kendi içindeki settings nesnesini (örneğin model_path)
+    // güncelleyebilmesini sağlar.
+    explicit LLMEngine(Settings& settings);
     ~LLMEngine();
     LLMEngine(const LLMEngine&) = delete;
     LLMEngine& operator=(const LLMEngine&) = delete;
@@ -83,7 +86,8 @@ public:
     bool is_model_loaded() const;
 
 private:
-    const Settings& settings_;
+    // DEĞİŞİKLİK: const kaldırıldı, artık bu bir referanstır.
+    Settings& settings_;
     llama_model* model_ = nullptr;
     std::atomic<bool> model_loaded_{false};
     std::unique_ptr<LlamaContextPool> context_pool_;

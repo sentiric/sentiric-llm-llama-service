@@ -3,7 +3,6 @@
 #include "llm_engine.h"
 #include "grpc_server.h"
 #include "http_server.h"
-#include "model_manager.h"
 #include <thread>
 #include <memory>
 #include <csignal>
@@ -15,9 +14,25 @@
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include "llama.h"
 
 namespace {
     std::promise<void> shutdown_promise;
+}
+
+void llama_log_callback(ggml_log_level level, const char * text, void * user_data) {
+    (void)user_data;
+    std::string_view text_view(text);
+    if (!text_view.empty() && text_view.back() == '\n') {
+        text_view.remove_suffix(1);
+    }
+    switch (level) {
+        case GGML_LOG_LEVEL_ERROR: spdlog::error("[llama.cpp] {}", text_view); break;
+        case GGML_LOG_LEVEL_WARN: spdlog::warn("[llama.cpp] {}", text_view); break;
+        case GGML_LOG_LEVEL_INFO: spdlog::debug("[llama.cpp] {}", text_view); break;
+        case GGML_LOG_LEVEL_DEBUG: spdlog::trace("[llama.cpp] {}", text_view); break;
+        default: break;
+    }
 }
 
 void signal_handler(int signal) {
@@ -55,6 +70,7 @@ void setup_logging() {
 
 int main() {
     setup_logging();
+    llama_log_set(llama_log_callback, nullptr);
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -69,12 +85,10 @@ int main() {
     std::thread grpc_thread;
 
     try {
-        settings.model_path = ModelManager::ensure_model_is_ready(settings);
-
         spdlog::info("Configuration: host={}, http_port={}, grpc_port={}", settings.host, settings.http_port, settings.grpc_port);
-        spdlog::info("Model configuration: path={}", settings.model_path);
-
+        
         auto engine = std::make_shared<LLMEngine>(settings);
+        
         if (!engine->is_model_loaded()) {
             spdlog::critical("LLM Engine failed to initialize with a valid model. Shutting down.");
             return 1;
@@ -84,18 +98,15 @@ int main() {
         GrpcServer grpc_service(engine);
         grpc::ServerBuilder builder;
 
-        const char* ca_path = std::getenv("GRPC_TLS_CA_PATH");
-        const char* cert_path = std::getenv("LLM_LLAMA_SERVICE_CERT_PATH");
-        const char* key_path = std::getenv("LLM_LLAMA_SERVICE_KEY_PATH");
-
-        if (!ca_path || !cert_path || !key_path) {
-            spdlog::warn("gRPC TLS environment variables not set. Falling back to insecure credentials. THIS IS NOT FOR PRODUCTION.");
+        // DEĞİŞİKLİK: Ortam değişkenlerini okumak yerine, 'settings' nesnesini kullanıyoruz.
+        if (settings.grpc_ca_path.empty() || settings.grpc_cert_path.empty() || settings.grpc_key_path.empty()) {
+            spdlog::warn("gRPC TLS path variables not fully set in config. Falling back to insecure credentials. THIS IS NOT FOR PRODUCTION.");
             builder.AddListeningPort(grpc_address, grpc::InsecureServerCredentials());
         } else {
-            spdlog::info("Loading TLS credentials for gRPC server...");
-            std::string root_ca = read_file(ca_path);
-            std::string server_cert = read_file(cert_path);
-            std::string server_key = read_file(key_path);
+            spdlog::info("Loading TLS credentials for gRPC server from config...");
+            std::string root_ca = read_file(settings.grpc_ca_path);
+            std::string server_cert = read_file(settings.grpc_cert_path);
+            std::string server_key = read_file(settings.grpc_key_path);
 
             grpc::SslServerCredentialsOptions::PemKeyCertPair pkcp = {server_key, server_cert};
             grpc::SslServerCredentialsOptions ssl_opts;

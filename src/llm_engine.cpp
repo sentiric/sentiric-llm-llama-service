@@ -4,7 +4,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
-#include "model_manager.h"
+#include "model_manager.h" // DEĞİŞİKLİK: ModelManager başlık dosyası eklendi.
 #include "common.h"
 #include "llama.h"
 
@@ -84,13 +84,24 @@ void LlamaContextPool::release(llama_context* ctx) {
 
 // --- LLMEngine Implementasyonu ---
 
-LLMEngine::LLMEngine(const Settings& settings) : settings_(settings) {
+// DEĞİŞİKLİK: Constructor main.cpp'den sorumluluk devraldı.
+LLMEngine::LLMEngine(Settings& settings) : settings_(settings) {
     spdlog::info("Initializing LLM Engine...");
+
+    // DEĞİŞİKLİK: Modelin indirilmesi veya doğrulanması sorumluluğu artık LLMEngine'e ait.
+    try {
+        settings_.model_path = ModelManager::ensure_model_is_ready(settings_);
+        spdlog::info("Model successfully located at: {}", settings_.model_path);
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("Model preparation failed: ") + e.what());
+    }
+
     llama_backend_init();
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = settings.n_gpu_layers;
-    model_ = llama_model_load_from_file(settings.model_path.c_str(), model_params);
-    if (!model_) throw std::runtime_error("Model loading failed from path: " + settings.model_path);
+    model_params.n_gpu_layers = settings_.n_gpu_layers; // settings -> settings_
+    model_ = llama_model_load_from_file(settings_.model_path.c_str(), model_params);
+    if (!model_) throw std::runtime_error("Model loading failed from path: " + settings_.model_path);
+    
     try {
         context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_);
         model_loaded_ = true;
@@ -110,6 +121,7 @@ LLMEngine::~LLMEngine() {
 
 bool LLMEngine::is_model_loaded() const { return model_loaded_.load(); }
 
+// generate_stream fonksiyonu (DEĞİŞİKLİK YOK)
 void LLMEngine::generate_stream(
     const sentiric::llm::v1::LocalGenerateStreamRequest& request,
     const std::function<void(const std::string&)>& on_token_callback,
@@ -149,7 +161,6 @@ void LLMEngine::generate_stream(
     llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
     llama_sampler* sampler_chain = llama_sampler_chain_init(sparams);
     
-    // NİHAİ DÜZELTME: `llama_sampler_init_penalties` için doğru imza.
     llama_sampler_chain_add(sampler_chain, llama_sampler_init_penalties(llama_n_ctx(ctx), repeat_penalty, 0.0f, 0.0f));
     
     llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_k(top_k));
