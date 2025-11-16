@@ -4,7 +4,6 @@
 
 GrpcServer::GrpcServer(std::shared_ptr<LLMEngine> engine) : engine_(std::move(engine)) {}
 
-// KONTROL EDİN: Bu fonksiyonun adının ve imzasının ".h" dosyasıyla tam olarak eşleştiğinden emin olun.
 grpc::Status GrpcServer::GenerateStream(
     grpc::ServerContext* context,
     const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest* request,
@@ -19,31 +18,44 @@ grpc::Status GrpcServer::GenerateStream(
     
     spdlog::info("[gRPC] Stream started for user_prompt: '{}...'", request->user_prompt().substr(0, 50));
     
+    // VCA İÇİN: Token sayılarını tutacak değişkenler
+    int32_t prompt_tokens = 0;
+    int32_t completion_tokens = 0;
+    std::string finish_reason = "stop";
+
     try {
         engine_->generate_stream(
             *request,
             [&](const std::string& token) {
                 sentiric::llm::v1::LLMLocalServiceGenerateStreamResponse response;
                 response.set_token(token);
-                if (!writer->Write(response)) { }
+                if (!writer->Write(response)) {}
             },
-            [&]() -> bool { return context->IsCancelled(); }
+            [&]() -> bool { return context->IsCancelled(); },
+            prompt_tokens,      // out parametresi
+            completion_tokens   // out parametresi
         );
     } catch (const std::exception& e) {
         spdlog::error("[gRPC] Unhandled exception: {}", e.what());
-        return grpc::Status(grpc::StatusCode::INTERNAL, "An internal error occurred.");
+        finish_reason = "error";
+        // Hata durumunda bile, o ana kadar hesaplanan tokenları gönderebiliriz.
     }
 
     if (context->IsCancelled()) {
         spdlog::warn("[gRPC] Stream cancelled by client.");
-        return grpc::Status::CANCELLED;
+        finish_reason = "cancelled";
     }
 
+    // VCA İÇİN: Stream sonunda token bilgilerini içeren FinishDetails mesajını gönder.
     sentiric::llm::v1::LLMLocalServiceGenerateStreamResponse final_response;
     auto* details = final_response.mutable_finish_details();
-    details->set_finish_reason("stop");
+    details->set_finish_reason(finish_reason);
+    details->set_prompt_tokens(prompt_tokens);
+    details->set_completion_tokens(completion_tokens);
     writer->Write(final_response);
 
-    spdlog::info("[gRPC] Stream finished successfully.");
+    spdlog::info("[gRPC] Stream finished. Reason: '{}'. Tokens (Prompt/Completion): {}/{}", 
+                 finish_reason, prompt_tokens, completion_tokens);
+                 
     return grpc::Status::OK;
 }

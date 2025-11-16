@@ -59,7 +59,9 @@ public:
     void generate_stream(
         const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request,
         const std::function<void(const std::string&)>& on_token_callback,
-        const std::function<bool()>& should_stop_callback
+        const std::function<bool()>& should_stop_callback,
+        int32_t& prompt_tokens_out,
+        int32_t& completion_tokens_out
     );
 
     bool is_model_loaded() const;

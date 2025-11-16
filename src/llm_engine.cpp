@@ -112,19 +112,19 @@ LLMEngine::~LLMEngine() {
 }
 bool LLMEngine::is_model_loaded() const { return model_loaded_.load(); }
 
-
 // NİHAİ VE %100 DOĞRU generate_stream İMPLEMENTASYONU
 void LLMEngine::generate_stream(
     const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request,
     const std::function<void(const std::string&)>& on_token_callback,
-    const std::function<bool()>& should_stop_callback) {
+    const std::function<bool()>& should_stop_callback,
+    int32_t& prompt_tokens_out,
+    int32_t& completion_tokens_out) {
     
     ContextGuard guard = context_pool_->acquire();
     llama_context* ctx = guard.get();
 
     const std::string formatted_prompt = PromptFormatter::format(request);
     
-    // DÜZELTME: `llama_tokenize` için `llama_get_model`'den `vocab` alınıyor.
     const auto* vocab = llama_model_get_vocab(model_);
     std::vector<llama_token> prompt_tokens;
     prompt_tokens.resize(formatted_prompt.length() + 16);
@@ -132,9 +132,10 @@ void LLMEngine::generate_stream(
     if (n_tokens < 0) { throw std::runtime_error("Tokenization failed."); }
     prompt_tokens.resize(n_tokens);
 
+    prompt_tokens_out = n_tokens;
+
     llama_batch batch = llama_batch_init(n_tokens, 0, 1);
     for(size_t i = 0; i < prompt_tokens.size(); ++i) {
-        // DÜZELTME: `common.h`'den gelen `common_batch_add` kullanılıyor.
         common_batch_add(batch, prompt_tokens[i], i, {0}, false);
     }
     batch.logits[batch.n_tokens - 1] = true;
@@ -172,10 +173,8 @@ void LLMEngine::generate_stream(
         llama_token new_token_id = llama_sampler_sample(sampler_chain, ctx, -1);
         llama_sampler_accept(sampler_chain, new_token_id);
         
-        // DÜZELTME: `llama_vocab_is_eog` `vocab` pointer'ı ile çağrılıyor.
         if (llama_vocab_is_eog(vocab, new_token_id)) { break; }
         
-        // DÜZELTME: `llama_token_to_piece` `vocab` pointer'ı ile çağrılıyor.
         char piece_buf[64] = {0};
         int n_piece = llama_token_to_piece(vocab, new_token_id, piece_buf, sizeof(piece_buf), 0, true);
         if (n_piece > 0) {
@@ -184,7 +183,6 @@ void LLMEngine::generate_stream(
         
         llama_batch_free(batch);
         batch = llama_batch_init(1, 0, 1);
-        // DÜZELTME: `common_batch_add` kullanılıyor.
         common_batch_add(batch, new_token_id, n_past, {0}, true);
 
         if (llama_decode(ctx, batch) != 0) {
@@ -196,6 +194,8 @@ void LLMEngine::generate_stream(
         n_past++;
         n_decoded++;
     }
+
+    completion_tokens_out = n_decoded;
 
     llama_batch_free(batch);
     llama_sampler_free(sampler_chain);
