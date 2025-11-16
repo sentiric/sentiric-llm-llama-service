@@ -83,7 +83,8 @@ add_executable(llm_service
     src/grpc_server.cpp
     src/http_server.cpp
     src/model_manager.cpp
-    src/prompt_formatter.cpp
+    src/core/prompt_formatter.cpp
+    src/core/context_pool.cpp 
 )
 add_dependencies(llm_service proto_lib)
 

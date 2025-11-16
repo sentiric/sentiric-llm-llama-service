@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Sentiric LLM Geliştirme Stüdyosu</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <div class="panel sidebar">
+            <h3>🚀 Oturum Ayarları</h3>
+            <div class="form-group"><label>Sistem Promptu</label><textarea v-model="systemPrompt" rows="6"></textarea></div>
+            <div class="form-group"><label>RAG Context</label><select v-model="selectedContext" @change="loadContext"><option value="">-- RAG Yok --</option><option v-for="ctx in availableContexts" :value="ctx">{{ ctx }}</option></select><textarea v-model="ragContext" rows="10" style="margin-top:10px;"></textarea></div>
+            <h3>⚙️ Üretim Parametreleri</h3>
+            <div class="form-group">
+                <label class="param-label"><span>Sıcaklık (Yaratıcılık)</span><span>{{ params.temperature }}</span></label>
+                <input type="range" v-model.number="params.temperature" step="0.05" min="0" max="2">
+            </div>
+            <div class="form-group">
+                <label class="param-label"><span>Tekrarlama Cezası</span><span>{{ params.repetition_penalty }}</span></label>
+                <input type="range" v-model.number="params.repetition_penalty" step="0.05" min="1" max="2">
+            </div>
+        </div>
+        <div class="main-content">
+            <div class="chat-history" ref="chatHistory">
+                <div v-for="(msg, index) in history" :key="index" class="message-wrapper">
+                    <div v-if="msg.role === 'user'" class="user-message"><div class="content" v-text="msg.content"></div></div>
+                    <div v-else class="assistant-message"><div class="content" v-html="renderAssistantMessage(msg)"></div></div>
+                </div>
+            </div>
+            <div class="input-area-wrapper">
+                <div class="input-area">
+                    <textarea ref="userInput" v-model="userInput" @keydown.enter.exact.prevent="sendMessage" :disabled="isLoading" placeholder="Mesajınızı yazın..."></textarea>
+                    <button v-if="isLoading" @click="stopGeneration" class="stop-button">Durdur</button>
+                </div>
+            </div>
+        </div>
+        <div class="panel metrics-panel">
+            <h3>📊 Analiz</h3>
+            <div class="metric-item"><label>İlk Token Süresi (TTFT)</label><div class="value">{{ metrics.ttft }} ms</div></div>
+            <div class="metric-item"><label>Token/Saniye (TPS)</label><div class="value">{{ metrics.tps.toFixed(2) }}</div></div>
+            <div class="metric-item"><label>Token Sayıları (Prompt/Cevap)</label><div class="value">{{ metrics.promptTokens }} / {{ metrics.completionTokens }}</div></div>
+            <div class="info-box"><strong>Not:</strong> Sunucu motor ayarları (threads vb.) `docker-compose.yml` üzerinden yönetilir.</div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

@@ -56,6 +56,12 @@ COPY --from=builder /app/build/llm_cli /usr/local/bin/
 COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 RUN ldconfig
 
+# --- BU SATIRLARI EKLEYİN/GÜNCELLEYİN ---
+COPY web /app/web
+COPY examples /app/examples
+WORKDIR /app
+# ------------------------------------
+    
 RUN mkdir -p /models
 
 EXPOSE 16070 16071
