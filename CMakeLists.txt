@@ -17,6 +17,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(httplib CONFIG REQUIRED)
 find_package(c-ares CONFIG REQUIRED)
 find_package(Threads REQUIRED)
+find_package(prometheus-cpp CONFIG REQUIRED)
 
 if(GGML_CUDA)
     find_package(CUDAToolkit REQUIRED)
@@ -32,13 +33,10 @@ include(FetchContent)
 FetchContent_Declare(
   sentiric_contracts
   GIT_REPOSITORY https://github.com/sentiric/sentiric-contracts.git
-  # GÜNCELLENDİ: Artık yeni ve doğru kontrat versiyonunu kullanıyoruz.
   GIT_TAG v1.11.0
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
-# GÜNCELLENDİ: Hem `local.proto` hem de `gateway.proto`'yu dahil ediyoruz,
-# çünkü `gateway.proto` artık `local.proto`'yu import ediyor.
 set(PROTO_FILES
     "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto"
     "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/gateway.proto"
@@ -93,12 +91,17 @@ target_include_directories(llm_service PRIVATE
     ${LLAMA_INCLUDE_DIR}
     ${LLAMA_COMMON_INCLUDE_DIR}
 )
+
+# --- DÜZELTİLMİŞ SATIR BURASI ---
+# Kütüphaneyi tek bir hedef olarak değil, vcpkg'nin belirttiği gibi
+# birden fazla alt hedef olarak bağlıyoruz.
 target_link_libraries(llm_service PRIVATE
     proto_lib
     common
     llama
     spdlog::spdlog nlohmann_json::nlohmann_json
     httplib::httplib c-ares::cares Threads::Threads
+    prometheus-cpp::core prometheus-cpp::pull
 )
 if(GGML_CUDA)
     target_link_libraries(llm_service PRIVATE CUDA::cudart CUDA::cuda_driver)

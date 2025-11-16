@@ -7,6 +7,7 @@
     "protobuf",
     "spdlog",
     "nlohmann-json",
-    "cpp-httplib"
+    "cpp-httplib",
+    "prometheus-cpp"
   ]
 }

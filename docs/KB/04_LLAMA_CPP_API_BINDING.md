@@ -2,6 +2,8 @@
 
 **AMAÇ:** Bu doküman, bu projenin kullandığı `llama.cpp` versiyonuna özel API kullanım desenlerini tanımlayan **tek ve mutlak doğru kaynaktır**. `LLMEngine` üzerinde geliştirme yaparken başka hiçbir varsayımda bulunulmamalıdır. Bir API hatası alındığında, ilk olarak buraya başvurulmalı, eğer bilgi eksikse, `llama.cpp` kaynak kodu incelenerek **önce bu belge güncellenmeli, sonra kod düzeltilmelidir.**
 
+> **Hızlı Referans:** Sık kullanılan fonksiyonların kategorize edilmiş bir listesi için **[KB-05: llama.cpp API Hızlı Referans Kılavuzu](./05_LLAMA_API_REFERENCE.md)**'na göz atın.
+
 ## 1. Bağlı Olunan Versiyon
 
 -   **Commit Hash:** `92bb442ad999a0d52df0af2730cd861012e8ac5c`
@@ -101,5 +103,4 @@ Bir `llama_context`, `LlamaContextPool`'a iade edilmeden önce, içindeki tüm K
 // p0 = -1, p1 = -1 -> Tüm pozisyonlar (veya p0=0, p1=-1)
 llama_memory_seq_rm(llama_get_memory(ctx), -1, -1, -1);
 ```
-
 ---

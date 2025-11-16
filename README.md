@@ -6,25 +6,22 @@
 
 ## 🚀 Features
 
--   ✅ **True Concurrency**: High-performance, concurrent request handling via a `LlamaContextPool`. The service can process multiple requests in parallel, maximizing hardware utilization.
+-   ✅ **True Concurrency**: High-performance, concurrent request handling via a `LlamaContextPool`.
+-   ✅ **Advanced Memory Management**: Supports near-infinite context sizes even on limited hardware via "Context Shifting".
+-   ✅ **Performance Optimized**: Leverages `mmap`, KV Cache GPU offloading, and NUMA awareness for maximum throughput.
 -   ✅ **gRPC Streaming**: Real-time, token-by-token generation for interactive applications.
--   ✅ **HTTP Health Check**: `/health` endpoint for robust monitoring and orchestration.
--   ✅ **Modern C++ & llama.cpp**: Built on a modern C++17 stack using a stable, recent version of the `llama.cpp` backend.
+-   ✅ **Built-in Observability**: Provides a `/health` endpoint for health checks and a `/metrics` endpoint for detailed Prometheus metrics.
+-   ✅ **Modern C++ & llama.cpp**: Built on C++17 with a stable, recent version of the `llama.cpp` backend.
 -   ✅ **Dockerized & Optimized**: Deploys as a minimal and efficient multi-stage Docker container for both CPU and NVIDIA GPU.
--   ✅ **CLI Tool**: Includes `llm_cli` for testing, benchmarking, and health checks.
 
 ---
 
 ## 📚 Documentation
 
-All detailed project documentation is located in the `/docs` directory.
-
 -   **[Quick Start & Deployment](./docs/guides/02_DEPLOYMENT.md)**
--   **[Developer Guide](./docs/guides/01_DEVELOPMENT.md)**
+-   **[Configuration Guide](./docs/guides/03_CONFIGURATION.md)**
 -   **[System Architecture](./docs/architecture/SYSTEM_ARCHITECTURE.md)**
--   **[API Specification](./docs/API_SPECIFICATION.md)**
--   **[Knowledge Base & Troubleshooting](./docs/kb/03_SOLVED_ISSUES.md)**
--   **[Development Tasks](./docs/TASKS.md)**
+-   **[Performance & Memory Tuning](./docs/architecture/PERFORMANCE_AND_MEMORY.md)** (NEW)
 
 ---
 
@@ -61,10 +58,26 @@ For GPU instructions and other advanced scenarios, please refer to the **[Deploy
 ### Verifying the Service
 
 # Check service health (wait up to 1-2 minutes for the model to load)
+
+```bash
 curl http://localhost:16070/health
 # Expected output: {"status":"healthy","model_ready":true,"engine":"llama.cpp"}
+```
 
 # Test with the CLI tool using a RAG scenario
+```bash
 ./run_request.sh examples/hospitality_service_context.txt "Ahmet Bey'in rezervasyon durumu nedir?"
+```
 
 ---
+
+## 📊 Monitoring & Metrics
+
+The service provides a Prometheus-compatible metrics endpoint at `http://localhost:16072/metrics`. Key metrics include:
+
+-   `llm_requests_total`: Total number of gRPC requests received.
+-   `llm_request_latency_seconds`: A histogram of request processing times.
+-   `llm_tokens_generated_total`: Total number of tokens generated.
+-   `llm_active_contexts`: The number of `llama_context` instances currently in use.
+
+This allows for detailed monitoring of the service's performance, load, and resource utilization.

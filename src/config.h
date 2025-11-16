@@ -15,6 +15,7 @@ struct Settings {
     std::string host = "0.0.0.0";
     int http_port = 16070;
     int grpc_port = 16071;
+    int metrics_port = 16072;
 
     // Model
     std::string model_dir = "/models";
@@ -23,12 +24,14 @@ struct Settings {
     std::string model_path = "";
     std::string legacy_model_path = "";
 
-    // Engine
+    // Engine & Performance
     int n_gpu_layers = 0;
     uint32_t context_size = 4096;
-    uint32_t n_threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency() / 2));
-    uint32_t n_threads_batch = std::max(1u, std::min(8u, std::thread::hardware_concurrency() / 2));
+    uint32_t n_threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
+    uint32_t n_threads_batch = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
     ggml_numa_strategy numa_strategy = GGML_NUMA_STRATEGY_DISABLED;
+    bool use_mmap = true;
+    bool kv_offload = true;
     
     // Logging
     std::string log_level = "info";
@@ -40,7 +43,7 @@ struct Settings {
     float default_repeat_penalty = 1.1f;
     int32_t default_max_tokens = 1024;
 
-    // YENİ EKLENDİ: Güvenlik (mTLS) ayarları
+    // Security (mTLS)
     std::string grpc_ca_path = "";
     std::string grpc_cert_path = "";
     std::string grpc_key_path = "";
@@ -76,22 +79,37 @@ inline Settings load_settings() {
             return default_val;
         }
     };
+    auto get_env_var_as_bool = [&](const char* name, bool default_val) -> bool {
+        const char* val_str = std::getenv(name);
+        if (!val_str) return default_val;
+        std::string val = val_str;
+        std::transform(val.begin(), val.end(), val.begin(), ::tolower);
+        return val == "true" || val == "1";
+    };
     
     // Network
     s.host = get_env_var("LLM_LLAMA_SERVICE_LISTEN_ADDRESS", s.host);
     s.http_port = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_PORT", s.http_port);
     s.grpc_port = get_env_var_as_int("LLM_LLAMA_SERVICE_GRPC_PORT", s.grpc_port);
+    s.metrics_port = get_env_var_as_int("LLM_LLAMA_SERVICE_METRICS_PORT", s.metrics_port);
     
     // Model
     s.model_dir = get_env_var("LLM_LLAMA_SERVICE_MODEL_DIR", s.model_dir);
     s.model_id = get_env_var("LLM_LLAMA_SERVICE_MODEL_ID", s.model_id);
     s.model_filename = get_env_var("LLM_LLAMA_SERVICE_MODEL_FILENAME", s.model_filename);
     
-    // Engine
+    // Engine & Performance
     s.n_gpu_layers = get_env_var_as_int("LLM_LLAMA_SERVICE_GPU_LAYERS", s.n_gpu_layers);
     s.context_size = get_env_var_as_uint("LLM_LLAMA_SERVICE_CONTEXT_SIZE", s.context_size);
     s.n_threads = get_env_var_as_uint("LLM_LLAMA_SERVICE_THREADS", s.n_threads);
     s.n_threads_batch = get_env_var_as_uint("LLM_LLAMA_SERVICE_THREADS_BATCH", s.n_threads_batch);
+    s.use_mmap = get_env_var_as_bool("LLM_LLAMA_SERVICE_USE_MMAP", s.use_mmap);
+    s.kv_offload = get_env_var_as_bool("LLM_LLAMA_SERVICE_KV_OFFLOAD", s.kv_offload);
+    // NUMA ayarı basitleştirildi. Sadece "disabled" (varsayılan) destekleniyor.
+    // İleri seviye NUMA stratejileri gelecekte eklenebilir.
+    s.numa_strategy = GGML_NUMA_STRATEGY_DISABLED;
+
+    // Logging
     s.log_level = get_env_var("LLM_LLAMA_SERVICE_LOG_LEVEL", s.log_level);
 
     // Sampling Defaults
@@ -101,7 +119,7 @@ inline Settings load_settings() {
     s.default_top_p = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_TOP_P", s.default_top_p);
     s.default_repeat_penalty = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY", s.default_repeat_penalty);
 
-    // YENİ EKLENDİ: Güvenlik (mTLS) ayarlarını yükle
+    // Security (mTLS)
     s.grpc_ca_path = get_env_var("GRPC_TLS_CA_PATH", s.grpc_ca_path);
     s.grpc_cert_path = get_env_var("LLM_LLAMA_SERVICE_CERT_PATH", s.grpc_cert_path);
     s.grpc_key_path = get_env_var("LLM_LLAMA_SERVICE_KEY_PATH", s.grpc_key_path);
