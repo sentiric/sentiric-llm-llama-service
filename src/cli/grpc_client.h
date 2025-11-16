@@ -4,7 +4,7 @@
 #include <string>
 #include <functional>
 #include <grpcpp/grpcpp.h>
-#include "sentiric/llm/v1/local.grpc.pb.h"
+#include "sentiric/llm/v1/local.grpc.pb.h" // Kendi servis tanımımızı dahil ediyoruz
 
 namespace sentiric_llm_cli {
 
@@ -13,20 +13,20 @@ public:
     GRPCClient(const std::string& endpoint);
     ~GRPCClient();
     
-    // DÜZELTİLDİ: const kaldırıldı.
     bool is_connected();
     
-    bool generate_stream(const std::string& prompt,
-                        std::function<void(const std::string&)> on_token,
-                        float temperature = 0.8f,
-                        int max_tokens = 2048);
+    // GÜNCELLENDİ: Artık basit string yerine tam request nesnesini kabul ediyor.
+    bool generate_stream(
+        const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request,
+        std::function<void(const std::string&)> on_token
+    );
     
     void set_timeout(int seconds);
 
 private:
-    void ensure_channel_is_ready(); // YENİ yardımcı metod
+    void ensure_channel_is_ready();
     std::string endpoint_;
-    int timeout_seconds_ = 30;
+    int timeout_seconds_ = 120; // Varsayılan timeout artırıldı
     std::unique_ptr<sentiric::llm::v1::LLMLocalService::Stub> stub_;
     std::shared_ptr<grpc::Channel> channel_;
 };

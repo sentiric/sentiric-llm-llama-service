@@ -1,117 +1,76 @@
-# 📡 API Spesifikasyonu
+# 📡 API Spesifikasyonu (v2.0 - Diyalog Odaklı)
 
-## GRPC Service
+Bu belge, `llm-llama-service`'in sunduğu gRPC ve HTTP arayüzlerini tanımlar.
 
-### Service Definition
+## 1. gRPC Servisi: `LLMLocalService`
+
+Bu servis, `sentiric-contracts v1.11.0` ile tanımlanmıştır ve akış tabanlı, düşük gecikmeli diyalog yönetimi için tasarlanmıştır.
+
+### 1.1. Servis Tanımı
 ```protobuf
 service LLMLocalService {
-  rpc LocalGenerateStream(LocalGenerateStreamRequest) 
-      returns (stream LocalGenerateStreamResponse);
+  // Verilen diyalog bağlamına göre token-token metin üretir.
+  rpc GenerateStream(LLMLocalServiceGenerateStreamRequest) 
+      returns (stream LLMLocalServiceGenerateStreamResponse);
 }
 ```
 
-### Message Types
+### 1.2. Ana Mesaj Tipleri
 ```protobuf
-message LocalGenerateStreamRequest {
-  string prompt = 1;
-  GenerationParams params = 2;
+// İstek Mesajı
+message LLMLocalServiceGenerateStreamRequest {
+  // AI'nın genel kişiliğini ve kurallarını belirleyen ana talimat.
+  string system_prompt = 1;
+
+  // Kullanıcının son söylediği cümle veya sorduğu soru.
+  string user_prompt = 2;
+
+  // (Opsiyonel) RAG için kullanılan ek bilgi metni.
+  optional string rag_context = 3;
+
+  // (Opsiyonel) Konuşmanın geçmişi.
+  repeated ConversationTurn history = 4;
+
+  // (Opsiyonel) Token üretme ayarlarını geçersiz kılmak için.
+  optional GenerationParams params = 5;
 }
 
-message LocalGenerateStreamResponse {
-  string token = 1;
-  FinishDetails finish_details = 2;
-}
-
-message GenerationParams {
-  float temperature = 1;
-  int32 top_k = 2;
-  float top_p = 3;
-  float repetition_penalty = 4;
-  int32 max_new_tokens = 5;
-}
-```
-
-### Default Parameters
-```json
-{
-  "temperature": 0.8,
-  "top_k": 40,
-  "top_p": 0.95,
-  "repetition_penalty": 1.1,
-  "max_new_tokens": 2048
+// Yanıt Mesajı
+message LLMLocalServiceGenerateStreamResponse {
+  oneof type {
+    string token = 1;
+    FinishDetails finish_details = 2;
+  }
 }
 ```
+*Not: `ConversationTurn`, `GenerationParams` ve `FinishDetails` gibi yardımcı mesajların detayları için `sentiric-contracts` reposuna bakınız.*
 
-## HTTP Endpoints
+## 2. HTTP Endpoint'leri
 
-### Health Check
+### 2.1. Sağlık Kontrolü (`/health`)
 ```http
 GET /health
-Response: {
+
+Response (Başarılı):
+Status: 200 OK
+{
   "status": "healthy",
   "model_ready": true,
   "engine": "llama.cpp"
 }
+
+Response (Model Yükleniyor):
+Status: 503 Service Unavailable
+{
+  "status": "unhealthy",
+  "model_ready": false,
+  "engine": "llama.cpp"
+}
 ```
 
-## Client Examples
+## 3. Hata Kodları
 
-### GRPC Client (C++)
-```cpp
-LlamaClient client(grpc::CreateChannel(
-    "localhost:16061", 
-    grpc::InsecureChannelCredentials()
-));
+*   **gRPC:** `UNAVAILABLE` (14) - Model hazır değil, `INVALID_ARGUMENT` (3) - Gerekli alanlar eksik, `INTERNAL` (13) - Beklenmedik motor hatası.
+*   **HTTP:** `200 OK` - Sağlıklı, `503 Service Unavailable` - Model hazır değil.
 
-// Streaming response
-client.GenerateStream("Türkiye'nin başkenti neresidir?");
-```
-
-### Python Client
-```python
-import grpc
-import sentiric_llm_v1_local_pb2 as pb
-import sentiric_llm_v1_local_pb2_grpc as grpc_lib
-
-channel = grpc.insecure_channel('localhost:16061')
-stub = grpc_lib.LLMLocalServiceStub(channel)
-
-request = pb.LocalGenerateStreamRequest(
-    prompt="Türkiye'nin başkenti neresidir?"
-)
-
-for response in stub.LocalGenerateStream(request):
-    print(response.token, end='', flush=True)
-```
-
-## Error Handling
-
-### GRPC Status Codes
-- `OK` (0): Başarılı
-- `CANCELLED` (1): Client bağlantıyı kapattı
-- `INVALID_ARGUMENT` (3): Boş prompt
-- `UNAVAILABLE` (14): Model hazır değil
-- `INTERNAL` (13): Sistem hatası
-
-### HTTP Status Codes
-- `200 OK`: Sağlıklı
-- `503 Service Unavailable`: Model hazır değil
-
-## Performance Characteristics
-
-### Response Times
-- **First Token**: <100ms (warm context)
-- **Streaming Latency**: <10ms/token
-- **Throughput**: ~50 tokens/saniye
-
-### Resource Usage
-- **Memory**: ~2.5GB sabit
-- **CPU**: 4 thread optimal
-- **Network**: Minimal (local only)
-
-## Security Considerations
-
-- **Authentication**: None (local service)
-- **Encryption**: None (local network)
-- **Rate Limiting**: Implement edilecek
-- **Input Validation**: Basic prompt validation
+---

@@ -60,12 +60,11 @@ For GPU instructions and other advanced scenarios, please refer to the **[Deploy
 
 ### Verifying the Service
 
-```bash
 # Check service health (wait up to 1-2 minutes for the model to load)
 curl http://localhost:16070/health
-# Expected output: {"engine":"llama.cpp","model_ready":true,"status":"healthy"}
+# Expected output: {"status":"healthy","model_ready":true,"engine":"llama.cpp"}
 
-# Test with the CLI tool
-docker compose run --rm llm-cli llm_cli generate "Sen, Sentiric platformunda çalışan, yardımsever ve profesyonel bir AI asistansın. Cevapların her zaman kısa (en fazla 2 cümle), net ve samimi olsun." --timeout 120
-```
+# Test with the CLI tool using a RAG scenario
+./run_request.sh examples/hospitality_service_context.txt "Ahmet Bey'in rezervasyon durumu nedir?"
+
 ---

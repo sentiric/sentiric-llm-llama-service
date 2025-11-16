@@ -13,14 +13,14 @@ struct BenchmarkResult {
     double average_response_time_ms;
     double tokens_per_second;
     double error_rate;
-    long long total_tokens_generated; // YENİ EKLENDİ
+    long long total_tokens_generated;
     std::chrono::seconds total_duration;
     std::vector<double> response_times;
 };
 
 class Benchmark {
 public:
-    Benchmark(const std::string& endpoint);
+    Benchmark(const std::string& grpc_endpoint);
     
     BenchmarkResult run_performance_test(int iterations = 10, 
                                        const std::string& prompt = "Test prompt");
@@ -31,6 +31,7 @@ public:
     void generate_report(const BenchmarkResult& result, const std::string& filename = "");
 
 private:
+    std::string grpc_endpoint_; // Bu satır, run_concurrent_test'in çalışması için gereklidir.
     std::unique_ptr<CLIClient> client_;
 };
 

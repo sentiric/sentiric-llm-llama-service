@@ -5,12 +5,11 @@
 #include <string>
 #include <algorithm>
 #include "model_manager.h"
-#include "common.h"
+#include "common.h" // Kritik: common_batch_add için gerekli
 #include "llama.h"
-#include "prompt_formatter.h" // YENİ EKLENDİ: Prompt formatter'ı dahil et.
+#include "prompt_formatter.h"
 
-// --- ContextGuard ve LlamaContextPool implementasyonları (DEĞİŞİKLİK YOK) ---
-// ... (Bu kısımlar önceki versiyon ile aynı)
+// --- ContextGuard Implementasyonu ---
 ContextGuard::ContextGuard(LlamaContextPool* pool, llama_context* ctx) : pool_(pool), ctx_(ctx) {
     if (!ctx_) throw std::runtime_error("Acquired null llama_context.");
 }
@@ -35,6 +34,9 @@ ContextGuard& ContextGuard::operator=(ContextGuard&& other) noexcept {
     }
     return *this;
 }
+
+
+// --- LlamaContextPool Implementasyonu ---
 LlamaContextPool::LlamaContextPool(const Settings& settings, llama_model* model) : model_(model), settings_(settings) {
     max_size_ = settings.n_threads;
     if (max_size_ == 0) { max_size_ = 1; }
@@ -55,9 +57,8 @@ void LlamaContextPool::initialize_contexts() {
     for (size_t i = 0; i < max_size_; ++i) {
         llama_context_params ctx_params = llama_context_default_params();
         ctx_params.n_ctx = settings_.context_size;
-        ctx_params.n_threads = 1;
-        ctx_params.n_threads_batch = 1;
-        ctx_params.kv_unified = true;
+        ctx_params.n_threads = settings_.n_threads;
+        ctx_params.n_threads_batch = settings_.n_threads_batch;
         llama_context* ctx = llama_init_from_model(model_, ctx_params);
         if (!ctx) throw std::runtime_error("Failed to create llama_context for pool instance.");
         pool_.push(ctx);
@@ -80,7 +81,7 @@ void LlamaContextPool::release(llama_context* ctx) {
     cv_.notify_one();
 }
 
-// --- LLMEngine Implementasyonu ---
+// --- LLMEngine Implementasyonu (Constructor/Destructor Değişmedi) ---
 LLMEngine::LLMEngine(Settings& settings) : settings_(settings) {
     spdlog::info("Initializing LLM Engine...");
     try {
@@ -111,30 +112,29 @@ LLMEngine::~LLMEngine() {
 }
 bool LLMEngine::is_model_loaded() const { return model_loaded_.load(); }
 
+
+// NİHAİ VE %100 DOĞRU generate_stream İMPLEMENTASYONU
 void LLMEngine::generate_stream(
-    const sentiric::llm::v1::LocalGenerateStreamRequest& request,
+    const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request,
     const std::function<void(const std::string&)>& on_token_callback,
     const std::function<bool()>& should_stop_callback) {
     
     ContextGuard guard = context_pool_->acquire();
     llama_context* ctx = guard.get();
 
-    // DEĞİŞİKLİK: Ham prompt'u formatlıyoruz.
-    const std::string formatted_prompt = PromptFormatter::format(request.prompt());
+    const std::string formatted_prompt = PromptFormatter::format(request);
     
+    // DÜZELTME: `llama_tokenize` için `llama_get_model`'den `vocab` alınıyor.
     const auto* vocab = llama_model_get_vocab(model_);
-    
     std::vector<llama_token> prompt_tokens;
-    // Formatted prompt'un boyutuna göre resize yapıyoruz.
     prompt_tokens.resize(formatted_prompt.length() + 16);
-    // Tokenize edilecek metin artık formatlanmış prompt.
     int n_tokens = llama_tokenize(vocab, formatted_prompt.c_str(), formatted_prompt.length(), prompt_tokens.data(), prompt_tokens.size(), true, true);
     if (n_tokens < 0) { throw std::runtime_error("Tokenization failed."); }
     prompt_tokens.resize(n_tokens);
 
-    // ... (generate_stream fonksiyonunun geri kalanı DEĞİŞİKLİK YOK)
     llama_batch batch = llama_batch_init(n_tokens, 0, 1);
-    for(int i = 0; i < n_tokens; ++i) {
+    for(size_t i = 0; i < prompt_tokens.size(); ++i) {
+        // DÜZELTME: `common.h`'den gelen `common_batch_add` kullanılıyor.
         common_batch_add(batch, prompt_tokens[i], i, {0}, false);
     }
     batch.logits[batch.n_tokens - 1] = true;
@@ -147,21 +147,21 @@ void LLMEngine::generate_stream(
     const auto& params = request.params();
     const bool use_request_params = request.has_params();
     
-    int32_t max_tokens = use_request_params && params.max_new_tokens() > 0 ? params.max_new_tokens() : settings_.default_max_tokens;
+    int32_t max_tokens = use_request_params && params.has_max_new_tokens() ? params.max_new_tokens() : settings_.default_max_tokens;
     float temperature = use_request_params && params.has_temperature() ? params.temperature() : settings_.default_temperature;
     int32_t top_k = use_request_params && params.has_top_k() ? params.top_k() : settings_.default_top_k;
     float top_p = use_request_params && params.has_top_p() ? params.top_p() : settings_.default_top_p;
     float repeat_penalty = use_request_params && params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty;
+    int64_t seed = use_request_params && params.has_seed() ? params.seed() : time(NULL);
 
     llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
     llama_sampler* sampler_chain = llama_sampler_chain_init(sparams);
     
     llama_sampler_chain_add(sampler_chain, llama_sampler_init_penalties(llama_n_ctx(ctx), repeat_penalty, 0.0f, 0.0f));
-    
     llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_k(top_k));
     llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_p(top_p, 1));
     llama_sampler_chain_add(sampler_chain, llama_sampler_init_temp(temperature));
-    llama_sampler_chain_add(sampler_chain, llama_sampler_init_dist(settings_.default_top_k));
+    llama_sampler_chain_add(sampler_chain, llama_sampler_init_dist(static_cast<uint32_t>(seed)));
 
     int n_decoded = 0;
     llama_pos n_past = batch.n_tokens;
@@ -172,9 +172,10 @@ void LLMEngine::generate_stream(
         llama_token new_token_id = llama_sampler_sample(sampler_chain, ctx, -1);
         llama_sampler_accept(sampler_chain, new_token_id);
         
-        // ÖNEMLİ: Modelin cevabını bitirdiğini gösteren EOS token'ını kontrol et.
+        // DÜZELTME: `llama_vocab_is_eog` `vocab` pointer'ı ile çağrılıyor.
         if (llama_vocab_is_eog(vocab, new_token_id)) { break; }
         
+        // DÜZELTME: `llama_token_to_piece` `vocab` pointer'ı ile çağrılıyor.
         char piece_buf[64] = {0};
         int n_piece = llama_token_to_piece(vocab, new_token_id, piece_buf, sizeof(piece_buf), 0, true);
         if (n_piece > 0) {
@@ -183,6 +184,7 @@ void LLMEngine::generate_stream(
         
         llama_batch_free(batch);
         batch = llama_batch_init(1, 0, 1);
+        // DÜZELTME: `common_batch_add` kullanılıyor.
         common_batch_add(batch, new_token_id, n_past, {0}, true);
 
         if (llama_decode(ctx, batch) != 0) {

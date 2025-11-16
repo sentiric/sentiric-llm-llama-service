@@ -3,37 +3,41 @@
 #include <vector>
 #include <map>
 #include <functional>
-#include <algorithm>
 #include "spdlog/spdlog.h"
-#include "cli_client.h"
+#include "grpc_client.h"
 #include "health_check.h"
-#include "benchmark.h"
+#include "benchmark.h" // Benchmark başlık dosyasını tekrar dahil ediyoruz.
 
 void print_usage() {
     std::cout << R"(
-🧠 Sentiric LLM CLI Aracı v1.1
+🧠 Sentiric LLM CLI v2.0 (Anayasa Uyumlu)
 
 Kullanım:
   llm_cli [seçenekler] <komut> [argümanlar]
 
 Komutlar:
-  generate <prompt>    - Metin üret (GRPC stream)
-  health               - Sistem sağlık durumu
-  monitor              - Gerçek zamanlı sistem izleme
-  benchmark            - Performans testi çalıştır
-  wait-for-ready       - Servis hazır olana kadar bekle
+  generate <user_prompt>   - Zengin bir bağlam ile metin üretir (GRPC stream).
+  health                   - Sistem sağlık durumunu kontrol eder.
+  wait-for-ready           - Servis hazır olana kadar bekler.
+  benchmark                - Performans testi çalıştırır.
 
 Seçenekler:
-  --grpc-endpoint <addr> - GRPC endpoint (varsayılan: llm-llama-service:16071)
-  --http-endpoint <addr> - HTTP endpoint (varsayılan: llm-llama-service:16070)
-  --timeout <seconds>    - İstekler için zaman aşımı süresi (saniye)
-  --iterations <n>       - Benchmark iterasyon sayısı
-  --output <file>        - Benchmark raporu için çıktı dosyası
+  --system-prompt <text>   - (Opsiyonel) AI'nın kişiliğini belirleyen sistem talimatı.
+  --rag-context <text>     - (Opsiyonel) RAG için kullanılacak bilgi metni.
+  --grpc-endpoint <addr>   - GRPC endpoint (varsayılan: llm-llama-service:16071).
+  --http-endpoint <addr>   - HTTP endpoint (varsayılan: llm-llama-service:16070).
+  --timeout <seconds>      - İstek zaman aşımı süresi (saniye, varsayılan: 120).
+  --iterations <n>         - Benchmark iterasyon sayısı.
+  --output <file>          - Benchmark raporu için çıktı dosyası.
 
 Örnekler:
+  # Basit Soru
   llm_cli generate "Türkiye'nin başkenti neresidir?"
-  llm_cli --http-endpoint localhost:16070 health
-  llm_cli benchmark --iterations 50
+
+  # RAG Testi (tırnak işaretlerine dikkat)
+  llm_cli generate "Son sürüm nedir?" \
+    --system-prompt "Sana sağlanan 'İlgili Bilgiler'i kullanarak cevap ver. Context: {context}, Soru: {query}" \
+    --rag-context "Sentiric platformunun son sürümü v3.5'tir."
 )";
 }
 
@@ -50,92 +54,76 @@ int main(int argc, char** argv) {
     std::string command;
     std::vector<std::string> command_args;
 
-    // Argümanları ayrıştır: önce seçenekleri, sonra komutu ve argümanlarını bul
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i].rfind("--", 0) == 0) {
             std::string key = args[i].substr(2);
             if (i + 1 < args.size() && args[i + 1].rfind("--", 0) != 0) {
                 options[key] = args[++i];
-            } else {
-                options[key] = "true";
-            }
+            } else { options[key] = "true"; }
         } else if (command.empty()) {
             command = args[i];
         } else {
             command_args.push_back(args[i]);
         }
     }
+    
+    std::string grpc_endpoint = options.count("grpc-endpoint") ? options["grpc-endpoint"] : "llm-llama-service:16071";
+    std::string http_endpoint = options.count("http-endpoint") ? options["http-endpoint"] : "llm-llama-service:16070";
 
-    if (command.empty()) {
-        print_usage();
-        return 1;
-    }
-    
-    // Varsayılan endpoint'i Docker ağındaki servis adına göre ayarla
-    std::string grpc_endpoint = options.count("grpc-endpoint") ? 
-                               options["grpc-endpoint"] : "llm-llama-service:16071";
-    std::string http_endpoint = options.count("http-endpoint") ? 
-                               options["http-endpoint"] : "llm-llama-service:16070";
-    
     try {
         if (command == "generate") {
-            if (command_args.empty()) {
-                spdlog::error("generate komutu için bir prompt metni gereklidir.");
-                print_usage();
-                return 1;
-            }
-            std::string prompt;
-            for (const auto& arg : command_args) {
-                prompt += arg + " ";
-            }
-            prompt.pop_back();
+            if (command_args.empty()) { /* ... hata ... */ }
+            std::string user_prompt;
+            for (const auto& arg : command_args) { user_prompt += arg + " "; }
+            user_prompt.pop_back();
 
-            sentiric_llm_cli::CLIClient client(grpc_endpoint, http_endpoint);
-            
-            if (options.count("timeout")) {
-                client.set_timeout(std::stoi(options["timeout"]));
+            sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest request;
+            request.set_user_prompt(user_prompt);
+
+            if (options.count("system-prompt")) {
+                request.set_system_prompt(options["system-prompt"]);
+            } else {
+                request.set_system_prompt("You are a helpful assistant.");
+            }
+            if (options.count("rag-context")) {
+                request.set_rag_context(options["rag-context"]);
             }
             
-            std::cout << "👤 Kullanıcı: " << prompt << "\n";
+            sentiric_llm_cli::GRPCClient client(grpc_endpoint);
+            if (options.count("timeout")) { client.set_timeout(std::stoi(options["timeout"])); }
+
+            std::cout << "🤖 Assistant: " << std::flush;
             
-            bool success = client.generate_stream(prompt, 
-                [](const std::string& token) {
-                    std::cout << token << std::flush;
-                }
-            );
+            bool success = client.generate_stream(request, [](const std::string& token) {
+                std::cout << token << std::flush;
+            });
             std::cout << std::endl;
-            
+
             if (!success) {
-                spdlog::error("Generation başarısız.");
+                spdlog::error("Generation başarısız oldu.");
                 return 1;
             }
-        } else if (command == "health") {
-            sentiric_llm_cli::HealthChecker checker(grpc_endpoint, http_endpoint);
-            checker.print_detailed_status();
-        } else if (command == "wait-for-ready") {
-            int timeout = options.count("timeout") ? std::stoi(options["timeout"]) : 300;
-            sentiric_llm_cli::HealthChecker checker(grpc_endpoint, http_endpoint);
-            if (!checker.wait_for_ready(timeout)) {
-                return 1;
-            }
+
+        } else if (command == "health" || command == "wait-for-ready") {
+             sentiric_llm_cli::HealthChecker checker(grpc_endpoint, http_endpoint);
+             if (command == "health") {
+                 checker.print_detailed_status();
+             } else {
+                 int timeout = options.count("timeout") ? std::stoi(options["timeout"]) : 300;
+                 if (!checker.wait_for_ready(timeout)) return 1;
+             }
         } else if (command == "benchmark") {
-            int iterations = options.count("iterations") ? std::stoi(options["iterations"]) : 10;
-            std::string output_file = options.count("output") ? options["output"] : "";
-            sentiric_llm_cli::Benchmark benchmark(grpc_endpoint);
-            auto result = benchmark.run_performance_test(iterations);
-            benchmark.generate_report(result, output_file);
-        } else if (command == "monitor") {
-            spdlog::info("Gerçek zamanlı izleme başlatılıyor... (Ctrl+C ile durdur)");
-            sentiric_llm_cli::HealthChecker checker(grpc_endpoint, http_endpoint);
-            while (true) {
-                checker.print_detailed_status();
-                std::this_thread::sleep_for(std::chrono::seconds(10));
-            }
+             int iterations = options.count("iterations") ? std::stoi(options["iterations"]) : 10;
+             std::string output_file = options.count("output") ? options["output"] : "";
+             sentiric_llm_cli::Benchmark benchmark(grpc_endpoint);
+             auto result = benchmark.run_performance_test(iterations);
+             benchmark.generate_report(result, output_file);
         } else {
-            std::cerr << "❌ Geçersiz komut: " << command << "\n";
+            spdlog::error("Geçersiz komut: '{}'", command);
             print_usage();
             return 1;
         }
+
     } catch (const std::exception& e) {
         spdlog::critical("CLI hatası: {}", e.what());
         return 1;

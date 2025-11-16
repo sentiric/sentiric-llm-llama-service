@@ -1,8 +1,6 @@
 #include "cli_client.h"
 #include "grpc_client.h"
 #include "http_client.h"
-#include "benchmark.h"
-#include "health_check.h"
 #include "spdlog/spdlog.h"
 
 namespace sentiric_llm_cli {
@@ -15,12 +13,16 @@ CLIClient::CLIClient(const std::string& grpc_endpoint, const std::string& http_e
 
 CLIClient::~CLIClient() = default;
 
-// GÜNCELLENDİ: İmplementasyon yeni imzaya uyarlandı.
+// GÜNCELLENDİ: Bu fonksiyon artık basit string'i alıp zengin Request nesnesine dönüştürüyor.
 bool CLIClient::generate_stream(const std::string& prompt, 
                                 const std::function<void(const std::string&)>& on_token) {
     if (!grpc_client_) return false;
-    // Varsayılan temperature ve max_tokens değerleri GRPCClient katmanına iletiliyor.
-    return grpc_client_->generate_stream(prompt, on_token);
+
+    sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest request;
+    request.set_system_prompt("You are a helpful assistant.");
+    request.set_user_prompt(prompt);
+    
+    return grpc_client_->generate_stream(request, on_token);
 }
 
 // HTTP İşlemleri
@@ -33,11 +35,6 @@ bool CLIClient::health_check() {
 std::string CLIClient::get_health_status() {
     if (!http_client_) return "error";
     return http_client_->check_health().status;
-}
-
-bool CLIClient::http_generate(const std::string& prompt, std::string& response) {
-    if (!http_client_) return false;
-    return http_client_->generate(prompt, response);
 }
 
 // Utility

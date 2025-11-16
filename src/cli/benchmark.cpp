@@ -9,8 +9,9 @@
 
 namespace sentiric_llm_cli {
 
-Benchmark::Benchmark(const std::string& endpoint)
-    : client_(std::make_unique<CLIClient>(endpoint)) {}
+Benchmark::Benchmark(const std::string& grpc_endpoint)
+    : grpc_endpoint_(grpc_endpoint),
+      client_(std::make_unique<CLIClient>(grpc_endpoint)) {}
 
 BenchmarkResult Benchmark::run_performance_test(int iterations, const std::string& prompt) {
     spdlog::info("🎯 Performans testi başlıyor ({} iterasyon)...", iterations);
@@ -28,9 +29,8 @@ BenchmarkResult Benchmark::run_performance_test(int iterations, const std::strin
         auto start_time = std::chrono::steady_clock::now();
         std::atomic<int> current_run_tokens = 0;
 
-        // GÜNCELLENDİ: Çağrı yeni ve doğru imzaya uygun.
         bool success = client_->generate_stream(prompt,
-            [&](const std::string& token) {
+            [&](const std::string& /*token*/) {
                 current_run_tokens++;
             }
         );
@@ -53,7 +53,7 @@ BenchmarkResult Benchmark::run_performance_test(int iterations, const std::strin
     auto total_end = std::chrono::steady_clock::now();
     result.total_duration = std::chrono::duration_cast<std::chrono::seconds>(total_end - total_start);
 
-    result.average_response_time_ms = total_response_time_ms / iterations;
+    result.average_response_time_ms = iterations > 0 ? total_response_time_ms / iterations : 0;
     
     double total_time_seconds = total_response_time_ms / 1000.0;
     if (total_time_seconds > 0) {
@@ -62,7 +62,7 @@ BenchmarkResult Benchmark::run_performance_test(int iterations, const std::strin
         result.tokens_per_second = 0;
     }
     
-    result.error_rate = ((iterations - result.successful_requests) * 100.0) / iterations;
+    result.error_rate = iterations > 0 ? ((iterations - result.successful_requests) * 100.0) / iterations : 0;
     result.total_tokens_generated = total_tokens_generated;
 
     spdlog::info("✅ Performans testi tamamlandı");
@@ -81,9 +81,8 @@ BenchmarkResult Benchmark::run_concurrent_test(int concurrent_connections, int r
     for (int i = 0; i < concurrent_connections; i++) {
         futures.push_back(std::async(std::launch::async, [this, requests_per_connection]() {
             int success_count = 0;
-            auto client = std::make_unique<CLIClient>();
+            auto client = std::make_unique<CLIClient>(this->grpc_endpoint_);
             for (int j = 0; j < requests_per_connection; j++) {
-                // GÜNCELLENDİ: Çağrı yeni ve doğru imzaya uygun.
                 if (client->generate_stream("Concurrent test prompt " + std::to_string(j),
                                             [](const std::string&) {})) {
                     success_count++;
@@ -98,7 +97,7 @@ BenchmarkResult Benchmark::run_concurrent_test(int concurrent_connections, int r
     auto total_end = std::chrono::steady_clock::now();
     result.total_duration = std::chrono::duration_cast<std::chrono::seconds>(total_end - total_start);
 
-    result.error_rate = ((result.total_requests - result.successful_requests) * 100.0) / result.total_requests;
+    result.error_rate = result.total_requests > 0 ? ((result.total_requests - result.successful_requests) * 100.0) / result.total_requests : 0;
     result.tokens_per_second = (result.successful_requests * 50) / (result.total_duration.count() > 0 ? result.total_duration.count() : 1);
 
     spdlog::info("✅ Eşzamanlı test tamamlandı");

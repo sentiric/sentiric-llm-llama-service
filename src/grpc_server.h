@@ -9,14 +9,13 @@ class GrpcServer final : public sentiric::llm::v1::LLMLocalService::Service {
 public:
     explicit GrpcServer(std::shared_ptr<LLMEngine> engine);
 
-    grpc::Status LocalGenerateStream(
+    // KONTROL EDİN: Bu metodun adının "GenerateStream" olduğundan emin olun.
+    grpc::Status GenerateStream(
         grpc::ServerContext* context,
-        const sentiric::llm::v1::LocalGenerateStreamRequest* request,
-        grpc::ServerWriter<sentiric::llm::v1::LocalGenerateStreamResponse>* writer
+        const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest* request,
+        grpc::ServerWriter<sentiric::llm::v1::LLMLocalServiceGenerateStreamResponse>* writer
     ) override;
 
 private:
     std::shared_ptr<LLMEngine> engine_;
 };
-
-void run_grpc_server(std::shared_ptr<LLMEngine> engine, int port);

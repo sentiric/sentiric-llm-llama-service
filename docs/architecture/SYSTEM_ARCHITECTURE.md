@@ -54,7 +54,7 @@ Mimari, bir **context havuzu (`LlamaContextPool`)** kullanarak gerçek eşzamanl
 
 -   **İlklendirme:** Servis başladığında, `LLM_LLAMA_SERVICE_THREADS` ortam değişkeni ile belirlenen sayıda `llama_context` oluşturulur ve havuza eklenir.
 -   **İstek İşleme:** Her gelen gRPC isteği, havuzdan boşta bir `llama_context` "kiralar". Bu sırada diğer istekler, havuzdaki diğer boş context'leri kullanarak **paralel olarak** işlenir.
--   **Kaynak İadesi ve Temizlik (Kritik Adım):** İşlem bittiğinde veya istemci bağlantıyı kapattığında, kullanılan context'in KV cache'i `llama_kv_cache_seq_rm(ctx, -1, 0, -1)` çağrısı ile **mutlaka temizlenir** ve context tekrar havuza bırakılır. Bu, bir sonraki isteğin, önceki isteğin "hafızası" olmadan temiz bir state ile başlamasını garanti eder. Bu adımın atlanması, state sızıntısına (state leak) ve hatalı çıktılara yol açar.
+-   **Kaynak İadesi ve Temizlik (Kritik Adım):** İşlem bittiğinde veya istemci bağlantıyı kapattığında, kullanılan context'in KV cache'i `llama_memory_seq_rm(llama_get_memory(ctx_), -1, -1, -1);` çağrısı ile **mutlaka temizlenir** ve context tekrar havuza bırakılır. Bu, bir sonraki isteğin, önceki isteğin "hafızası" olmadan temiz bir state ile başlamasını garanti eder. Bu adımın atlanması, state sızıntısına (state leak) ve hatalı çıktılara yol açar.
 
 ## 3. Build ve Bağımlılık Mimarisi
 

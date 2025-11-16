@@ -7,15 +7,15 @@
 #include <fstream>
 #include <sstream>
 
-// fmt::formatter<grpc::StatusCode> uzmanlaşması (DEĞİŞİKLİK YOK)
+// GÜNCELLENDİ: fmt::formatter uzmanlaşması geri eklendi.
 template <>
 struct fmt::formatter<grpc::StatusCode> {
-    constexpr auto parse(format_parse_context& ctx) {
+    constexpr auto parse(fmt::format_parse_context& ctx) -> decltype(ctx.begin()) {
         return ctx.begin();
     }
 
     template <typename FormatContext>
-    auto format(const grpc::StatusCode& code, FormatContext& ctx) const {
+    auto format(const grpc::StatusCode& code, FormatContext& ctx) const -> decltype(ctx.out()) {
         std::string_view name = "UNKNOWN";
         switch (code) {
             case grpc::StatusCode::OK: name = "OK"; break;
@@ -41,6 +41,7 @@ struct fmt::formatter<grpc::StatusCode> {
     }
 };
 
+// GÜNCELLENDİ: read_file_client fonksiyonu geri eklendi ve düzeltildi.
 std::string read_file_client(const std::string& filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
@@ -58,10 +59,8 @@ GRPCClient::GRPCClient(const std::string& endpoint)
 
 GRPCClient::~GRPCClient() {}
 
-// YENİ: Tek seferlik kanal ve stub oluşturma mantığı
 void GRPCClient::ensure_channel_is_ready() {
-    if (stub_) return; // Zaten oluşturulmuşsa bir şey yapma
-
+    if (stub_) return;
     std::shared_ptr<grpc::ChannelCredentials> creds;
     try {
         const char* ca_path = std::getenv("GRPC_TLS_CA_PATH");
@@ -92,17 +91,14 @@ void GRPCClient::ensure_channel_is_ready() {
     stub_ = sentiric::llm::v1::LLMLocalService::NewStub(channel_);
 }
 
-// DÜZELTİLDİ: Artık gereksiz test bağlantısı yapmıyor
 bool GRPCClient::is_connected() {
     ensure_channel_is_ready();
-    // 1 saniyelik bir timeout ile bağlantıyı doğrula
     return channel_->WaitForConnected(gpr_time_add(gpr_now(GPR_CLOCK_REALTIME), gpr_time_from_seconds(2, GPR_TIMESPAN)));
 }
 
-bool GRPCClient::generate_stream(const std::string& prompt,
-                                std::function<void(const std::string&)> on_token,
-                                float temperature,
-                                int max_tokens) {
+bool GRPCClient::generate_stream(
+    const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request,
+    std::function<void(const std::string&)> on_token) {
     
     ensure_channel_is_ready();
 
@@ -112,27 +108,22 @@ bool GRPCClient::generate_stream(const std::string& prompt,
     }
     
     try {
-        sentiric::llm::v1::LocalGenerateStreamRequest request;
-        request.set_prompt(prompt);
-        
-        if (temperature != 0.8f || max_tokens != 2048) {
-            auto* params = request.mutable_params();
-            params->set_temperature(temperature);
-            params->set_max_new_tokens(max_tokens);
-        }
-        
         grpc::ClientContext context;
         context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(timeout_seconds_));
         
-        auto reader = stub_->LocalGenerateStream(&context, request);
-        sentiric::llm::v1::LocalGenerateStreamResponse response;
+        auto reader = stub_->GenerateStream(&context, request);
+        sentiric::llm::v1::LLMLocalServiceGenerateStreamResponse response;
         
         while (reader->Read(&response)) {
             if (response.has_token()) {
-                std::string token = response.token();
                 if (on_token) {
-                    on_token(token);
+                    on_token(response.token());
                 }
+            }
+            if (response.has_finish_details()) {
+                const auto& details = response.finish_details();
+                spdlog::info("\n[Stream Bitti: Neden='{}', Prompt/Completion Tokenları={}/{}]", 
+                             details.finish_reason(), details.prompt_tokens(), details.completion_tokens());
             }
         }
         
@@ -141,9 +132,9 @@ bool GRPCClient::generate_stream(const std::string& prompt,
              spdlog::warn("GRPC stream finished with status [{}]: {}", status.error_code(), status.error_message());
         }
         
-        return true;
+        return status.ok() || status.error_code() == grpc::StatusCode::CANCELLED;
     } catch (const std::exception& e) {
-        spdlog::error("GRPC generation hatası: {}", e.what());
+        spdlog::error("gRPC generation error: {}", e.what());
         return false;
     }
 }
