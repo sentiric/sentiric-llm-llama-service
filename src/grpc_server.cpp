@@ -3,12 +3,16 @@
 #include "spdlog/spdlog.h"
 #include <atomic>
 
-GrpcServer::GrpcServer(std::shared_ptr<LLMEngine> engine) : engine_(std::move(engine)) {}
+GrpcServer::GrpcServer(std::shared_ptr<LLMEngine> engine, AppMetrics& metrics)
+    : engine_(std::move(engine)), metrics_(metrics) {}
 
 grpc::Status GrpcServer::GenerateStream(
     grpc::ServerContext* context,
     const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest* request,
     grpc::ServerWriter<sentiric::llm::v1::LLMLocalServiceGenerateStreamResponse>* writer) {
+
+    metrics_.requests_total.Increment();
+    auto start_time = std::chrono::steady_clock::now();
 
     if (!engine_->is_model_loaded()) {
         return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Model is not ready yet.");
@@ -54,6 +58,12 @@ grpc::Status GrpcServer::GenerateStream(
     details->set_prompt_tokens(prompt_tokens);
     details->set_completion_tokens(completion_tokens);
     writer->Write(final_response);
+
+    metrics_.tokens_generated_total.Increment(completion_tokens);
+
+    auto end_time = std::chrono::steady_clock::now();
+    std::chrono::duration<double> latency = end_time - start_time;
+    metrics_.request_latency.Observe(latency.count());
 
     spdlog::info("[gRPC] Stream finished. Reason: '{}'. Tokens (Prompt/Completion): {}/{}", 
                  finish_reason, prompt_tokens, completion_tokens);

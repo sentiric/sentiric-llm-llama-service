@@ -13,10 +13,10 @@
 
 // Metrik ailelerini tutacak ve uygulama genelinde taşınacak bir yapı.
 struct AppMetrics {
-    prometheus::Family<prometheus::Counter>& requests_total;
-    prometheus::Family<prometheus::Histogram>& request_latency;
-    prometheus::Family<prometheus::Counter>& tokens_generated_total;
-    prometheus::Family<prometheus::Gauge>& active_contexts;
+    prometheus::Counter& requests_total;
+    prometheus::Histogram& request_latency;
+    prometheus::Counter& tokens_generated_total;
+    prometheus::Gauge& active_contexts;
 };
 
 // Metrik sunucusu için ayrı bir sınıf.

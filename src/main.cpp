@@ -107,10 +107,12 @@ int main() {
         .Register(*registry);
 
     // Metrik örneklerini oluştur - KULLANILACAK
-    auto& requests_total = requests_total_family.Add({});
-    auto& request_latency = request_latency_family.Add({}, prometheus::Histogram::BucketBoundaries{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0});
-    auto& tokens_generated_total = tokens_generated_total_family.Add({});
-    auto& active_contexts = active_contexts_family.Add({});
+    AppMetrics metrics = {
+        requests_total_family.Add({}),
+        request_latency_family.Add({}, prometheus::Histogram::BucketBoundaries{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0}),
+        tokens_generated_total_family.Add({}),
+        active_contexts_family.Add({})
+    };
 
     std::unique_ptr<grpc::Server> grpc_server_ptr;
     std::shared_ptr<HttpServer> http_server;
@@ -122,7 +124,7 @@ int main() {
     try {
         spdlog::info("Configuration: host={}, http_port={}, grpc_port={}", settings.host, settings.http_port, settings.grpc_port);
         
-        auto engine = std::make_shared<LLMEngine>(settings, active_contexts);
+        auto engine = std::make_shared<LLMEngine>(settings, metrics.active_contexts);
         
         if (!engine->is_model_loaded()) {
             spdlog::critical("LLM Engine failed to initialize with a valid model. Shutting down.");
@@ -137,7 +139,7 @@ int main() {
         }
 
         std::string grpc_address = settings.host + ":" + std::to_string(settings.grpc_port);
-        GrpcServer grpc_service(engine);
+        GrpcServer grpc_service(engine, metrics);
         grpc::ServerBuilder builder;
 
         if (settings.grpc_ca_path.empty() || settings.grpc_cert_path.empty() || settings.grpc_key_path.empty()) {
