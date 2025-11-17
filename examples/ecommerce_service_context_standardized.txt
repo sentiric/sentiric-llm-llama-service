@@ -1,0 +1,6 @@
+SENARYO: E-ticaret Sipariş Takip Sistemi
+SIPARIS_DETAY: Sipariş #12345, 16-18 Kasım 2025 teslimat, kargo hazırlanıyor
+CEVAP_FORMAT: Net, sipariş numarası ve tarih bilgileriyle, GG-AA-YYYY formatında  
+DİL: Türkçe, müşteri dostu
+
+KULLANICI_SORUSU: Müşterinin sipariş durumu nedir?

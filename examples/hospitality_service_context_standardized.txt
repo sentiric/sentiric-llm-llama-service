@@ -1,0 +1,7 @@
+SENARYO: Otel Rezervasyon Sistemi
+KULLANICI_PROFİL: Ahmet Bey - VIP Müşteri
+REZERVASYON_DETAY: 2 gece, standart oda, 16-18 Kasım 2025
+CEVAP_FORMAT: Net ve yapılandırılmış, tarihler GG-AA-YYYY formatında
+DİL: Türkçe, profesyonel ve yardımsever
+
+KULLANICI_SORUSU: Ahmet Bey'in rezervasyon durumu nedir?

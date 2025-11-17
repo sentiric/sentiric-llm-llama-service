@@ -1,0 +1,6 @@
+SENARYO: Hukuk Dava Takip Sistemi  
+DAVA_DETAY: Boşanma davası, 12 Kasım 2025'te bilirkişi raporu reddedildi, sonraki duruşma 5 Aralık 2025
+CEVAP_FORMAT: Net, tarih bilgileriyle, GG-AA-YYYY formatında
+DİL: Türkçe, resmi ve profesyonel
+
+KULLANICI_SORUSU: Davanın son durumu nedir?
