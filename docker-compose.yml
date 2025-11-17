@@ -1,7 +1,6 @@
 # docker-compose.yml (BASE)
 # Bu dosya, servisin ortak yapılandırmasını içerir ve tek başına çalıştırılamaz.
 # CPU veya GPU profili ile birleştirilmelidir.
-# resource: 6 GB GPU Belleği + 16 GB Sistem Belleği ile test edilmiştir.
 networks:
   sentiric-net:
     name: "${NETWORK_NAME:-sentiric-net}"
@@ -16,7 +15,6 @@ volumes:
 
 services:
   llm-llama-service:
-
     environment:
       # --- Sistem Ayarları ---
       - ENV=${ENV:-development}
@@ -30,20 +28,26 @@ services:
 
       # --- Model Yönetimi ---
       - LLM_LLAMA_SERVICE_MODEL_DIR=/models
-      - LLM_LLAMA_SERVICE_MODEL_ID=${LLM_LLAMA_SERVICE_MODEL_ID:-ggml-org/gemma-3-4b-it-GGUF}
-      - LLM_LLAMA_SERVICE_MODEL_FILENAME=${LLM_LLAMA_SERVICE_MODEL_FILENAME:-gemma-3-4b-it-Q4_K_M.gguf}
-      # Hafif bir model
       - LLM_LLAMA_SERVICE_MODEL_ID=${LLM_LLAMA_SERVICE_MODEL_ID:-ggml-org/gemma-3-1b-it-qat-GGUF}
       - LLM_LLAMA_SERVICE_MODEL_FILENAME=${LLM_LLAMA_SERVICE_MODEL_FILENAME:-gemma-3-1b-it-qat-Q4_0.gguf}
+      # Gelişmiş model
+      # - LLM_LLAMA_SERVICE_MODEL_ID=${LLM_LLAMA_SERVICE_MODEL_ID:-ggml-org/gemma-3-4b-it-GGUF}
+      # - LLM_LLAMA_SERVICE_MODEL_FILENAME=${LLM_LLAMA_SERVICE_MODEL_FILENAME:-gemma-3-4b-it-Q4_K_M.gguf}
 
       # --- Motor ve Performans Ayarları ---
       - LLM_LLAMA_SERVICE_GPU_LAYERS=${LLM_LLAMA_SERVICE_GPU_LAYERS:-0}
-      - LLM_LLAMA_SERVICE_CONTEXT_SIZE=${LLM_LLAMA_SERVICE_CONTEXT_SIZE:-8192}
-      - LLM_LLAMA_SERVICE_THREADS=${LLM_LLAMA_SERVICE_THREADS:-8} 
-      - LLM_LLAMA_SERVICE_THREADS_BATCH=${LLM_LLAMA_SERVICE_THREADS_BATCH:-8}
+      - LLM_LLAMA_SERVICE_CONTEXT_SIZE=${LLM_LLAMA_SERVICE_CONTEXT_SIZE:-1024}
+      - LLM_LLAMA_SERVICE_THREADS=${LLM_LLAMA_SERVICE_THREADS:-1}
+      - LLM_LLAMA_SERVICE_THREADS_BATCH=${LLM_LLAMA_SERVICE_THREADS_BATCH:-1}
       - LLM_LLAMA_SERVICE_USE_MMAP=${LLM_LLAMA_SERVICE_USE_MMAP:-true}
       - LLM_LLAMA_SERVICE_KV_OFFLOAD=${LLM_LLAMA_SERVICE_KV_OFFLOAD:-true}
       - LLM_LLAMA_SERVICE_NUMA=${LLM_LLAMA_SERVICE_NUMA:-disabled}
+
+      # --- YENİ: Advanced Özellikler ---
+      - LLM_LLAMA_SERVICE_ENABLE_BATCHING=${LLM_LLAMA_SERVICE_ENABLE_BATCHING:-false}
+      - LLM_LLAMA_SERVICE_MAX_BATCH_SIZE=${LLM_LLAMA_SERVICE_MAX_BATCH_SIZE:-1}
+      - LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS=${LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS:-10}
+      - LLM_LLAMA_SERVICE_ENABLE_WARM_UP=${LLM_LLAMA_SERVICE_ENABLE_WARM_UP:-true}
 
       # --- Varsayılan Sampling Parametreleri ---
       - LLM_LLAMA_SERVICE_DEFAULT_MAX_TOKENS=${LLM_LLAMA_SERVICE_DEFAULT_MAX_TOKENS:-1024}

@@ -2,6 +2,7 @@
 #include "llm_engine.h"
 #include "grpc_server.h"
 #include "http_server.h"
+#include "core/model_warmup.h"
 #include <thread>
 #include <memory>
 #include <csignal>
@@ -120,12 +121,24 @@ int main() {
     try {
         spdlog::info("Configuration: host={}, http_port={}, grpc_port={}", settings.host, settings.http_port, settings.grpc_port);
         
-        // DÜZELTİLMİŞ SATIR: LLMEngine'i doğru parametrelerle oluştur
         auto engine = std::make_shared<LLMEngine>(settings, active_contexts);
         
         if (!engine->is_model_loaded()) {
             spdlog::critical("LLM Engine failed to initialize with a valid model. Shutting down.");
             return 1;
+        }
+
+        // YENİ: MODEL WARM-UP
+        if (settings.enable_warm_up) {
+            spdlog::info("Starting model warm-up...");
+            auto warmup_start = std::chrono::steady_clock::now();
+            
+            ModelWarmup::warmup_contexts(engine->get_context_pool(), settings.n_threads);
+            
+            auto warmup_end = std::chrono::steady_clock::now();
+            auto warmup_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                warmup_end - warmup_start);
+            spdlog::info("Model warm-up completed in {} ms", warmup_duration.count());
         }
 
         std::string grpc_address = settings.host + ":" + std::to_string(settings.grpc_port);

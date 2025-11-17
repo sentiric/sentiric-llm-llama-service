@@ -1,4 +1,5 @@
 #include "llm_engine.h"
+#include "core/dynamic_batcher.h"
 #include "spdlog/spdlog.h"
 #include "model_manager.h"
 #include "common.h"
@@ -8,6 +9,9 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+
+// Global batcher - geçici olarak devre dışı
+// static std::unique_ptr<DynamicBatcher> g_batcher;
 
 LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gauge) 
     : settings_(settings), active_contexts_gauge_(active_contexts_gauge) {
@@ -33,6 +37,25 @@ LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gaug
     try {
         context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_, active_contexts_gauge_);
         model_loaded_ = true;
+        
+        // Dynamic Batcher geçici olarak devre dışı - stabilite için
+        /*
+        if (settings_.enable_dynamic_batching && settings_.n_threads > 1) {
+            g_batcher = std::make_unique<DynamicBatcher>(
+                std::min(settings_.max_batch_size, static_cast<size_t>(settings_.n_threads)),
+                std::chrono::milliseconds(settings_.batch_timeout_ms)
+            );
+            
+            g_batcher->batch_processing_callback = [this](const std::vector<BatchedRequest>& batch) {
+                this->process_batch(batch);
+            };
+            spdlog::info("Dynamic batching enabled: max_batch_size={}, timeout={}ms", 
+                        settings_.max_batch_size, settings_.batch_timeout_ms);
+        } else {
+            spdlog::info("Dynamic batching disabled");
+        }
+        */
+        
     } catch (const std::exception& e) { 
         llama_model_free(model_); 
         throw std::runtime_error(std::string("Context pool initialization failed: ") + e.what()); 
@@ -41,13 +64,78 @@ LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gaug
 }
 
 LLMEngine::~LLMEngine() {
+    /*
+    if (g_batcher) {
+        g_batcher->stop();
+        g_batcher.reset();
+    }
+    */
     context_pool_.reset();
     if (model_) llama_model_free(model_);
     llama_backend_free();
     spdlog::info("LLM Engine shut down.");
 }
 
-bool LLMEngine::is_model_loaded() const { return model_loaded_.load(); }
+// UTF-8 Validation fonksiyonu - GÜVENLİ VERSİYON
+bool LLMEngine::is_valid_utf8(const std::string& str) {
+    int i = 0;
+    int len = str.length();
+    
+    while (i < len) {
+        unsigned char c = str[i];
+        
+        if (c <= 0x7F) {
+            // 1-byte character (0xxxxxxx)
+            i++;
+        } else if ((c & 0xE0) == 0xC0) {
+            // 2-byte character (110xxxxx)
+            if (i + 1 >= len || (str[i+1] & 0xC0) != 0x80) return false;
+            i += 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            // 3-byte character (1110xxxx)
+            if (i + 2 >= len || (str[i+1] & 0xC0) != 0x80 || (str[i+2] & 0xC0) != 0x80) return false;
+            i += 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            // 4-byte character (11110xxx)
+            if (i + 3 >= len || (str[i+1] & 0xC0) != 0x80 || 
+                (str[i+2] & 0xC0) != 0x80 || (str[i+3] & 0xC0) != 0x80) return false;
+            i += 4;
+        } else {
+            // Invalid UTF-8
+            return false;
+        }
+    }
+    return true;
+}
+
+void LLMEngine::process_batch(const std::vector<BatchedRequest>& batch) {
+    if (batch.empty()) return;
+    
+    spdlog::debug("Processing batch of {} requests", batch.size());
+    
+    // Basit implementasyon: Her request'i ayrı işle
+    for (const auto& batched_request : batch) {
+        try {
+            int32_t prompt_tokens = 0;
+            int32_t completion_tokens = 0;
+            
+            this->generate_stream(
+                batched_request.request,
+                batched_request.on_token_callback,
+                batched_request.should_stop_callback,
+                prompt_tokens,
+                completion_tokens
+            );
+            
+        } catch (const std::exception& e) {
+            spdlog::error("Failed to process batched request: {}", e.what());
+        }
+    }
+}
+
+bool LLMEngine::is_model_loaded() const {
+    return model_loaded_.load();
+}
 
 void LLMEngine::generate_stream(
     const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request,
@@ -55,6 +143,18 @@ void LLMEngine::generate_stream(
     const std::function<bool()>& should_stop_callback,
     int32_t& prompt_tokens_out,
     int32_t& completion_tokens_out) {
+    
+    // Dynamic batching geçici olarak devre dışı - stabilite için
+    /*
+    if (g_batcher && settings_.enable_dynamic_batching) {
+        auto future = g_batcher->add_request(
+            request, on_token_callback, should_stop_callback,
+            prompt_tokens_out, completion_tokens_out
+        );
+        future.get();
+        return;
+    }
+    */
     
     ContextGuard guard = context_pool_->acquire();
     llama_context* ctx = guard.get();
@@ -76,9 +176,14 @@ void LLMEngine::generate_stream(
     }
 
     llama_batch batch = llama_batch_init(prompt_tokens.size(), 0, 1);
-    for(size_t i = 0; i < prompt_tokens.size(); ++i) { common_batch_add(batch, prompt_tokens[i], (llama_pos)i, {0}, false); }
+    for(size_t i = 0; i < prompt_tokens.size(); ++i) { 
+        common_batch_add(batch, prompt_tokens[i], (llama_pos)i, {0}, false); 
+    }
     batch.logits[batch.n_tokens - 1] = true;
-    if (llama_decode(ctx, batch) != 0) { llama_batch_free(batch); throw std::runtime_error("llama_decode failed on prompt"); }
+    if (llama_decode(ctx, batch) != 0) { 
+        llama_batch_free(batch); 
+        throw std::runtime_error("llama_decode failed on prompt"); 
+    }
     
     const auto& params = request.params();
     const bool use_request_params = request.has_params();
@@ -127,16 +232,26 @@ void LLMEngine::generate_stream(
         
         if (n_piece > 0) {
             std::string token_str(piece_buf, n_piece);
+            
+            // UTF-8 VALIDATION - CRITICAL FIX
+            if (!is_valid_utf8(token_str)) {
+                spdlog::warn("Skipping invalid UTF-8 token (length: {})", n_piece);
+                continue;
+            }
+            
             stop_buffer += token_str;
             std::string flush_str;
             bool stopping = false;
+            
             for (const auto& stop_word : stop_sequences) {
-                 if (stop_buffer.length() >= stop_word.length() && stop_buffer.compare(stop_buffer.length() - stop_word.length(), stop_word.length(), stop_word) == 0) {
+                if (stop_buffer.length() >= stop_word.length() && 
+                    stop_buffer.compare(stop_buffer.length() - stop_word.length(), stop_word.length(), stop_word) == 0) {
                     flush_str = stop_buffer.substr(0, stop_buffer.length() - stop_word.length());
                     stopping = true;
                     break;
                 }
             }
+            
             if (stopping) {
                 if (!flush_str.empty()) on_token_callback(flush_str);
                 break;
@@ -154,9 +269,9 @@ void LLMEngine::generate_stream(
         batch = llama_batch_init(1, 0, 1);
         common_batch_add(batch, new_token_id, n_past, {0}, true);
         if (llama_decode(ctx, batch) != 0) { 
-             llama_batch_free(batch); 
-             llama_sampler_free(sampler_chain); 
-             throw std::runtime_error("Failed to decode next token"); 
+            llama_batch_free(batch); 
+            llama_sampler_free(sampler_chain); 
+            throw std::runtime_error("Failed to decode next token"); 
         }
         n_past++;
         n_decoded++;

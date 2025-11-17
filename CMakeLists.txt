@@ -33,7 +33,8 @@ include(FetchContent)
 FetchContent_Declare(
   sentiric_contracts
   GIT_REPOSITORY https://github.com/sentiric/sentiric-contracts.git
-  GIT_TAG v1.11.0
+  # ✅ UTF-8 sorunu çözüldü
+  GIT_TAG v1.11.1
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 

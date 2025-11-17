@@ -7,7 +7,7 @@
 #include <fstream>
 #include <sstream>
 
-// GÜNCELLENDİ: fmt::formatter uzmanlaşması geri eklendi.
+// fmt::formatter uzmanlaşması
 template <>
 struct fmt::formatter<grpc::StatusCode> {
     constexpr auto parse(fmt::format_parse_context& ctx) -> decltype(ctx.begin()) {
@@ -41,7 +41,9 @@ struct fmt::formatter<grpc::StatusCode> {
     }
 };
 
-// GÜNCELLENDİ: read_file_client fonksiyonu geri eklendi ve düzeltildi.
+namespace sentiric_llm_cli {
+
+// Yardımcı fonksiyon
 std::string read_file_client(const std::string& filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
@@ -52,8 +54,6 @@ std::string read_file_client(const std::string& filepath) {
     return buffer.str();
 }
 
-namespace sentiric_llm_cli {
-
 GRPCClient::GRPCClient(const std::string& endpoint) 
     : endpoint_(endpoint) {}
 
@@ -61,39 +61,55 @@ GRPCClient::~GRPCClient() {}
 
 void GRPCClient::ensure_channel_is_ready() {
     if (stub_) return;
+    
     std::shared_ptr<grpc::ChannelCredentials> creds;
+    
     try {
         const char* ca_path = std::getenv("GRPC_TLS_CA_PATH");
         const char* cert_path = std::getenv("LLM_LLAMA_SERVICE_CERT_PATH");
         const char* key_path = std::getenv("LLM_LLAMA_SERVICE_KEY_PATH");
 
+        spdlog::debug("TLS Config - CA: {}, CERT: {}, KEY: {}", 
+                     ca_path ? "SET" : "NOT SET",
+                     cert_path ? "SET" : "NOT SET", 
+                     key_path ? "SET" : "NOT SET");
+
         if (!ca_path || !cert_path || !key_path) {
             spdlog::warn("gRPC TLS environment variables not set for CLI. Using insecure credentials.");
             creds = grpc::InsecureChannelCredentials();
         } else {
-            spdlog::info("Loading TLS credentials for gRPC client...");
-            std::string root_ca = read_file_client(ca_path);
-            std::string client_cert = read_file_client(cert_path);
-            std::string client_key = read_file_client(key_path);
+            if (access(ca_path, R_OK) != 0 || access(cert_path, R_OK) != 0 || access(key_path, R_OK) != 0) {
+                spdlog::warn("TLS certificate files not accessible. Using insecure credentials.");
+                creds = grpc::InsecureChannelCredentials();
+            } else {
+                spdlog::info("Loading TLS credentials for gRPC client...");
+                std::string root_ca = read_file_client(ca_path);
+                std::string client_cert = read_file_client(cert_path);
+                std::string client_key = read_file_client(key_path);
 
-            grpc::SslCredentialsOptions ssl_opts;
-            ssl_opts.pem_root_certs = root_ca;
-            ssl_opts.pem_private_key = client_key;
-            ssl_opts.pem_cert_chain = client_cert;
-            creds = grpc::SslCredentials(ssl_opts);
-            spdlog::info("gRPC client configured to use mTLS.");
+                grpc::SslCredentialsOptions ssl_opts;
+                ssl_opts.pem_root_certs = root_ca;
+                ssl_opts.pem_private_key = client_key;
+                ssl_opts.pem_cert_chain = client_cert;
+                creds = grpc::SslCredentials(ssl_opts);
+                spdlog::info("gRPC client configured to use mTLS.");
+            }
         }
-    } catch (const std::runtime_error& e) {
+    } catch (const std::exception& e) {
         spdlog::error("Failed to create channel credentials: {}. Using insecure.", e.what());
         creds = grpc::InsecureChannelCredentials();
     }
+    
     channel_ = grpc::CreateChannel(endpoint_, creds);
     stub_ = sentiric::llm::v1::LLMLocalService::NewStub(channel_);
 }
 
 bool GRPCClient::is_connected() {
     ensure_channel_is_ready();
-    return channel_->WaitForConnected(gpr_time_add(gpr_now(GPR_CLOCK_REALTIME), gpr_time_from_seconds(2, GPR_TIMESPAN)));
+    return channel_->WaitForConnected(
+        gpr_time_add(gpr_now(GPR_CLOCK_REALTIME), 
+        gpr_time_from_seconds(2, GPR_TIMESPAN))
+    );
 }
 
 bool GRPCClient::generate_stream(

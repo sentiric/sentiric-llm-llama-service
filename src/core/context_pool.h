@@ -10,7 +10,6 @@
 
 class LlamaContextPool;
 
-// RAII prensibiyle context'in güvenli kullanımını sağlar.
 class ContextGuard {
 public:
     ContextGuard(LlamaContextPool* pool, llama_context* ctx);
@@ -27,7 +26,6 @@ private:
     llama_context* ctx_;
 };
 
-// Eş zamanlı istekler için bir 'llama_context' havuzu yönetir.
 class LlamaContextPool {
 public:
     LlamaContextPool(const Settings& settings, llama_model* model, prometheus::Gauge& active_contexts_gauge);
@@ -36,6 +34,8 @@ public:
     void release(llama_context* ctx);
     
     size_t get_active_count() const { return max_size_ - pool_.size(); }
+    size_t get_total_count() const { return max_size_; }
+    llama_model* get_model() const { return model_; } // YENİ: Model erişimi
 
 private:
     void initialize_contexts();

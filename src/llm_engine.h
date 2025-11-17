@@ -11,6 +11,9 @@
 #include "sentiric/llm/v1/local.pb.h"
 #include <prometheus/gauge.h>
 
+// Forward declaration
+struct BatchedRequest;
+
 class LLMEngine {
 public:
     explicit LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gauge);
@@ -27,8 +30,15 @@ public:
     );
 
     bool is_model_loaded() const;
+    LlamaContextPool& get_context_pool() { return *context_pool_; }
+
+    // YENİ: process_batch fonksiyonu
+    void process_batch(const std::vector<BatchedRequest>& batch);
 
 private:
+    // YENİ: UTF-8 Validation fonksiyonu
+    bool is_valid_utf8(const std::string& str);
+
     Settings& settings_;
     llama_model* model_ = nullptr;
     std::atomic<bool> model_loaded_{false};

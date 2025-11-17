@@ -1,5 +1,5 @@
 # docker-compose.override.yml
-# BU DOSYADA DEĞİŞİKLİK YOK
+# Yerel geliştirme için otomatik olarak kullanılır (CPU)
 services:
   llm-llama-service:
     build:

@@ -47,6 +47,14 @@ struct Settings {
     std::string grpc_ca_path = "";
     std::string grpc_cert_path = "";
     std::string grpc_key_path = "";
+    
+    // Dynamic Batching ayarları
+    bool enable_dynamic_batching = true;
+    size_t max_batch_size = 8;
+    int batch_timeout_ms = 5;
+    
+    // Warm-up ayarları
+    bool enable_warm_up = true;
 };
 
 inline Settings load_settings() {
@@ -123,7 +131,16 @@ inline Settings load_settings() {
     s.grpc_ca_path = get_env_var("GRPC_TLS_CA_PATH", s.grpc_ca_path);
     s.grpc_cert_path = get_env_var("LLM_LLAMA_SERVICE_CERT_PATH", s.grpc_cert_path);
     s.grpc_key_path = get_env_var("LLM_LLAMA_SERVICE_KEY_PATH", s.grpc_key_path);
-
+    
+    
+    // YENİ: Dynamic Batching ayarları
+    s.enable_dynamic_batching = get_env_var_as_bool("LLM_LLAMA_SERVICE_ENABLE_BATCHING", s.enable_dynamic_batching);
+    s.max_batch_size = get_env_var_as_uint("LLM_LLAMA_SERVICE_MAX_BATCH_SIZE", s.max_batch_size);
+    s.batch_timeout_ms = get_env_var_as_int("LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS", s.batch_timeout_ms);
+    
+    // YENİ: Warm-up ayarları
+    s.enable_warm_up = get_env_var_as_bool("LLM_LLAMA_SERVICE_ENABLE_WARM_UP", s.enable_warm_up);
+    
     // Legacy path for backward compatibility
     s.legacy_model_path = get_env_var("LLM_LLAMA_SERVICE_MODEL_PATH", s.legacy_model_path);
     if (s.model_id.empty() && !s.legacy_model_path.empty()) {

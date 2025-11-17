@@ -1,4 +1,5 @@
 # docker-compose.run.gpu.yml
+# GPU ortamında CLI çalıştırmak için
 networks:
   sentiric-net:
     name: "${NETWORK_NAME:-sentiric-net}"
@@ -15,10 +16,7 @@ services:
       - GRPC_TLS_CA_PATH=/sentiric-certificates/certs/ca.crt
       - LLM_LLAMA_SERVICE_CERT_PATH=/sentiric-certificates/certs/llm-llama-service-chain.crt
       - LLM_LLAMA_SERVICE_KEY_PATH=/sentiric-certificates/certs/llm-llama-service.key
-      # YENİ EKLENDİ: Teknik olarak gerekli değil ama iyi bir pratik.
       - NVIDIA_VISIBLE_DEVICES=all
-       # - GRPC_VERBOSITY=DEBUG
-       # - GRPC_TRACE=all     
     deploy:
       resources:
         reservations:

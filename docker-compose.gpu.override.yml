@@ -1,4 +1,5 @@
 # docker-compose.gpu.override.yml
+# Yerel GPU geliştirme için kullanılır
 services:
   llm-llama-service:
     build:
@@ -6,8 +7,14 @@ services:
       dockerfile: Dockerfile.gpu
     image: sentiric/llm-llama-service:local-gpu
     environment:
-      # --- 6GB VRAM İÇİN OPTİMİZE EDİLMİŞ AYARLAR ---
-      - LLM_LLAMA_SERVICE_GPU_LAYERS=-1 # Modeli olabildiğince GPU'ya yükle
-      - LLM_LLAMA_SERVICE_CONTEXT_SIZE=4096 # Context boyutunu düşürerek her thread'in VRAM kullanımını azalt
-      - LLM_LLAMA_SERVICE_THREADS=2 # Eş zamanlı istek sayısını VRAM'e sığacak şekilde düşür
-      - LLM_LLAMA_SERVICE_THREADS_BATCH=2 # Genellikle THREADS ile aynı tutulur
+      # --- OPTİMİZE EDİLMİŞ 6GB GPU AYARLARI ---
+      - LLM_LLAMA_SERVICE_GPU_LAYERS=28
+      - LLM_LLAMA_SERVICE_CONTEXT_SIZE=1024
+      - LLM_LLAMA_SERVICE_THREADS=1
+      - LLM_LLAMA_SERVICE_THREADS_BATCH=1
+      
+      # --- YENİ ÖZELLİKLER ---
+      - LLM_LLAMA_SERVICE_ENABLE_BATCHING=false
+      - LLM_LLAMA_SERVICE_MAX_BATCH_SIZE=1
+      - LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS=10
+      - LLM_LLAMA_SERVICE_ENABLE_WARM_UP=true

@@ -3,7 +3,7 @@
 #include <string>
 #include <memory>
 #include <functional>
-#include "sentiric/llm/v1/local.pb.h" // Kontratları dahil et
+#include "sentiric/llm/v1/local.pb.h"
 
 namespace sentiric_llm_cli {
 
@@ -16,23 +16,19 @@ public:
               const std::string& http_endpoint = "localhost:16070");
     ~CLIClient();
     
-    // GÜNCELLENDİ: Bu fonksiyon artık sadece basit string prompt kabul eder.
-    // Benchmark gibi basit testler için kullanılır.
     bool generate_stream(const std::string& prompt, 
                          const std::function<void(const std::string&)>& on_token);
     
-    // HTTP İşlemleri
     bool health_check();
     std::string get_health_status();
     
-    // Utility
     void set_timeout(int seconds);
     bool is_connected() const;
 
 private:
     std::string grpc_endpoint_;
     std::string http_endpoint_;
-    int timeout_seconds_ = 120;
+    int timeout_seconds_;
 
     std::unique_ptr<GRPCClient> grpc_client_;
     std::unique_ptr<HTTPClient> http_client_;
