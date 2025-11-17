@@ -5,20 +5,48 @@
 #include <string>
 #include <thread>
 #include "httplib.h"
+#include <prometheus/registry.h>
+#include <prometheus/collectable.h>
+#include <prometheus/counter.h>
+#include <prometheus/histogram.h>
+#include <prometheus/gauge.h>
 
-class HttpServer {
-public:
-HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port);
-void stop();
-void run();
-
-private:
-httplib::Server svr_;
-std::shared_ptr<LLMEngine> engine_;
-std::string host_;
-int port_;
-std::thread server_thread_;
+// Metrik ailelerini tutacak ve uygulama genelinde taşınacak bir yapı.
+struct AppMetrics {
+    prometheus::Family<prometheus::Counter>& requests_total;
+    prometheus::Family<prometheus::Histogram>& request_latency;
+    prometheus::Family<prometheus::Counter>& tokens_generated_total;
+    prometheus::Family<prometheus::Gauge>& active_contexts;
 };
 
-// Sunucuyu başlatan ve thread'i yöneten fonksiyon
+// Metrik sunucusu için ayrı bir sınıf.
+class MetricsServer {
+public:
+    MetricsServer(const std::string& host, int port, prometheus::Registry& registry);
+    void run();
+    void stop();
+
+private:
+    httplib::Server svr_;
+    std::string host_;
+    int port_;
+    prometheus::Registry& registry_;
+};
+
+void run_metrics_server_thread(std::shared_ptr<MetricsServer> server);
+
+// Geliştirme Stüdyosu'nu sunan ana HTTP sunucusu.
+class HttpServer {
+public:
+    HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port);
+    void run();
+    void stop();
+
+private:
+    httplib::Server svr_;
+    std::shared_ptr<LLMEngine> engine_;
+    std::string host_;
+    int port_;
+};
+
 void run_http_server_thread(std::shared_ptr<HttpServer> server);

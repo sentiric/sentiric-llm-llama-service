@@ -9,10 +9,11 @@
 #include <atomic>
 #include <memory>
 #include "sentiric/llm/v1/local.pb.h"
+#include <prometheus/gauge.h>
 
 class LLMEngine {
 public:
-    explicit LLMEngine(Settings& settings);
+    explicit LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gauge);
     ~LLMEngine();
     LLMEngine(const LLMEngine&) = delete;
     LLMEngine& operator=(const LLMEngine&) = delete;
@@ -32,4 +33,5 @@ private:
     llama_model* model_ = nullptr;
     std::atomic<bool> model_loaded_{false};
     std::unique_ptr<LlamaContextPool> context_pool_;
+    prometheus::Gauge& active_contexts_gauge_;
 };

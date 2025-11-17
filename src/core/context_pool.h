@@ -6,6 +6,7 @@
 #include <mutex>
 #include <queue>
 #include <condition_variable>
+#include <prometheus/gauge.h>
 
 class LlamaContextPool;
 
@@ -29,10 +30,12 @@ private:
 // Eş zamanlı istekler için bir 'llama_context' havuzu yönetir.
 class LlamaContextPool {
 public:
-    LlamaContextPool(const Settings& settings, llama_model* model);
+    LlamaContextPool(const Settings& settings, llama_model* model, prometheus::Gauge& active_contexts_gauge);
     ~LlamaContextPool();
     ContextGuard acquire();
     void release(llama_context* ctx);
+    
+    size_t get_active_count() const { return max_size_ - pool_.size(); }
 
 private:
     void initialize_contexts();
@@ -42,4 +45,5 @@ private:
     std::queue<llama_context*> pool_;
     std::mutex mutex_;
     std::condition_variable cv_;
+    prometheus::Gauge& active_contexts_gauge_;
 };

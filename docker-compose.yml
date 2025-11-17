@@ -32,6 +32,9 @@ services:
       - LLM_LLAMA_SERVICE_MODEL_DIR=/models
       - LLM_LLAMA_SERVICE_MODEL_ID=${LLM_LLAMA_SERVICE_MODEL_ID:-ggml-org/gemma-3-4b-it-GGUF}
       - LLM_LLAMA_SERVICE_MODEL_FILENAME=${LLM_LLAMA_SERVICE_MODEL_FILENAME:-gemma-3-4b-it-Q4_K_M.gguf}
+      # Hafif bir model
+      - LLM_LLAMA_SERVICE_MODEL_ID=${LLM_LLAMA_SERVICE_MODEL_ID:-ggml-org/gemma-3-1b-it-qat-GGUF}
+      - LLM_LLAMA_SERVICE_MODEL_FILENAME=${LLM_LLAMA_SERVICE_MODEL_FILENAME:-gemma-3-1b-it-qat-Q4_0.gguf}
 
       # --- Motor ve Performans Ayarları ---
       - LLM_LLAMA_SERVICE_GPU_LAYERS=${LLM_LLAMA_SERVICE_GPU_LAYERS:-0}

@@ -9,12 +9,16 @@
 #include <string>
 #include <vector>
 
-LLMEngine::LLMEngine(Settings& settings) : settings_(settings) {
+LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gauge) 
+    : settings_(settings), active_contexts_gauge_(active_contexts_gauge) {
+    
     spdlog::info("Initializing LLM Engine with advanced performance settings...");
     try {
         settings_.model_path = ModelManager::ensure_model_is_ready(settings_);
         spdlog::info("Model successfully located at: {}", settings_.model_path);
-    } catch (const std::exception& e) { throw std::runtime_error(std::string("Model preparation failed: ") + e.what()); }
+    } catch (const std::exception& e) { 
+        throw std::runtime_error(std::string("Model preparation failed: ") + e.what()); 
+    }
     
     llama_backend_init();
     llama_numa_init(settings_.numa_strategy);
@@ -27,7 +31,7 @@ LLMEngine::LLMEngine(Settings& settings) : settings_(settings) {
     if (!model_) throw std::runtime_error("Model loading failed from path: " + settings_.model_path);
     
     try {
-        context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_);
+        context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_, active_contexts_gauge_);
         model_loaded_ = true;
     } catch (const std::exception& e) { 
         llama_model_free(model_); 
@@ -46,7 +50,6 @@ LLMEngine::~LLMEngine() {
 bool LLMEngine::is_model_loaded() const { return model_loaded_.load(); }
 
 void LLMEngine::generate_stream(
-    // --- DÜZELTME BURADA ---
     const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request,
     const std::function<void(const std::string&)>& on_token_callback,
     const std::function<bool()>& should_stop_callback,

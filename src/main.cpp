@@ -1,4 +1,3 @@
-// src/main.cpp
 #include "config.h"
 #include "llm_engine.h"
 #include "grpc_server.h"
@@ -11,10 +10,14 @@
 #include <grpcpp/security/server_credentials.h>
 #include <fstream>
 #include <sstream>
-
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include "llama.h"
+
+#include <prometheus/registry.h>
+#include <prometheus/counter.h>
+#include <prometheus/histogram.h>
+#include <prometheus/gauge.h>
 
 namespace {
     std::promise<void> shutdown_promise;
@@ -67,7 +70,6 @@ void setup_logging() {
     spdlog::set_default_logger(logger);
 }
 
-
 int main() {
     setup_logging();
     llama_log_set(llama_log_callback, nullptr);
@@ -79,15 +81,47 @@ int main() {
     spdlog::set_level(spdlog::level::from_str(settings.log_level));
     spdlog::info("Sentiric LLM Llama Service starting...");
 
+    // 1. Prometheus Metrik Altyapısını Kur
+    auto registry = std::make_shared<prometheus::Registry>();
+
+    auto& requests_total_family = prometheus::BuildCounter()
+        .Name("llm_requests_total")
+        .Help("Total number of gRPC requests")
+        .Register(*registry);
+
+    auto& request_latency_family = prometheus::BuildHistogram()
+        .Name("llm_request_latency_seconds")
+        .Help("Histogram of gRPC request latency")
+        .Register(*registry);
+    
+    auto& tokens_generated_total_family = prometheus::BuildCounter()
+        .Name("llm_tokens_generated_total")
+        .Help("Total number of tokens generated")
+        .Register(*registry);
+
+    auto& active_contexts_family = prometheus::BuildGauge()
+        .Name("llm_active_contexts")
+        .Help("Current number of active llama_context instances")
+        .Register(*registry);
+
+    // Metrik örneklerini oluştur
+    auto& requests_total = requests_total_family.Add({});
+    auto& request_latency = request_latency_family.Add({}, prometheus::Histogram::BucketBoundaries{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0});
+    auto& tokens_generated_total = tokens_generated_total_family.Add({});
+    auto& active_contexts = active_contexts_family.Add({});
+
     std::unique_ptr<grpc::Server> grpc_server_ptr;
     std::shared_ptr<HttpServer> http_server;
+    std::shared_ptr<MetricsServer> metrics_server;
     std::thread http_thread;
     std::thread grpc_thread;
+    std::thread metrics_thread;
 
     try {
         spdlog::info("Configuration: host={}, http_port={}, grpc_port={}", settings.host, settings.http_port, settings.grpc_port);
         
-        auto engine = std::make_shared<LLMEngine>(settings);
+        // DÜZELTİLMİŞ SATIR: LLMEngine'i doğru parametrelerle oluştur
+        auto engine = std::make_shared<LLMEngine>(settings, active_contexts);
         
         if (!engine->is_model_loaded()) {
             spdlog::critical("LLM Engine failed to initialize with a valid model. Shutting down.");
@@ -98,7 +132,6 @@ int main() {
         GrpcServer grpc_service(engine);
         grpc::ServerBuilder builder;
 
-        // DEĞİŞİKLİK: Ortam değişkenlerini okumak yerine, 'settings' nesnesini kullanıyoruz.
         if (settings.grpc_ca_path.empty() || settings.grpc_cert_path.empty() || settings.grpc_key_path.empty()) {
             spdlog::warn("gRPC TLS path variables not fully set in config. Falling back to insecure credentials. THIS IS NOT FOR PRODUCTION.");
             builder.AddListeningPort(grpc_address, grpc::InsecureServerCredentials());
@@ -129,23 +162,31 @@ int main() {
         spdlog::info("🚀 gRPC server listening on {}", grpc_address);
 
         http_server = std::make_shared<HttpServer>(engine, settings.host, settings.http_port);
+        metrics_server = std::make_shared<MetricsServer>(settings.host, settings.metrics_port, *registry);
         
         grpc_thread = std::thread(&grpc::Server::Wait, grpc_server_ptr.get());
         http_thread = std::thread(&HttpServer::run, http_server);
+        metrics_thread = std::thread(&MetricsServer::run, metrics_server);
+
+        spdlog::info("✅ All servers started successfully");
+        spdlog::info("📊 Metrics available at http://{}:{}/metrics", settings.host, settings.metrics_port);
 
         auto shutdown_future = shutdown_promise.get_future();
         shutdown_future.wait();
         
         spdlog::info("Shutting down servers...");
         http_server->stop();
+        metrics_server->stop();
         grpc_server_ptr->Shutdown(std::chrono::system_clock::now() + std::chrono::seconds(5));
 
         if (http_thread.joinable()) http_thread.join();
+        if (metrics_thread.joinable()) metrics_thread.join();
         if (grpc_thread.joinable()) grpc_thread.join();
 
     } catch (const std::exception& e) {
         spdlog::critical("Fatal error during service lifecycle: {}", e.what());
         if (http_server) http_server->stop();
+        if (metrics_server) metrics_server->stop();
         if (grpc_server_ptr) grpc_server_ptr->Shutdown();
         return 1;
     }

@@ -5,25 +5,59 @@
 #include <sstream>
 #include <filesystem>
 #include <vector>
+#include <prometheus/text_serializer.h>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
+// ==============================================================================
+//  MetricsServer Sınıfı Implementasyonu
+// ==============================================================================
+
+MetricsServer::MetricsServer(const std::string& host, int port, prometheus::Registry& registry)
+    : host_(host), port_(port), registry_(registry) {
+    
+    svr_.Get("/metrics", [this](const httplib::Request &, httplib::Response &res) {
+        prometheus::TextSerializer serializer;
+        auto collected_metrics = this->registry_.Collect();
+        std::stringstream ss;
+        serializer.Serialize(ss, collected_metrics);
+        res.set_content(ss.str(), "text/plain; version=0.0.4");
+    });
+}
+
+void MetricsServer::run() {
+    spdlog::info("⚪ Prometheus metrics server listening on {}:{}", host_, port_);
+    svr_.listen(host_.c_str(), port_);
+}
+
+void MetricsServer::stop() {
+    if (svr_.is_running()) {
+        svr_.stop();
+        spdlog::info("Prometheus metrics server stopped.");
+    }
+}
+
+void run_metrics_server_thread(std::shared_ptr<MetricsServer> server) {
+    if (server) {
+        server->run();
+    }
+}
+
+
+// ==============================================================================
+//  HttpServer Sınıfı Implementasyonu (Geliştirme Stüdyosu)
+// ==============================================================================
+
 HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port)
     : engine_(std::move(engine)), host_(host), port_(port) {
     
-    // ==============================================================================
-    // YENİ VE EN ÖNEMLİ KISIM: Statik Dosya Sunucusu
-    // Bu kod parçası, sunucunun 'web' klasöründeki tüm dosyaları (CSS, JS, resimler vb.)
-    // otomatik olarak sunmasını sağlar. Bu, 404 hatasını kökünden çözer.
-    // ==============================================================================
     const char* mount_point = "/";
     const char* base_dir = "./web";
     if (!svr_.set_mount_point(mount_point, base_dir)) {
         spdlog::error("UI directory '{}' not found. The UI will not be available.", base_dir);
     }
 
-    // ENDPOINT 1: /health (Değişiklik Yok)
     svr_.Get("/health", [this](const httplib::Request &, httplib::Response &res) {
         bool model_ready = engine_->is_model_loaded();
         json response_body;
@@ -34,7 +68,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         res.status = model_ready ? 200 : 503;
     });
 
-    // ENDPOINT 2: /web/contexts (Değişiklik Yok)
     svr_.Get("/web/contexts", [](const httplib::Request &, httplib::Response &res) {
         json context_list = json::array();
         try {
@@ -49,17 +82,26 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         res.set_content(context_list.dump(), "application/json");
     });
 
-    // ENDPOINT 3: /web/context/<filename> (Değişiklik Yok)
     svr_.Get(R"(/web/context/(.+))", [](const httplib::Request &req, httplib::Response &res) {
         std::string filename = req.matches[1];
         fs::path file_path = fs::path("examples") / filename;
-        if (file_path.string().find("..") != std::string::npos) { res.status = 400; res.set_content("Invalid filename.", "text/plain"); return; }
+        if (file_path.string().find("..") != std::string::npos) { 
+            res.status = 400; 
+            res.set_content("Invalid filename.", "text/plain"); 
+            return; 
+        }
         std::ifstream file(file_path);
-        if (file) { std::stringstream buffer; buffer << file.rdbuf(); res.set_content(buffer.str(), "text/plain; charset=utf-8"); } 
-        else { res.status = 404; res.set_content("Context file not found: " + filename, "text/plain"); }
+        if (file) { 
+            std::stringstream buffer; 
+            buffer << file.rdbuf(); 
+            res.set_content(buffer.str(), "text/plain; charset=utf-8"); 
+        } 
+        else { 
+            res.status = 404; 
+            res.set_content("Context file not found: " + filename, "text/plain"); 
+        }
     });
 
-    // ENDPOINT 4: /web/generate (Değişiklik Yok)
     svr_.Post("/web/generate", [this](const httplib::Request &req, httplib::Response &res) {
         try {
             json body = json::parse(req.body);
