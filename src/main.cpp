@@ -128,17 +128,39 @@ int main() {
             return 1;
         }
 
-        // YENİ: MODEL WARM-UP
+        // YENİ: GÜVENLİ MODEL WARM-UP
         if (settings.enable_warm_up) {
-            spdlog::info("Starting model warm-up...");
+            spdlog::info("Starting SAFE model warm-up...");
             auto warmup_start = std::chrono::steady_clock::now();
             
-            ModelWarmup::warmup_contexts(engine->get_context_pool(), settings.n_threads);
+            // EN GÜVENLİ warm-up ile servisi hızlı başlat
+            ModelWarmup::safe_warmup(engine->get_context_pool(), settings.n_threads);
             
-            auto warmup_end = std::chrono::steady_clock::now();
-            auto warmup_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                warmup_end - warmup_start);
-            spdlog::info("Model warm-up completed in {} ms", warmup_duration.count());
+            auto safe_warmup_end = std::chrono::steady_clock::now();
+            auto safe_warmup_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                safe_warmup_end - warmup_start);
+            
+            spdlog::info("✅ Safe warm-up completed in {} ms - Service is READY", safe_warmup_duration.count());
+            
+            // Arka planda fast warm-up devam etsin
+            std::thread([&engine, &settings]() {
+                try {
+                    spdlog::info("🔄 Starting background fast warm-up...");
+                    ModelWarmup::fast_warmup(engine->get_context_pool(), settings.n_threads);
+                    spdlog::info("🎯 Background fast warm-up completed");
+                    
+                    // En son real warm-up (opsiyonel)
+                    if (settings.n_threads <= 2) { // Sadece küçük sistemlerde
+                        spdlog::info("🔄 Starting background real warm-up...");
+                        ModelWarmup::warmup_contexts(engine->get_context_pool(), settings.n_threads);
+                        spdlog::info("🎯 Background real warm-up completed");
+                    }
+                } catch (const std::exception& e) {
+                    spdlog::error("Background warm-up failed: {}", e.what());
+                }
+            }).detach();
+        } else {
+            spdlog::info("Model warm-up disabled");
         }
 
         std::string grpc_address = settings.host + ":" + std::to_string(settings.grpc_port);

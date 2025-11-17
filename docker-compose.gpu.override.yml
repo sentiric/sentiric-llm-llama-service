@@ -13,8 +13,14 @@ services:
       - LLM_LLAMA_SERVICE_THREADS=1
       - LLM_LLAMA_SERVICE_THREADS_BATCH=1
       
-      # --- YENİ ÖZELLİKLER ---
+      # --- YENİ WARM-UP OPTİMİZASYONU ---
+      - LLM_LLAMA_SERVICE_ENABLE_WARM_UP=true
+      
+      # --- PERFORMANS AYARLARI ---
+      - LLM_LLAMA_SERVICE_USE_MMAP=true
+      - LLM_LLAMA_SERVICE_KV_OFFLOAD=true
+      
+      # --- BATCHING (Geçici olarak devre dışı) ---
       - LLM_LLAMA_SERVICE_ENABLE_BATCHING=false
       - LLM_LLAMA_SERVICE_MAX_BATCH_SIZE=1
       - LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS=10
-      - LLM_LLAMA_SERVICE_ENABLE_WARM_UP=true
