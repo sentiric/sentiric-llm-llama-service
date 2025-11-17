@@ -1,3 +1,4 @@
+// src/main.cpp
 #include "config.h"
 #include "llm_engine.h"
 #include "grpc_server.h"
@@ -105,7 +106,7 @@ int main() {
         .Help("Current number of active llama_context instances")
         .Register(*registry);
 
-    // Metrik örneklerini oluştur
+    // Metrik örneklerini oluştur - KULLANILACAK
     auto& requests_total = requests_total_family.Add({});
     auto& request_latency = request_latency_family.Add({}, prometheus::Histogram::BucketBoundaries{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0});
     auto& tokens_generated_total = tokens_generated_total_family.Add({});
@@ -128,39 +129,11 @@ int main() {
             return 1;
         }
 
-        // YENİ: GÜVENLİ MODEL WARM-UP
+        // Model warm-up
         if (settings.enable_warm_up) {
-            spdlog::info("Starting SAFE model warm-up...");
-            auto warmup_start = std::chrono::steady_clock::now();
-            
-            // EN GÜVENLİ warm-up ile servisi hızlı başlat
+            spdlog::info("Starting model warm-up...");
             ModelWarmup::safe_warmup(engine->get_context_pool(), settings.n_threads);
-            
-            auto safe_warmup_end = std::chrono::steady_clock::now();
-            auto safe_warmup_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                safe_warmup_end - warmup_start);
-            
-            spdlog::info("✅ Safe warm-up completed in {} ms - Service is READY", safe_warmup_duration.count());
-            
-            // Arka planda fast warm-up devam etsin
-            std::thread([&engine, &settings]() {
-                try {
-                    spdlog::info("🔄 Starting background fast warm-up...");
-                    ModelWarmup::fast_warmup(engine->get_context_pool(), settings.n_threads);
-                    spdlog::info("🎯 Background fast warm-up completed");
-                    
-                    // En son real warm-up (opsiyonel)
-                    if (settings.n_threads <= 2) { // Sadece küçük sistemlerde
-                        spdlog::info("🔄 Starting background real warm-up...");
-                        ModelWarmup::warmup_contexts(engine->get_context_pool(), settings.n_threads);
-                        spdlog::info("🎯 Background real warm-up completed");
-                    }
-                } catch (const std::exception& e) {
-                    spdlog::error("Background warm-up failed: {}", e.what());
-                }
-            }).detach();
-        } else {
-            spdlog::info("Model warm-up disabled");
+            spdlog::info("✅ Model warm-up completed");
         }
 
         std::string grpc_address = settings.host + ":" + std::to_string(settings.grpc_port);
@@ -168,10 +141,10 @@ int main() {
         grpc::ServerBuilder builder;
 
         if (settings.grpc_ca_path.empty() || settings.grpc_cert_path.empty() || settings.grpc_key_path.empty()) {
-            spdlog::warn("gRPC TLS path variables not fully set in config. Falling back to insecure credentials. THIS IS NOT FOR PRODUCTION.");
+            spdlog::warn("gRPC TLS path variables not fully set. Using insecure credentials.");
             builder.AddListeningPort(grpc_address, grpc::InsecureServerCredentials());
         } else {
-            spdlog::info("Loading TLS credentials for gRPC server from config...");
+            spdlog::info("Loading TLS credentials for gRPC server...");
             std::string root_ca = read_file(settings.grpc_ca_path);
             std::string server_cert = read_file(settings.grpc_cert_path);
             std::string server_key = read_file(settings.grpc_key_path);

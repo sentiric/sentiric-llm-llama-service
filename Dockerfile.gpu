@@ -1,16 +1,13 @@
-# Dockerfile.gpu
-# NVIDIA CUDA destekli imajı oluşturur.
-
 # --- Derleme Aşaması ---
-# NVIDIA'nın resmi CUDA geliştirme imajını kullan
-FROM nvidia/cuda:13.0.2-cudnn-devel-ubuntu24.04 AS builder
+FROM nvidia/cuda:13.0.2-cudnn-devel-ubuntu22.04 AS builder
 
-# Gerekli temel araçları ve vcpkg bağımlılıklarını kur
+# 1. Temel bağımlılıkları kur
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential curl zip unzip tar \
-    pkg-config ninja-build ca-certificates python3
+    pkg-config ninja-build ca-certificates python3 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# vcpkg'yi kur
+# 2. Vcpkg'yi kur
 ARG VCPKG_VERSION=2024.05.24
 RUN curl -L "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSION}.tar.gz" -o vcpkg.tar.gz && \
     mkdir -p /opt/vcpkg && \
@@ -20,31 +17,32 @@ RUN curl -L "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSIO
 
 WORKDIR /app
 
+# 3. Bağımlılık manifest'ini kopyala ve kur
 COPY vcpkg.json .
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# llama.cpp'yi klonla ve belirli bir versiyona sabitle
+# 4. llama.cpp'yi klonla ve belirli bir versiyona sabitle
 ARG LLAMA_CPP_VERSION=92bb442ad999a0d52df0af2730cd861012e8ac5c
 RUN git clone https://github.com/ggml-org/llama.cpp.git llama.cpp && \
     cd llama.cpp && \
     git checkout ${LLAMA_CPP_VERSION}
 
+# 5. Proje kaynak kodunu ve build script'ini kopyala
 COPY src ./src
 COPY CMakeLists.txt .
 
-# Projeyi CUDA desteği ile derle
-# DÜZELTME: -DLLAMA_CURL=OFF eklendi çünkü bazı sistemlerde CURL ile ilgili derleme sorunları yaşanabiliyor.
-# DÜZELTME: -DGGML_CUDA=ON parametresi zorunludur.
+# 6. Projeyi derle - Sadece temel warning'ler
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -DGGML_CUDA=ON \
-    -DLLAMA_CURL=OFF
+    -DLLAMA_CURL=OFF \
+    -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wpedantic -Wno-unused-parameter"
+    
 RUN cmake --build build --target all -j $(nproc)
 
 # --- Çalışma Aşaması ---
-# NVIDIA'nın CUDA runtime imajını kullan (geliştirme imajından daha küçük)
-FROM nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04 AS runtime
+FROM nvidia/cuda:13.0.2-cudnn-runtime-ubuntu22.04 AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libgomp1 curl && \
@@ -56,14 +54,13 @@ COPY --from=builder /app/build/llm_cli /usr/local/bin/
 COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 RUN ldconfig
 
-# --- BU SATIRLARI EKLEYİN/GÜNCELLEYİN ---
+# Web UI ve örnekleri kopyala
 COPY web /app/web
 COPY examples /app/examples
 WORKDIR /app
-# ------------------------------------
     
 RUN mkdir -p /models
 
-EXPOSE 16070 16071
+EXPOSE 16070 16071 16072
 
 CMD ["llm_service"]
