@@ -2,71 +2,70 @@
 set -e
 
 # ==============================================================================
-# Sentiric LLM Service - Gelişmiş Test ve Örnek Kullanım Script'i (v2.1)
+# Sentiric LLM Service - Gelişmiş Test ve Örnek Kullanım Script'i (v3.0)
 # ==============================================================================
 #
-# Bu script, llm-llama-service'e zengin bağlam (context) içeren RAG sorguları
-# göndermeyi kolaylaştırır. Hem CPU hem de GPU ortamlarını destekler.
+# Bu script, llm-llama-service'e zengin bağlam (context) içeren RAG ve
+# konuşma geçmişi sorguları göndermeyi kolaylaştırır.
 #
 # Kullanım:
-#   ./run_request.sh [seçenekler] "<context_dosyası_yolu>" "<sorgu>"
+#   ./run_request.sh [seçenekler] "<sorgu>"
 #
 # Seçenekler:
-#   -c, --cpu : Testi CPU geliştirme ortamında çalıştırır. (Varsayılan: GPU)
+#   -c, --cpu          : Testi CPU geliştirme ortamında çalıştırır. (Varsayılan: GPU)
+#   -f, --file <path>  : RAG context'i olarak kullanılacak dosyanın yolu.
+#   -h, --history <json> : JSON formatında konuşma geçmişi.
 #
-# Örnekler için `examples/README.md` dosyasına bakın.
+# Örnekler:
+#   ./run_request.sh -f examples/health_service_context.txt "Hastanın son durumu nedir?"
+#   ./run_request.sh --history '[{"role":"user","content":"Başkent neresi?"},{"role":"assistant","content":"Ankara."}]' "Nüfusu ne kadar?"
 # ==============================================================================
 
 # --- Değişkenleri ve Varsayılanları Ayarla ---
 DOCKER_CMD_BASE="docker compose"
-# Varsayılan olarak GPU için olan `run.gpu.yml` dosyasını kullan.
-DOCKER_CMD_FLAGS="-f docker-compose.run.gpu.yml" 
+DOCKER_CMD_FLAGS_GPU="-f docker-compose.run.gpu.yml"
+DOCKER_CMD_FLAGS_CPU=""
 TARGET_SERVICE="llm-cli"
+USE_GPU=true
+RAG_CONTEXT=""
+HISTORY_JSON=""
+QUERY=""
 
 # --- Komut Satırı Argümanlarını İşle ---
-if [[ "$1" == "-c" || "$1" == "--cpu" ]]; then
-    # CPU modu seçilirse, hiçbir ek -f bayrağına gerek yok.
-    # `docker compose run` komutu, `docker-compose.yml` ve `docker-compose.override.yml`
-    # dosyalarını otomatik olarak kullanır.
-    DOCKER_CMD_FLAGS=""
-    shift # Argümanları sola kaydır
-    echo "ℹ️ CPU modu seçildi."
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -c|--cpu) USE_GPU=false; shift ;;
+        -f|--file) RAG_CONTEXT=$(cat "$2"); shift 2 ;;
+        -h|--history) HISTORY_JSON="$2"; shift 2 ;;
+        *) QUERY="$1"; shift ;;
+    esac
+done
+
+if [ -z "$QUERY" ]; then
+    echo "❌ HATA: Sorgu metni belirtilmedi."
+    echo "Kullanım: $0 [-c] [-f FILE] [-h JSON] <sorgu>"
+    exit 1
+fi
+
+# Ortama göre Docker Compose bayraklarını seç
+if [ "$USE_GPU" = true ]; then
+    DOCKER_CMD_FLAGS="$DOCKER_CMD_FLAGS_GPU"
+    echo "ℹ️ GPU modu kullanılıyor."
 else
-    echo "ℹ️ GPU modu varsayılan olarak kullanılıyor. CPU için '-c' bayrağını kullanın."
+    DOCKER_CMD_FLAGS="$DOCKER_CMD_FLAGS_CPU"
+    echo "ℹ️ CPU modu seçildi."
 fi
 
-if [ "$#" -ne 2 ]; then
-    echo "❌ HATA: Eksik argüman."
-    echo "Kullanım: $0 [-c|--cpu] <context_dosyası_yolu> <sorgu>"
-    exit 1
+# --- llm_cli için argümanları oluştur ---
+CLI_ARGS="generate \"${QUERY}\""
+
+if [ -n "$RAG_CONTEXT" ]; then
+    CLI_ARGS+=" --rag-context \"${RAG_CONTEXT}\""
 fi
 
-CONTEXT_FILE="$1"
-QUERY="$2"
-
-if [ ! -r "$CONTEXT_FILE" ]; then
-    echo "❌ HATA: Context dosyası okunamıyor: $CONTEXT_FILE"
-    exit 1
+if [ -n "$HISTORY_JSON" ]; then
+    CLI_ARGS+=" --history '${HISTORY_JSON}'"
 fi
-
-CONTEXT_CONTENT=$(cat "$CONTEXT_FILE")
-
-# --- Sistem Prompt'unu Hazırla ---
-SYSTEM_PROMPT=$(cat <<'EOF'
-Sen, Sentiric platformunda çalışan, yardımsever ve profesyonel bir AI asistansın.
-Aşağıdaki 'İlgili Bilgiler' bölümündeki içeriği kullanarak kullanıcının sorusuna doğal, akıcı ve en fazla 2 cümleyle cevap ver.
-Cevap yalnızca verilen bağlama dayanmalı; tahmin, uydurma veya bağlam dışı bilgi yok.
-Eğer cevap bağlamda yer almıyorsa, bunu nazik ve doğal bir şekilde belirt.
-
-### İlgili Bilgiler:
-{context}
-
-### Kullanıcının Sorusu:
-{query}
-
-### Cevap:
-EOF
-)
 
 # --- Testi Çalıştır ---
 echo ""
@@ -74,9 +73,5 @@ echo "👤 Kullanıcı Sorusu: ${QUERY}"
 echo "----------------------------------------------------"
 
 # Final komutunu birleştir ve çalıştır.
-# $DOCKER_CMD_FLAGS değişkeni boş olabilir (CPU durumu için), bu bir sorun teşkil etmez.
-$DOCKER_CMD_BASE $DOCKER_CMD_FLAGS run --rm $TARGET_SERVICE \
-    llm_cli generate "${QUERY}" \
-    --system-prompt "${SYSTEM_PROMPT}" \
-    --rag-context "${CONTEXT_CONTENT}" \
-    --timeout 120
+# `eval` kullanmak, argümanlardaki tırnak işaretlerini doğru bir şekilde işlemesini sağlar.
+eval "$DOCKER_CMD_BASE $DOCKER_CMD_FLAGS run --rm $TARGET_SERVICE llm_cli $CLI_ARGS"

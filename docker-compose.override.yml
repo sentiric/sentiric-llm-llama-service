@@ -1,5 +1,4 @@
 # docker-compose.override.yml
-# Yerel geliştirme için otomatik olarak kullanılır (CPU)
 services:
   llm-llama-service:
     build:
@@ -8,9 +7,9 @@ services:
     image: sentiric/llm-llama-service:local-cpu 
     networks:
       - sentiric-net
-    # --- BU SATIRI EKLEYİN/GÜNCELLEYİN ---
+    # --- LOG SEVİYESİNİ 'info' OLARAK GÜNCELLEYİN ---
     environment:
-      - LLM_LLAMA_SERVICE_LOG_LEVEL=debug
+      - LLM_LLAMA_SERVICE_LOG_LEVEL=info
 
   llm-cli:
     build:
