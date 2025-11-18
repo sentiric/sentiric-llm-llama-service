@@ -10,7 +10,7 @@
 -   **Commit Linki:** [https://github.com/ggml-org/llama.cpp/commit/92bb442ad999a0d52df0af2730cd861012e8ac5c](https://github.com/ggml-org/llama.cpp/commit/92bb442ad999a0d52df0af2730cd861012e8ac5c)
 -   **Referans `llama.h`:** [llama.h @ 92bb442](https://github.com/ggml-org/llama.cpp/blob/92bb442ad999a0d52df0af2730cd861012e8ac5c/include/llama.h)
 -   **Referans `common.h`:** [common.h @ 92bb442](https://github.com/ggml-org/llama.cpp/blob/92bb442ad999a0d52df0af2730cd861012e8ac5c/common/common.h)
--   **Son Doğrulama Tarihi:** 2025-11-14
+-   **Son Doğrulama Tarihi:** 2025-11-18
 
 **KURAL:** `Dockerfile`'daki `LLAMA_CPP_VERSION` değiştirilirse, bu belge **mutlaka** güncellenmelidir.
 
@@ -44,10 +44,9 @@ prompt_tokens.resize(n_tokens);
 
 llama_batch batch = llama_batch_init(n_tokens, 0, 1);
 for (int i = 0; i < n_tokens; ++i) {
-    // DOĞRU KULLANIM: `common.h`'dan gelen yardımcı fonksiyonu kullan.
     common_batch_add(batch, prompt_tokens[i], i, {0}, false);
 }
-batch.logits[batch.n_tokens - 1] = true; // Sadece son token'ın logit'lerine ihtiyacımız var
+batch.logits[batch.n_tokens - 1] = true; 
 
 if (llama_decode(ctx, batch) != 0) { /* Hata yönetimi */ }
 
@@ -61,7 +60,7 @@ while (n_past < n_ctx) {
 
     // ... token'ı metne çevir (`llama_token_to_piece`) ...
 
-    llama_batch_free(batch); // Önceki batch'i temizle
+    llama_batch_free(batch); 
     batch = llama_batch_init(1, 0, 1);
     common_batch_add(batch, new_token_id, n_past, {0}, true);
 
@@ -80,12 +79,11 @@ llama_batch_free(batch);
 llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
 llama_sampler* sampler_chain = llama_sampler_chain_init(sparams);
 
-// İlk parametre `penalty_last_n` (int32_t), context boyutu olabilir.
 llama_sampler_chain_add(sampler_chain, llama_sampler_init_penalties(
-    llama_n_ctx(ctx), // penalty_last_n
-    1.1f,             // penalty_repeat
-    0.0f,             // penalty_freq
-    0.0f              // penalty_present
+    llama_n_ctx(ctx),
+    1.1f, 
+    0.0f, 
+    0.0f 
 ));
 llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_k(40));
 // ... diğer sampler'lar ...
@@ -98,9 +96,11 @@ Bir `llama_context`, `LlamaContextPool`'a iade edilmeden önce, içindeki tüm K
 **DOĞRU YÖNTEM:**
 ```cpp
 // Bir context'i havuza iade etmeden hemen önce çağrılacak kod:
-// `llama_get_memory` ile context'in bellek yöneticisini al.
-// seq_id = -1 -> Tüm dizinler
-// p0 = -1, p1 = -1 -> Tüm pozisyonlar (veya p0=0, p1=-1)
 llama_memory_seq_rm(llama_get_memory(ctx), -1, -1, -1);
 ```
+
+**GEREKÇE (ÖNEMLİ):**
+`llama.cpp`'nin modern API'si, bellek operasyonlarını doğrudan context (`ctx`) üzerinden değil, `llama_get_memory(ctx)` ile alınan bir "bellek yöneticisi" nesnesi üzerinden yapılmasını gerektirir. Bu, kütüphanenin gelecekteki bellek optimizasyonlarına (örneğin, birden çok context'in aynı bellek havuzunu paylaşması) uyum sağlamasına olanak tanır.
+
+Doğrudan `llama_kv_cache_seq_rm(ctx, ...)` gibi eski fonksiyonları çağırmak, derleme hatasına veya daha kötüsü, çalışma zamanında belirsiz davranışlara ve "state sızıntısı"na neden olabilir. Bu nedenle, KV cache temizliği için **her zaman** `llama_get_memory` ile başlayan bu iki adımlı yöntem kullanılmalıdır. Bu, projemizin API kontratının bir parçasıdır.
 ---

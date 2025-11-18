@@ -4,11 +4,11 @@
 
 ## 1. Temel Prensipler
 
-1.  **Kanıta Dayalılık (Evidence-Driven):** Her teknik karar, varsayımlara değil; loglara, derleyici hatalarına, performans metriklerine veya kaynak koda dayalı kanıtlara dayanmalıdır. "Bence böyle çalışır" yerine, "Kanıtlar bunu gösteriyor" yaklaşımı esastır.
+1.  **Kanıta Dayalılık (Evidence-Driven):** Her teknik karar, varsayımlara değil; loglara, derleyici hatalarına, performans metriklerine veya **projenin kendi dokümantasyonuna (`docs/` dizini)** dayalı kanıtlara dayanmalıdır. "Bence böyle çalışır" yerine, "Kanıtlar bunu gösteriyor" yaklaşımı esastır.
 
 2.  **Önce Dokümantasyon, Sonra Kod (Documentation First):** Bir sorunla karşılaşıldığında veya yeni bir desen keşfedildiğinde, çözüm doğrudan koda uygulanmaz. Önce ilgili bilgi tabanı (KB) veya mimari dokümanı güncellenir, ardından kod bu güncel dokümanı referans alarak yazılır. Bu, bilginin kurumsallaşmasını sağlar.
 
-3.  **Tek Doğru Kaynak (Single Source of Truth):** Her önemli teknik konu için (API kullanımı, yapılandırma, mimari vb.) atanmış tek bir doküman bulunur. Çelişkili bilgiler olduğunda, bu doküman nihai referanstır.
+3.  **Tek Doğru Kaynak (Single Source of Truth):** Her önemli teknik konu için (API kullanımı, yapılandırma, mimari vb.) atanmış tek bir doküman bulunur. Çelişkili bilgiler olduğunda, bu doküman nihai referanstır. **Harici genel bilgi veya varsayımlar, bu projenin kendi belgeleri karşısında geçersizdir.**
 
 4.  **Minimalizm ve Sorumluluk Ayrımı (Minimalism & Separation of Concerns):** Her bileşen (C++ sınıfı, Docker katmanı, CMake modülü) tek ve net bir sorumluluğa sahip olmalıdır. Gereksiz bağımlılıklardan ve karmaşıklıktan kaçınılır.
 
@@ -23,8 +23,8 @@ Her geliştirme görevi veya hata düzeltmesi, aşağıdaki dört adımlı döng
     *   **Çıktı:** Sorunun net bir tanımı ve kök nedenine dair hipotezler.
 
 2.  **D - Doğrula ve Dokümante Et (Document & Verify / Research):**
-    *   **Ne?** Hipotezleri doğrulamak için araştırma yap. `llama.cpp`'nin `llama.h` başlık dosyasını, `examples` dizinindeki örnek kodları veya `CMakeLists.txt` dosyalarını incele.
-    *   **Çıktı:** Elde edilen kesin bilgiyi, projenin ilgili bilgi tabanı (`docs/KB/`) veya mimari dokümanına (`docs/architecture/`) ekle. Bu, "tek doğru kaynak" ilkesini uygular.
+    *   **Ne?** Hipotezleri doğrulamak için **öncelikle bu projenin `docs/` dizinindeki ilgili belgelere başvur.** `llama.h` başlık dosyası, `examples` dizini veya `CMakeLists.txt` gibi birincil kaynaklar yalnızca dokümanlarda eksiklik varsa incelenmelidir.
+    *   **Çıktı:** Elde edilen kesin bilgiyi, projenin ilgili bilgi tabanı (`docs/KB/`) veya mimari dokümanına (`docs/architecture/`) ekle. Eğer bir kararın arkasındaki **"neden"** açık değilse, bu gerekçeyi de dokümana ekle. Bu, "tek doğru kaynak" ilkesini güçlendirir.
 
 3.  **R - Refactor/Uygula (Refactor/Implement):**
     *   **Ne?** Güncellenmiş dokümantasyonu referans alarak kodu düzelt veya yeni özelliği ekle.
@@ -43,6 +43,7 @@ Bu repo, insan ve yapay zeka (Baş Mühendis rolündeki AI) arasında bir ortakl
     *   ADRU döngüsünü yönetir ve araştırma görevleri tanımlar.
     *   Nihai kod ve dokümantasyon içeriğini oluşturur.
     *   Kod ve çözüm kalitesini denetler.
+    *   **Yeni Kural:** Çözüm üretirken, genel dahili bilgi tabanına veya varsayımlara güvenmek yerine, **mutlaka ve öncelikle projenin `docs/` dizinindeki belgelere başvurmalıdır.** Proje dokümanları, AI'nin genel bilgisinden daha yüksek bir önceliğe sahiptir ve "Tek Doğru Kaynak" olarak kabul edilmelidir.
 
 -   **İnsan Geliştirici (Commit'leyici/Uygulayıcı):**
     *   AI tarafından verilen talimatları uygular (kodu yazar, dosyaları günceller).
