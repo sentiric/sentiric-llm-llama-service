@@ -113,8 +113,6 @@ inline Settings load_settings() {
     s.n_threads_batch = get_env_var_as_uint("LLM_LLAMA_SERVICE_THREADS_BATCH", s.n_threads_batch);
     s.use_mmap = get_env_var_as_bool("LLM_LLAMA_SERVICE_USE_MMAP", s.use_mmap);
     s.kv_offload = get_env_var_as_bool("LLM_LLAMA_SERVICE_KV_OFFLOAD", s.kv_offload);
-    // NUMA ayarı basitleştirildi. Sadece "disabled" (varsayılan) destekleniyor.
-    // İleri seviye NUMA stratejileri gelecekte eklenebilir.
     s.numa_strategy = GGML_NUMA_STRATEGY_DISABLED;
 
     // Logging
@@ -132,13 +130,10 @@ inline Settings load_settings() {
     s.grpc_cert_path = get_env_var("LLM_LLAMA_SERVICE_CERT_PATH", s.grpc_cert_path);
     s.grpc_key_path = get_env_var("LLM_LLAMA_SERVICE_KEY_PATH", s.grpc_key_path);
     
-    
-    // YENİ: Dynamic Batching ayarları
     s.enable_dynamic_batching = get_env_var_as_bool("LLM_LLAMA_SERVICE_ENABLE_BATCHING", s.enable_dynamic_batching);
     s.max_batch_size = get_env_var_as_uint("LLM_LLAMA_SERVICE_MAX_BATCH_SIZE", s.max_batch_size);
     s.batch_timeout_ms = get_env_var_as_int("LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS", s.batch_timeout_ms);
     
-    // YENİ: Warm-up ayarları
     s.enable_warm_up = get_env_var_as_bool("LLM_LLAMA_SERVICE_ENABLE_WARM_UP", s.enable_warm_up);
     
     // Legacy path for backward compatibility

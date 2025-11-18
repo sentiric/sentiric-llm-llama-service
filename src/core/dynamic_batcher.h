@@ -12,20 +12,21 @@
 #include <thread>
 #include <functional>
 #include <future>
+#include <memory>
 
 struct BatchedRequest {
     sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest request;
-    std::function<void(const std::string&)> on_token_callback;
+    std::function<bool(const std::string&)> on_token_callback;
     std::function<bool()> should_stop_callback;
     std::promise<void> completion_promise;
-    int32_t prompt_tokens;
-    int32_t completion_tokens;
+    int32_t prompt_tokens = 0;
+    int32_t completion_tokens = 0;
+    std::string finish_reason = "stop";
 };
 
 class DynamicBatcher {
 public:
-    DynamicBatcher(size_t max_batch_size = 8, 
-                   std::chrono::milliseconds max_wait_time = std::chrono::milliseconds(10))
+    DynamicBatcher(size_t max_batch_size, std::chrono::milliseconds max_wait_time)
         : max_batch_size_(max_batch_size)
         , max_wait_time_(max_wait_time)
         , running_(true)
@@ -38,33 +39,13 @@ public:
         stop();
     }
     
-    std::future<void> add_request(
-        const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request,
-        const std::function<void(const std::string&)>& on_token_callback,
-        const std::function<bool()>& should_stop_callback,
-        int32_t& prompt_tokens_out,
-        int32_t& completion_tokens_out) {
-        
-        BatchedRequest batched_request;
-        batched_request.request = request;
-        batched_request.on_token_callback = on_token_callback;
-        batched_request.should_stop_callback = should_stop_callback;
-        batched_request.prompt_tokens = 0;
-        batched_request.completion_tokens = 0;
-        
-        auto future = batched_request.completion_promise.get_future();
-        
+    std::future<void> add_request(std::shared_ptr<BatchedRequest> request) {
+        auto future = request->completion_promise.get_future();
         {
             std::lock_guard<std::mutex> lock(queue_mutex_);
-            request_queue_.push(std::move(batched_request));
+            request_queue_.push(std::move(request));
         }
-        
         queue_cv_.notify_one();
-        
-        // DÜZELTME: unused parameter warning'larını önle
-        (void)prompt_tokens_out;
-        (void)completion_tokens_out;
-        
         return future;
     }
     
@@ -76,20 +57,22 @@ public:
         }
     }
     
-    // Batch işleme fonksiyonu - LLMEngine tarafından implemente edilecek
-    std::function<void(const std::vector<BatchedRequest>&)> batch_processing_callback;
+    std::function<void(std::vector<std::shared_ptr<BatchedRequest>>&)> batch_processing_callback;
 
 private:
     void processing_loop() {
         while (running_) {
-            std::vector<BatchedRequest> batch;
+            std::vector<std::shared_ptr<BatchedRequest>> batch;
             
-            // Batch oluştur
             {
                 std::unique_lock<std::mutex> lock(queue_mutex_);
                 queue_cv_.wait_for(lock, max_wait_time_, [this]() {
                     return !request_queue_.empty() || !running_;
                 });
+                
+                if (!running_ && request_queue_.empty()) {
+                    return;
+                }
                 
                 while (!request_queue_.empty() && batch.size() < max_batch_size_) {
                     batch.push_back(std::move(request_queue_.front()));
@@ -97,23 +80,23 @@ private:
                 }
             }
             
-            // Batch'i işle
             if (!batch.empty() && batch_processing_callback) {
                 try {
                     batch_processing_callback(batch);
-                    
-                    // Sonuçları promise'lere set et
                     for (auto& req : batch) {
-                        req.completion_promise.set_value();
+                        // set_value can only be called once, check if it has a valid future
+                        if (req->completion_promise.get_future().valid()) {
+                            req->completion_promise.set_value();
+                        }
                     }
-                } catch (const std::exception& e) {
-                    spdlog::error("Batch processing failed: {}", e.what());
+                } catch (...) {
+                    spdlog::error("Batch processing failed with an exception.");
                     for (auto& req : batch) {
                         try {
-                            req.completion_promise.set_exception(std::current_exception());
-                        } catch (...) {
-                            // Promise zaten set edilmiş olabilir
-                        }
+                            if (req->completion_promise.get_future().valid()) {
+                                req->completion_promise.set_exception(std::current_exception());
+                            }
+                        } catch (const std::future_error&) { /* ignore if already set */ }
                     }
                 }
             }
@@ -124,7 +107,7 @@ private:
     std::chrono::milliseconds max_wait_time_;
     std::atomic<bool> running_;
     
-    std::queue<BatchedRequest> request_queue_;
+    std::queue<std::shared_ptr<BatchedRequest>> request_queue_;
     std::mutex queue_mutex_;
     std::condition_variable queue_cv_;
     std::thread processing_thread_;

@@ -15,12 +15,12 @@ services:
       - LLM_LLAMA_SERVICE_THREADS=1
       - LLM_LLAMA_SERVICE_THREADS_BATCH=1
       
-      # --- WARM-UP KAPAT ---
-      - LLM_LLAMA_SERVICE_ENABLE_WARM_UP=false
+      # --- WARM-UP ---
+      - LLM_LLAMA_SERVICE_ENABLE_WARM_UP=true
       
-      # --- BATCHING ---
+      # --- GÜNCELLENDİ: BATCHING ETKİNLEŞTİRİLDİ ---
       - LLM_LLAMA_SERVICE_ENABLE_BATCHING=true
-      - LLM_LLAMA_SERVICE_MAX_BATCH_SIZE=4
+      - LLM_LLAMA_SERVICE_MAX_BATCH_SIZE=2 # 6GB VRAM için güvenli bir değer
       - LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS=10
       
       # --- PERFORMANS ---

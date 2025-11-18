@@ -1,4 +1,4 @@
-// src/cli/main.cpp - YENİ İÇERİK
+// src/cli/main.cpp
 #include <iostream>
 #include <string>
 #include <vector>
@@ -8,11 +8,11 @@
 #include "grpc_client.h"
 #include "health_check.h"
 #include "benchmark.h"
-#include "nlohmann/json.hpp" // JSON parsing için eklendi
+#include "nlohmann/json.hpp"
 
 void print_usage() {
     std::cout << R"(
-🧠 Sentiric LLM CLI v2.1
+🧠 Sentiric LLM CLI v2.2
 
 Kullanım:
   llm_cli [seçenekler] <komut> [argümanlar]
@@ -21,24 +21,26 @@ Komutlar:
   generate <user_prompt>   - Zengin bir bağlam ile metin üretir (GRPC stream).
   health                   - Sistem sağlık durumunu kontrol eder.
   wait-for-ready           - Servis hazır olana kadar bekler.
-  benchmark                - Performans testi çalıştırır.
+  benchmark                - Performans ve eşzamanlılık testi çalıştırır.
 
 Seçenekler:
   --system-prompt <text>   - (Opsiyonel) AI'nın kişiliğini belirleyen sistem talimatı.
   --rag-context <text>     - (Opsiyonel) RAG için kullanılacak bilgi metni.
-  --history '<json_string>'- (Opsiyonel) Konuşma geçmişi. Örn: '[{"role":"user","content":"Merhaba"},{"role":"assistant","content":"Merhaba, nasıl yardımcı olabilirim?"}]'
+  --history '<json_string>'- (Opsiyonel) Konuşma geçmişi.
   --grpc-endpoint <addr>   - GRPC endpoint (varsayılan: llm-llama-service:16071).
   --http-endpoint <addr>   - HTTP endpoint (varsayılan: llm-llama-service:16070).
   --timeout <seconds>      - İstek zaman aşımı süresi (saniye, varsayılan: 120).
-  --iterations <n>         - Benchmark iterasyon sayısı.
+  --iterations <n>         - Benchmark: Seri iterasyon sayısı (varsayılan: 10).
+  --concurrent <n>         - Benchmark: Eşzamanlı bağlantı sayısı (varsayılan: 1).
+  --requests <n>           - Benchmark: Bağlantı başına istek sayısı (varsayılan: 1).
   --output <file>          - Benchmark raporu için çıktı dosyası.
 
 Örnekler:
-  # Basit Soru
-  llm_cli generate "Türkiye'nin başkenti neresidir?"
+  # Basit Performans Testi
+  llm_cli benchmark --iterations 5
 
-  # Konuşma Geçmişi ile Takip Sorusu
-  llm_cli generate "Peki yüzölçümü ne kadar?" --history '[{"role":"user","content":"Türkiyenin başkenti neresidir?"},{"role":"assistant","content":"Türkiyenin başkenti Ankaradır."}]'
+  # Eşzamanlılık ve Batching Testi
+  llm_cli benchmark --concurrent 4 --requests 2
 )";
 }
 
@@ -85,14 +87,8 @@ int main(int argc, char** argv) {
             sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest request;
             request.set_user_prompt(user_prompt);
 
-            if (options.count("system-prompt")) {
-                request.set_system_prompt(options["system-prompt"]);
-            }
-            if (options.count("rag-context")) {
-                request.set_rag_context(options["rag-context"]);
-            }
-
-            // --- YENİ: Konuşma geçmişini parse et ---
+            if (options.count("system-prompt")) request.set_system_prompt(options["system-prompt"]);
+            if (options.count("rag-context")) request.set_rag_context(options["rag-context"]);
             if (options.count("history")) {
                 try {
                     auto history_json = nlohmann::json::parse(options["history"]);
@@ -112,7 +108,7 @@ int main(int argc, char** argv) {
             }
             
             sentiric_llm_cli::GRPCClient client(grpc_endpoint);
-            if (options.count("timeout")) { client.set_timeout(std::stoi(options["timeout"])); }
+            if (options.count("timeout")) client.set_timeout(std::stoi(options["timeout"]));
 
             std::cout << "🤖 Assistant: " << std::flush;
             
@@ -136,9 +132,18 @@ int main(int argc, char** argv) {
              }
         } else if (command == "benchmark") {
              int iterations = options.count("iterations") ? std::stoi(options["iterations"]) : 10;
+             int concurrent = options.count("concurrent") ? std::stoi(options["concurrent"]) : 1;
+             int requests = options.count("requests") ? std::stoi(options["requests"]) : 1;
              std::string output_file = options.count("output") ? options["output"] : "";
+             
              sentiric_llm_cli::Benchmark benchmark(grpc_endpoint);
-             auto result = benchmark.run_performance_test(iterations);
+             sentiric_llm_cli::BenchmarkResult result;
+
+             if (concurrent > 1) {
+                 result = benchmark.run_concurrent_test(concurrent, requests);
+             } else {
+                 result = benchmark.run_performance_test(iterations);
+             }
              benchmark.generate_report(result, output_file);
         } else {
             spdlog::error("Geçersiz komut: '{}'", command);

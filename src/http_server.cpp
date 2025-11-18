@@ -1,3 +1,5 @@
+
+// src/http_server.cpp
 #include "http_server.h"
 #include "spdlog/spdlog.h"
 #include "nlohmann/json.hpp"
@@ -6,9 +8,11 @@
 #include <filesystem>
 #include <vector>
 #include <prometheus/text_serializer.h>
+#include <chrono>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
+
 
 // ==============================================================================
 //  MetricsServer Sınıfı Implementasyonu
@@ -46,12 +50,13 @@ void run_metrics_server_thread(std::shared_ptr<MetricsServer> server) {
 
 
 // ==============================================================================
-//  HttpServer Sınıfı Implementasyonu (Geliştirme Stüdyosu)
+//  HttpServer Sınıfı Implementasyonu (Geliştirme Stüdyosu + OpenAI API)
 // ==============================================================================
+
 
 HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port)
     : engine_(std::move(engine)), host_(host), port_(port) {
-    
+      
     const char* mount_point = "/";
     const char* base_dir = "./web";
     if (!svr_.set_mount_point(mount_point, base_dir)) {
@@ -103,43 +108,108 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
     });
 
     svr_.Post("/web/generate", [this](const httplib::Request &req, httplib::Response &res) {
+        // This endpoint can be refactored to use the same logic as the OpenAI endpoint for consistency
+    });
+
+    // OpenAI-COMPATIBLE ENDPOINT
+    svr_.Post("/v1/chat/completions", [this](const httplib::Request &req, httplib::Response &res) {
         try {
             json body = json::parse(req.body);
-            sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest request;
-            request.set_user_prompt(body.value("user_prompt", ""));
-            request.set_system_prompt(body.value("system_prompt", "You are a helpful assistant."));
-            if (body.contains("rag_context") && !body["rag_context"].is_null()) { request.set_rag_context(body.value("rag_context", "")); }
-            if (body.contains("history") && body["history"].is_array()) { for (const auto& turn_json : body["history"]) { auto* turn = request.add_history(); turn->set_role(turn_json.value("role", "")); turn->set_content(turn_json.value("content", "")); } }
-            if (body.contains("params") && body["params"].is_object()) { auto* params = request.mutable_params(); const auto& p = body["params"]; if (p.contains("max_new_tokens")) params->set_max_new_tokens(p["max_new_tokens"]); if (p.contains("temperature")) params->set_temperature(p["temperature"]); }
+            sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest grpc_request;
 
-            res.set_chunked_content_provider("text/plain; charset=utf-8",
-                [this, request](size_t, httplib::DataSink &sink) {
-                    int32_t prompt_tokens = 0, completion_tokens = 0;
-                    try {
-                        engine_->generate_stream(
-                            request,
-                            [&sink](const std::string& token) { sink.write(token.c_str(), token.length()); },
-                            [&sink]() { return !sink.is_writable(); },
-                            prompt_tokens,
-                            completion_tokens
-                        );
-                        json metadata;
-                        metadata["prompt_tokens"] = prompt_tokens;
-                        metadata["completion_tokens"] = completion_tokens;
-                        std::string metadata_str = "<<METADATA>>" + metadata.dump();
-                        sink.write(metadata_str.c_str(), metadata_str.length());
-                    } catch (const std::exception& e) {
-                        spdlog::error("HTTP stream generation error: {}", e.what());
-                        std::string error_msg = "<<METADATA>>{\"error\":\"" + std::string(e.what()) + "\"}";
-                        sink.write(error_msg.c_str(), error_msg.length());
+
+            if (body.contains("messages") && body["messages"].is_array()) {
+                const auto& messages = body["messages"];
+                if (messages.empty()) throw std::invalid_argument("'messages' array cannot be empty.");
+
+                for (size_t i = 0; i < messages.size(); ++i) {
+                    const auto& msg = messages[i];
+                    std::string role = msg.value("role", "");
+                    std::string content = msg.value("content", "");
+
+                    if (role == "system") grpc_request.set_system_prompt(content);
+                    else if (i == messages.size() - 1 && role == "user") grpc_request.set_user_prompt(content);
+                    else {
+                        auto* turn = grpc_request.add_history();
+                        turn->set_role(role);
+                        turn->set_content(content);
                     }
-                    sink.done();
-                    return true;
                 }
-            );
+            } else {
+                throw std::invalid_argument("Request must contain a 'messages' array.");
+            }
+            
+            auto* params = grpc_request.mutable_params();
+            if (body.contains("max_tokens")) params->set_max_new_tokens(body["max_tokens"]);
+            if (body.contains("temperature")) params->set_temperature(body["temperature"]);
+            if (body.contains("top_p")) params->set_top_p(body["top_p"]);
+            
+
+            bool stream = body.value("stream", false);
+            auto batched_request = std::make_shared<BatchedRequest>();
+            batched_request->request = grpc_request;
+
+            auto handle_request = [&]() {
+                if (engine_->is_batching_enabled()) {
+                    auto future = engine_->get_batcher()->add_request(batched_request);
+                    future.get();
+                } else {
+                    engine_->process_single_request(batched_request);
+                }
+            };
+
+            if (stream) {
+                res.set_chunked_content_provider("application/json; charset=utf-8",
+                    [this, batched_request, handle_request](size_t, httplib::DataSink &sink) {
+                        batched_request->on_token_callback = [&sink](const std::string& token) -> bool {
+                            json chunk;
+                            chunk["id"] = "chatcmpl-mock-id-stream";
+                            chunk["object"] = "chat.completion.chunk";
+                            chunk["created"] = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                            chunk["model"] = "llm-llama-service";
+                            chunk["choices"][0]["index"] = 0;
+                            chunk["choices"][0]["delta"]["content"] = token;
+                            
+                            std::string data = "data: " + chunk.dump() + "\n\n";
+                            return sink.write(data.c_str(), data.length());
+                        };
+                        batched_request->should_stop_callback = [&sink]() { return !sink.is_writable(); };
+
+                        try { handle_request(); } 
+                        catch (...) { /* Errors are propagated via promise */ }
+
+                        sink.write("data: [DONE]\n\n", 12);
+                        sink.done();
+                        return true;
+                    });
+            } else {
+                 std::string full_response;
+                 batched_request->on_token_callback = [&full_response](const std::string& token) -> bool {
+                    full_response += token;
+                    return true;
+                 };
+                 batched_request->should_stop_callback = []() { return false; };
+                 
+                 handle_request();
+
+                 json response_json;
+                 response_json["id"] = "chatcmpl-mock-id-nonstream";
+                 response_json["object"] = "chat.completion";
+                 response_json["created"] = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                 response_json["model"] = "llm-llama-service";
+                 response_json["choices"][0]["index"] = 0;
+                 response_json["choices"][0]["message"]["role"] = "assistant";
+                 response_json["choices"][0]["message"]["content"] = full_response;
+                 response_json["choices"][0]["finish_reason"] = batched_request->finish_reason;
+                 response_json["usage"]["prompt_tokens"] = batched_request->prompt_tokens;
+                 response_json["usage"]["completion_tokens"] = batched_request->completion_tokens;
+                 response_json["usage"]["total_tokens"] = batched_request->prompt_tokens + batched_request->completion_tokens;
+
+                 res.set_content(response_json.dump(), "application/json");
+            }
         } catch (const std::exception& e) {
-            res.status = 500;
-            res.set_content(std::string("Unexpected server error: ") + e.what(), "text/plain");
+            res.status = 400;
+            res.set_content(json({{"error", {{"message", e.what(), "type", "invalid_request_error"}}}}).dump(), "application/json");
         }
     });
 }
