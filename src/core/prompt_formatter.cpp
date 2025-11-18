@@ -8,33 +8,53 @@
 std::string Gemma3Formatter::format(const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request) const {
     std::ostringstream oss;
     
-    // Gemma 3 modeli için özel formatlama
-    // <start_of_turn>user\n{system_prompt}\n{rag_context}\n{user_prompt}<end_of_turn>\n<start_of_turn>model
-    
-    oss << "<start_of_turn>user\n";
-
+    // Sistem prompt'u, ilk kullanıcı mesajının bir parçası olarak formatlanır.
+    std::string system_prompt_str;
     if (!request.system_prompt().empty()) {
-        oss << request.system_prompt() << "\n\n";
+        system_prompt_str = request.system_prompt() + "\n\n";
+    }
+    bool system_prompt_handled = false;
+
+    // --- YENİ: Konuşma geçmişini işle ---
+    for (const auto& turn : request.history()) {
+        if (turn.role() == "user") {
+            oss << "<start_of_turn>user\n";
+            // Sistem prompt'unu sadece ilk kullanıcı mesajına ekle
+            if (!system_prompt_handled && !system_prompt_str.empty()) {
+                oss << system_prompt_str;
+                system_prompt_handled = true;
+            }
+            oss << turn.content() << "<end_of_turn>\n";
+        } else if (turn.role() == "assistant" || turn.role() == "model") {
+            oss << "<start_of_turn>model\n" << turn.content() << "<end_of_turn>\n";
+        }
+    }
+
+    // Mevcut kullanıcı isteğini formatla
+    oss << "<start_of_turn>user\n";
+    if (!system_prompt_handled && !system_prompt_str.empty()) {
+        oss << system_prompt_str;
+        system_prompt_handled = true;
     }
 
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        oss << "### İlgili Bilgiler:\n" << request.rag_context() << "\n\n";
+        oss << "Verilen bilgileri kullanarak cevap ver:\n---BAĞLAM---\n" << request.rag_context() << "\n---BAĞLAM SONU---\n\n";
     }
 
-    // TODO: Konuşma geçmişi (history) formatlaması buraya eklenebilir.
-
-    oss << "### Kullanıcının Sorusu:\n" << request.user_prompt() << "<end_of_turn>\n";
+    oss << request.user_prompt() << "<end_of_turn>\n";
+    
+    // Modelin cevap vermesi için son sinyali ekle
     oss << "<start_of_turn>model\n";
     
     std::string result = oss.str();
-    spdlog::debug("🔧 [Gemma3Formatter] Formatted prompt ({} chars): {}", result.length(), result.substr(0, 200) + "...");
+    spdlog::debug("🔧 [Gemma3Formatter] Formatted prompt with history ({} chars)", result.length());
     
     return result;
 }
 
 std::vector<std::string> Gemma3Formatter::get_stop_sequences() const {
-    // Gemma 3'ün özel bitiş jetonu
-    return { "<end_of_turn>" };
+    // Gemma'nın özel bitiş jetonları
+    return { "<end_of_turn>", "<start_of_turn>" };
 }
 
 
@@ -45,12 +65,7 @@ std::unique_ptr<PromptFormatter> create_formatter_for_model(const std::string& m
     if (model_architecture == "gemma3") {
         return std::make_unique<Gemma3Formatter>();
     }
-    // Gelecekte buraya başka modeller eklenebilir.
-    // else if (model_architecture == "llama3") {
-    //     return std::make_unique<Llama3Formatter>();
-    // }
     
     spdlog::warn("No specific prompt formatter found for architecture '{}'. Falling back to Gemma3Formatter.", model_architecture);
-    // Varsayılan olarak Gemma3'ü döndür, ancak bir uyarı ver.
     return std::make_unique<Gemma3Formatter>();
 }
