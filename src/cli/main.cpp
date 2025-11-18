@@ -1,3 +1,4 @@
+// src/cli/main.cpp - YENİ İÇERİK
 #include <iostream>
 #include <string>
 #include <vector>
@@ -6,11 +7,12 @@
 #include "spdlog/spdlog.h"
 #include "grpc_client.h"
 #include "health_check.h"
-#include "benchmark.h" // Benchmark başlık dosyasını tekrar dahil ediyoruz.
+#include "benchmark.h"
+#include "nlohmann/json.hpp" // JSON parsing için eklendi
 
 void print_usage() {
     std::cout << R"(
-🧠 Sentiric LLM CLI v2.0 (Anayasa Uyumlu)
+🧠 Sentiric LLM CLI v2.1
 
 Kullanım:
   llm_cli [seçenekler] <komut> [argümanlar]
@@ -24,6 +26,7 @@ Komutlar:
 Seçenekler:
   --system-prompt <text>   - (Opsiyonel) AI'nın kişiliğini belirleyen sistem talimatı.
   --rag-context <text>     - (Opsiyonel) RAG için kullanılacak bilgi metni.
+  --history '<json_string>'- (Opsiyonel) Konuşma geçmişi. Örn: '[{"role":"user","content":"Merhaba"},{"role":"assistant","content":"Merhaba, nasıl yardımcı olabilirim?"}]'
   --grpc-endpoint <addr>   - GRPC endpoint (varsayılan: llm-llama-service:16071).
   --http-endpoint <addr>   - HTTP endpoint (varsayılan: llm-llama-service:16070).
   --timeout <seconds>      - İstek zaman aşımı süresi (saniye, varsayılan: 120).
@@ -34,10 +37,8 @@ Seçenekler:
   # Basit Soru
   llm_cli generate "Türkiye'nin başkenti neresidir?"
 
-  # RAG Testi (tırnak işaretlerine dikkat)
-  llm_cli generate "Son sürüm nedir?" \
-    --system-prompt "Sana sağlanan 'İlgili Bilgiler'i kullanarak cevap ver. Context: {context}, Soru: {query}" \
-    --rag-context "Sentiric platformunun son sürümü v3.5'tir."
+  # Konuşma Geçmişi ile Takip Sorusu
+  llm_cli generate "Peki yüzölçümü ne kadar?" --history '[{"role":"user","content":"Türkiyenin başkenti neresidir?"},{"role":"assistant","content":"Türkiyenin başkenti Ankaradır."}]'
 )";
 }
 
@@ -72,7 +73,11 @@ int main(int argc, char** argv) {
 
     try {
         if (command == "generate") {
-            if (command_args.empty()) { /* ... hata ... */ }
+            if (command_args.empty()) { 
+                spdlog::error("generate komutu için bir kullanıcı girdisi gereklidir.");
+                print_usage();
+                return 1;
+            }
             std::string user_prompt;
             for (const auto& arg : command_args) { user_prompt += arg + " "; }
             user_prompt.pop_back();
@@ -82,11 +87,28 @@ int main(int argc, char** argv) {
 
             if (options.count("system-prompt")) {
                 request.set_system_prompt(options["system-prompt"]);
-            } else {
-                request.set_system_prompt("You are a helpful assistant.");
             }
             if (options.count("rag-context")) {
                 request.set_rag_context(options["rag-context"]);
+            }
+
+            // --- YENİ: Konuşma geçmişini parse et ---
+            if (options.count("history")) {
+                try {
+                    auto history_json = nlohmann::json::parse(options["history"]);
+                    if (history_json.is_array()) {
+                        for (const auto& item : history_json) {
+                            if (item.is_object() && item.contains("role") && item.contains("content")) {
+                                auto* turn = request.add_history();
+                                turn->set_role(item["role"]);
+                                turn->set_content(item["content"]);
+                            }
+                        }
+                    }
+                } catch (const nlohmann::json::parse_error& e) {
+                    spdlog::error("--history argümanı geçerli bir JSON değil: {}", e.what());
+                    return 1;
+                }
             }
             
             sentiric_llm_cli::GRPCClient client(grpc_endpoint);
