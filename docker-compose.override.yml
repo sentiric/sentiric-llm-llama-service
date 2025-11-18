@@ -8,6 +8,9 @@ services:
     image: sentiric/llm-llama-service:local-cpu 
     networks:
       - sentiric-net
+    # --- BU SATIRI EKLEYİN/GÜNCELLEYİN ---
+    environment:
+      - LLM_LLAMA_SERVICE_LOG_LEVEL=debug
 
   llm-cli:
     build:
