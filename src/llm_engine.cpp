@@ -2,8 +2,7 @@
 #include "llm_engine.h"
 #include "spdlog/spdlog.h"
 #include "model_manager.h"
-#include "common.h"
-#include "core/prompt_formatter.h"
+#include "common.h" // Tekrar eklendi
 #include <stdexcept>
 #include <time.h>
 #include <algorithm>
@@ -31,6 +30,16 @@ LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gaug
     model_ = llama_model_load_from_file(settings_.model_path.c_str(), model_params);
     if (!model_) throw std::runtime_error("Model loading failed from path: " + settings_.model_path);
     
+    try {
+        char arch_buffer[64];
+        llama_model_meta_val_str(model_, "general.architecture", arch_buffer, sizeof(arch_buffer));
+        std::string model_architecture = arch_buffer;
+        formatter_ = create_formatter_for_model(model_architecture);
+    } catch (const std::exception& e) {
+        spdlog::error("Could not determine model architecture for formatter selection: {}. Falling back to default.", e.what());
+        formatter_ = create_formatter_for_model("unknown");
+    }
+
     try {
         context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_, active_contexts_gauge_);
         model_loaded_ = true;
@@ -62,7 +71,7 @@ void LLMEngine::generate_stream(
     ContextGuard guard = context_pool_->acquire();
     llama_context* ctx = guard.get();
     
-    const std::string formatted_prompt = PromptFormatter::format(request);
+    const std::string formatted_prompt = formatter_->format(request);
     const auto* vocab = llama_model_get_vocab(model_);
     std::vector<llama_token> prompt_tokens;
     prompt_tokens.resize(formatted_prompt.length() + 16);
@@ -105,7 +114,7 @@ void LLMEngine::generate_stream(
     llama_sampler_chain_add(sampler_chain, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(sampler_chain, llama_sampler_init_dist(static_cast<uint32_t>(time(NULL))));
 
-    auto stop_sequences = PromptFormatter::get_stop_sequences();
+    auto stop_sequences = formatter_->get_stop_sequences();
     std::string stop_buffer;
     int n_decoded = 0;
     llama_pos n_past = batch.n_tokens;
@@ -130,7 +139,6 @@ void LLMEngine::generate_stream(
         if (n_piece > 0) {
             std::string token_str(piece_buf, n_piece);
             
-            // BASİT TOKEN İŞLEME - Contract bytes formatına uygun
             stop_buffer += token_str;
             std::string flush_str;
             bool stopping = false;
@@ -149,7 +157,6 @@ void LLMEngine::generate_stream(
                 break;
             }
             
-            // Buffer dolduğunda flush et
             size_t max_stop_len = 32;
             if (stop_buffer.length() > max_stop_len) {
                 flush_str = stop_buffer.substr(0, stop_buffer.length() - max_stop_len);
@@ -170,7 +177,6 @@ void LLMEngine::generate_stream(
         n_decoded++;
     }
 
-    // Kalan buffer'ı gönder
     if (!stop_buffer.empty() && n_decoded > 0) {
         on_token_callback(stop_buffer);
     }

@@ -1,5 +1,5 @@
 # --- Derleme Aşaması ---
-FROM ubuntu:22.04 AS builder
+FROM ubuntu:24.04 AS builder
 
 # 1. Temel bağımlılıkları kur
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -38,9 +38,8 @@ RUN cmake -B build \
 RUN cmake --build build --target all -j $(nproc)
 
 # --- Çalışma Aşaması ---
-FROM ubuntu:22.04 AS runtime
+FROM ubuntu:24.04 AS runtime
 
-# curl komutu için curl paketini ve diğer temel bağımlılıkları kuruyoruz.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libgomp1 curl && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -48,12 +47,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/build/llm_service /usr/local/bin/
 COPY --from=builder /app/build/llm_cli /usr/local/bin/
 
-# vcpkg'nin kurduğu TÜM paylaşılan kütüphaneleri kopyala.
 COPY --from=builder /app/vcpkg_installed/x64-linux/lib/*.so* /usr/local/lib/
-# llama.cpp'nin kendi kütüphanelerini kopyala
 COPY --from=builder /app/build/bin/*.so /usr/local/lib/
-
-# Dinamik linker'ın yeni kütüphaneleri bulmasını sağla
 RUN ldconfig
 
 COPY web /app/web
