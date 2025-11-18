@@ -1,5 +1,5 @@
 # --- Derleme Aşaması ---
-FROM nvidia/cuda:13.0.2-cudnn-devel-ubuntu22.04 AS builder
+FROM nvcr.io/nvidia/cuda:13.0.2-cudnn-devel-ubuntu22.04 AS builder
 
 # 1. Temel bağımlılıkları kur
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -42,7 +42,7 @@ RUN cmake -B build \
 RUN cmake --build build --target all -j $(nproc)
 
 # --- Çalışma Aşaması ---
-FROM nvidia/cuda:13.0.2-cudnn-runtime-ubuntu22.04 AS runtime
+FROM nvcr.io/nvidia/cuda:13.0.2-cudnn-runtime-ubuntu22.04 AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libgomp1 curl && \

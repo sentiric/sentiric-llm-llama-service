@@ -33,7 +33,6 @@ include(FetchContent)
 FetchContent_Declare(
   sentiric_contracts
   GIT_REPOSITORY https://github.com/sentiric/sentiric-contracts.git
-  # ✅ UTF-8 sorunu çözüldü
   GIT_TAG v1.11.1
 )
 FetchContent_MakeAvailable(sentiric_contracts)
@@ -93,9 +92,6 @@ target_include_directories(llm_service PRIVATE
     ${LLAMA_COMMON_INCLUDE_DIR}
 )
 
-# --- DÜZELTİLMİŞ SATIR BURASI ---
-# Kütüphaneyi tek bir hedef olarak değil, vcpkg'nin belirttiği gibi
-# birden fazla alt hedef olarak bağlıyoruz.
 target_link_libraries(llm_service PRIVATE
     proto_lib
     common
