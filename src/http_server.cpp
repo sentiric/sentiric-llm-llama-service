@@ -58,9 +58,9 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
     : engine_(std::move(engine)), host_(host), port_(port) {
       
     const char* mount_point = "/";
-    const char* base_dir = "./web";
+    const char* base_dir = "./studio"; // DİZİNİ DEĞİŞTİR
     if (!svr_.set_mount_point(mount_point, base_dir)) {
-        spdlog::error("UI directory '{}' not found. The UI will not be available.", base_dir);
+        spdlog::error("UI directory '{}' not found. The Studio UI will not be available.", base_dir);
     }
 
     svr_.Get("/health", [this](const httplib::Request &, httplib::Response &res) {
@@ -73,7 +73,7 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         res.status = model_ready ? 200 : 503;
     });
 
-    svr_.Get("/web/contexts", [](const httplib::Request &, httplib::Response &res) {
+    svr_.Get("/contexts", [](const httplib::Request &, httplib::Response &res) {
         json context_list = json::array();
         try {
             if (fs::exists("examples") && fs::is_directory("examples")) {
@@ -87,7 +87,7 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         res.set_content(context_list.dump(), "application/json");
     });
 
-    svr_.Get(R"(/web/context/(.+))", [](const httplib::Request &req, httplib::Response &res) {
+    svr_.Get(R"(/context/(.+))", [](const httplib::Request &req, httplib::Response &res) {
         std::string filename = req.matches[1];
         fs::path file_path = fs::path("examples") / filename;
         if (file_path.string().find("..") != std::string::npos) { 
@@ -105,10 +105,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             res.status = 404; 
             res.set_content("Context file not found: " + filename, "text/plain"); 
         }
-    });
-
-    svr_.Post("/web/generate", [this](const httplib::Request &req, httplib::Response &res) {
-        // This endpoint can be refactored to use the same logic as the OpenAI endpoint for consistency
     });
 
     // OpenAI-COMPATIBLE ENDPOINT

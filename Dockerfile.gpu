@@ -55,7 +55,7 @@ COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 RUN ldconfig
 
 # Web UI ve örnekleri kopyala
-COPY web /app/web
+COPY studio /app/studio
 COPY examples /app/examples
 WORKDIR /app
     

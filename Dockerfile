@@ -51,7 +51,7 @@ COPY --from=builder /app/vcpkg_installed/x64-linux/lib/*.so* /usr/local/lib/
 COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 RUN ldconfig
 
-COPY web /app/web
+COPY studio /app/studio
 COPY examples /app/examples
 WORKDIR /app
     
