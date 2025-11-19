@@ -14,6 +14,8 @@
 
 5.  **Otomasyon ve Tekrarlanabilirlik (Automation & Reproducibility):** Build, test ve dağıtım süreçleri tamamen otomatik ve tekrarlanabilir olmalıdır. Manuel müdahale gerektiren her adım, potansiyel bir hata kaynağıdır. `Dockerfile` ve `CMakeLists.txt` bu prensibin temelidir.
 
+6.  **Sorumluluk Odaklı Kapsam (Responsibility-Focused Scope):** Bu servis, monolitik bir uygulama değildir; Sentiric ekosisteminin yüksek performanslı, state'siz bir LLM inference motorudur. Proje kökündeki studio/ dizini, nihai bir kullanıcı arayüzü değil; servisin API yeteneklerini test etmek ve sergilemek için kullanılan bir teknik vitrin (technical showcase) ve geliştirici aracıdır. Kapsamlı son kullanıcı arayüzlerinin geliştirilmesi, bu servisin API'lerini tüketecek olan harici frontend projelerinin sorumluluğundadır.
+
 ## 2. Geliştirme İş Akışı: "ADRU Döngüsü"
 
 Her geliştirme görevi veya hata düzeltmesi, aşağıdaki dört adımlı döngüyü takip etmelidir:
