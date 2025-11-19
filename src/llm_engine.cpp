@@ -13,7 +13,7 @@
 // RAII sarmalayıcıları, kaynakların otomatik olarak serbest bırakılmasını garanti eder.
 struct LlamaBatchGuard {
     llama_batch batch;
-    LlamaBatchGuard(int32_t n_tokens, int32_t embd, int32_t n_seq_max) 
+    LlamaBatchGuard(int32_t n_tokens, int32_t embd, int32_t n_seq_max)
         : batch(llama_batch_init(n_tokens, embd, n_seq_max)) {}
     ~LlamaBatchGuard() {
         if (batch.token) {
@@ -24,7 +24,7 @@ struct LlamaBatchGuard {
 
 struct LlamaSamplerGuard {
     llama_sampler* sampler;
-    LlamaSamplerGuard(llama_sampler_chain_params params) 
+    LlamaSamplerGuard(llama_sampler_chain_params params)
         : sampler(llama_sampler_chain_init(params)) {}
     ~LlamaSamplerGuard() {
         if (sampler) {
@@ -34,17 +34,17 @@ struct LlamaSamplerGuard {
 };
 
 
-LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gauge) 
+LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gauge)
     : settings_(settings), active_contexts_gauge_(active_contexts_gauge) {
-    
+
     spdlog::info("Initializing LLM Engine...");
     try {
         settings_.model_path = ModelManager::ensure_model_is_ready(settings_);
         spdlog::info("Model successfully located at: {}", settings_.model_path);
-    } catch (const std::exception& e) { 
-        throw std::runtime_error(std::string("Model preparation failed: ") + e.what()); 
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("Model preparation failed: ") + e.what());
     }
-    
+
     llama_backend_init();
     llama_numa_init(settings_.numa_strategy);
 
@@ -54,7 +54,7 @@ LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gaug
 
     model_ = llama_model_load_from_file(settings_.model_path.c_str(), model_params);
     if (!model_) throw std::runtime_error("Model loading failed from path: " + settings_.model_path);
-    
+
     try {
         char arch_buffer[64];
         llama_model_meta_val_str(model_, "general.architecture", arch_buffer, sizeof(arch_buffer));
@@ -68,9 +68,9 @@ LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gaug
     try {
         context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_, active_contexts_gauge_);
         model_loaded_ = true;
-    } catch (const std::exception& e) { 
-        llama_model_free(model_); 
-        throw std::runtime_error(std::string("Context pool initialization failed: ") + e.what()); 
+    } catch (const std::exception& e) {
+        llama_model_free(model_);
+        throw std::runtime_error(std::string("Context pool initialization failed: ") + e.what());
     }
 
     if (settings.enable_dynamic_batching && settings.max_batch_size > 1) {
@@ -109,7 +109,7 @@ void LLMEngine::process_single_request(std::shared_ptr<BatchedRequest> batched_r
 
 void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batch) {
     if (batch.empty()) return;
-    
+
     spdlog::debug("[Batch] Processing batch of size: {}", batch.size());
     ContextGuard guard = context_pool_->acquire();
     llama_context* ctx = guard.get();
@@ -117,7 +117,7 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
     for (auto& req_ptr : batch) {
         try {
             llama_memory_seq_rm(llama_get_memory(ctx), -1, -1, -1);
-            
+
             auto& request = req_ptr->request;
             const std::string formatted_prompt = formatter_->format(request);
             const auto* vocab = llama_model_get_vocab(model_);
@@ -136,15 +136,15 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
             }
 
             LlamaBatchGuard prompt_batch(n_tokens, 0, 1);
-            for(int i = 0; i < n_tokens; ++i) { 
-                common_batch_add(prompt_batch.batch, prompt_tokens[i], (llama_pos)i, {0}, false); 
+            for(int i = 0; i < n_tokens; ++i) {
+                common_batch_add(prompt_batch.batch, prompt_tokens[i], (llama_pos)i, {0}, false);
             }
             prompt_batch.batch.logits[prompt_batch.batch.n_tokens - 1] = true;
 
-            if (llama_decode(ctx, prompt_batch.batch) != 0) { 
-                throw std::runtime_error("llama_decode failed on prompt"); 
+            if (llama_decode(ctx, prompt_batch.batch) != 0) {
+                throw std::runtime_error("llama_decode failed on prompt");
             }
-            
+
             const auto& params = request.params();
             bool use_request_params = request.has_params();
             float temperature = use_request_params && params.has_temperature() ? params.temperature() : settings_.default_temperature;
@@ -152,34 +152,43 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
             float top_p = use_request_params && params.has_top_p() ? params.top_p() : settings_.default_top_p;
             float repeat_penalty = use_request_params && params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty;
 
+            // ===== START OF FINAL SAMPLER CHAIN FIX =====
             LlamaSamplerGuard sampler_guard(llama_sampler_chain_default_params());
             llama_sampler* sampler_chain = sampler_guard.sampler;
-            
+
+            // Örnekleme Zinciri: Sıralama önemlidir.
+            // 1. Cezalar (Logit'leri değiştirir)
             llama_sampler_chain_add(sampler_chain, llama_sampler_init_penalties(n_ctx, repeat_penalty, 0.0f, 0.0f));
+            // 2. Filtreler (Aday havuzunu daraltır)
             llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_k(top_k));
-            // ... (diğer sampler'lar)
+            // 3. Temel Örnekleyiciler (Filtrelerden sonra her zaman bir aday bırakır)
+            llama_sampler_chain_add(sampler_chain, llama_sampler_init_tail_free(1.0f, 1));
+            llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_p(top_p, 1));
+            // 4. Değiştiriciler (Nihai seçimden önce olasılıkları ayarlar)
+            llama_sampler_chain_add(sampler_chain, llama_sampler_init_temp(temperature));
+            // ===== END OF FINAL SAMPLER CHAIN FIX =====
 
             int n_decoded = 0;
             llama_pos n_past = n_tokens;
             int32_t max_tokens = use_request_params && params.has_max_new_tokens() ? params.max_new_tokens() : settings_.default_max_tokens;
-            
+
             while (n_past < (llama_pos)n_ctx && n_decoded < max_tokens) {
-                if (req_ptr->should_stop_callback && req_ptr->should_stop_callback()) { 
+                if (req_ptr->should_stop_callback && req_ptr->should_stop_callback()) {
                     req_ptr->finish_reason = "cancelled";
-                    break; 
+                    break;
                 }
 
                 llama_token new_token_id = llama_sampler_sample(sampler_chain, ctx, -1);
                 llama_sampler_accept(sampler_chain, new_token_id);
-                
-                if (llama_vocab_is_eog(vocab, new_token_id)) { 
+
+                if (llama_vocab_is_eog(vocab, new_token_id)) {
                     req_ptr->finish_reason = "stop";
-                    break; 
+                    break;
                 }
-                
+
                 char piece_buf[64] = {0};
                 int n_piece = llama_token_to_piece(vocab, new_token_id, piece_buf, sizeof(piece_buf), 0, true);
-                
+
                 if (n_piece > 0) {
                     std::string token_str(piece_buf, n_piece);
                     if (req_ptr->on_token_callback && !req_ptr->on_token_callback(token_str)) {
@@ -187,12 +196,12 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
                          break;
                     }
                 }
-                
+
                 LlamaBatchGuard token_batch(1, 0, 1);
                 common_batch_add(token_batch.batch, new_token_id, n_past, {0}, true);
 
-                if (llama_decode(ctx, token_batch.batch) != 0) { 
-                    throw std::runtime_error("Failed to decode next token"); 
+                if (llama_decode(ctx, token_batch.batch) != 0) {
+                    throw std::runtime_error("Failed to decode next token");
                 }
                 n_past++;
                 n_decoded++;
@@ -201,14 +210,12 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
             if (req_ptr->finish_reason.empty() || req_ptr->finish_reason == "stop") {
                  req_ptr->finish_reason = (n_decoded == max_tokens) ? "length" : "stop";
             }
-            
+
             req_ptr->completion_tokens = n_decoded;
 
         } catch(...) {
             req_ptr->finish_reason = "error";
-            // RAII sayesinde burada manuel temizliğe gerek yok, exception fırlatıldığında
-            // guard nesnelerinin destructor'ları otomatik olarak çağrılacak.
-            throw; 
+            throw;
         }
     }
     spdlog::debug("[Batch] Finished processing batch.");
