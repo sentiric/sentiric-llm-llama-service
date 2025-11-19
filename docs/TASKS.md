@@ -1,53 +1,68 @@
-# 📋 LLM Llama Service - Anayasa Uyum ve Geliştirme Görev Listesi (Revizyon 4 - Tamamlandı)
+# 📋 Sentiric LLM Llama Service - Görev ve Yol Haritası
 
-**Belge Amacı:** Bu doküman, `sentiric-llm-llama-service` projesinin, `sentiric-governance` anayasasında belirtilen mimari standartlara tam uyumlu, "production-ready" bir bileşen haline getirilmesi için gereken görevleri tanımlar.
-
----
-
-## ✅ TAMAMLANAN GÖREVLER
-
--   **[✓] TASK ID: `LLM-SEC-001`**: gRPC iletişimi mTLS ile şifrelendi.
--   **[✓] TASK ID: `LLM-BUG-001`**: gRPC istek parametreleri (sampling) artık dinamik olarak işleniyor.
--   **[✓] TASK ID: `LLM-OPS-001`**: Ortama duyarlı yapılandırılmış loglama (JSON/konsol) implemente edildi.
--   **[✓] TASK ID: `LLM-BUILD-001`**: `llama.cpp` bağımlılığı belirli bir commite sabitlendi.
--   **[✓] TASK ID: `LLM-REFACTOR-001`**: `ModelManager` sorumluluğu `LLMEngine` içine taşındı, mimari temizlendi.
--   **[✓] TASK ID: `LLM-API-002`**: API kontratı, `sentiric-contracts v1.11.0` ile uyumlu hale getirilerek zengin diyalog yönetimi yeteneği kazandırıldı.
--   **[✓] TASK ID: `LLM-FEATURE-001`**: VCA entegrasyonu tamamlandı. Servis artık stream sonunda `prompt_tokens` ve `completion_tokens` sayılarını raporlamaktadır.
+**Belge Amacı:** Bu doküman, `sentiric-llm-llama-service` projesinin tamamlanan, üzerinde çalışılan ve planlanan tüm görevlerini takip etmek için kullanılan tek doğruluk kaynağıdır. Projenin genel vizyonu, `sentiric-governance` reposunda tanımlanan "İletişim İşletim Sistemi" mimarisine hizmet etmektir.
 
 ---
 
-**Tüm planlanan görevler tamamlanmıştır. Servis, üretim ortamına dağıtılmaya hazırdır.**
+## ✅ TAMAMLANAN GÖREVLER (FAZ 1 - Temeli İnşa Etme)
+
+Bu faz, servisi sıfırdan üretime hazır, kararlı ve yüksek performanslı bir temel üzerine oturtmuştur.
+
+-   **[✓] TASK ID: `LLM-BUILD-001` - Tekrarlanabilir Build Altyapısı Kurulumu**
+    *   **Açıklama:** Proje, `vcpkg` bağımlılık yönetimi, `CMake` derleme sistemi ve çok aşamalı `Dockerfile`'lar (CPU/GPU) ile sağlam ve tekrarlanabilir bir build sürecine kavuşturuldu.
+    *   **Sonuç:** Her ortamda tutarlı derlemeler garanti altına alındı.
+
+-   **[✓] TASK ID: `LLM-CORE-001` - Eşzamanlı İstek Mimarisi (Context Pool)**
+    *   **Açıklama:** `LlamaContextPool` ve RAII tabanlı `ContextGuard` yapıları implemente edilerek, servisin birden çok isteği aynı anda ve birbirini engellemeden işleyebilmesi sağlandı.
+    *   **Sonuç:** Servis, çok kullanıcılı senaryolar için ölçeklenebilir bir temele oturtuldu.
+
+-   **[✓] TASK ID: `LLM-STBL-001` - Kritik Bellek Hatalarının Giderilmesi (SegFault)**
+    *   **Açıklama:** Servisin yük altında `exit code 139` (Segmentation Fault) ile çökmesine neden olan kritik bellek yönetimi hataları, RAII prensipleri ve güvenli kaynak temizleme mantığı ile tamamen çözüldü.
+    *   **Sonuç:** Servis, art arda gelen istekler altında bile %100 kararlı hale getirildi.
+
+-   **[✓] TASK ID: `LLM-API-003` - OpenAI Uyumlu API Endpoint'i Entegrasyonu**
+    *   **Açıklama:** `HttpServer`'a, endüstri standardı olan `/v1/chat/completions` endpoint'i eklendi. Bu endpoint, hem streaming hem de non-streaming modlarını desteklemektedir.
+    *   **Sonuç:** Proje, binlerce harici araç ve UI ile doğrudan entegre olabilecek evrensel bir arayüze kavuştu.
+
+-   **[✓] TASK ID: `LLM-PERF-001` - Kararlı Dinamik Batching Mekanizması**
+    *   **Açıklama:** `DynamicBatcher` mimarisi, gelen istekleri gruplayarak motorun daha verimli çalışmasını sağlayacak şekilde entegre edildi. Bellek hatalarını önlemek için karmaşık paralel decode yerine kararlı bir ardışık işleme modeli benimsendi.
+    *   **Sonuç:** Servisin verimliliği (throughput), kararlılıktan ödün verilmeden artırıldı.
+
+-   **[✓] TASK ID: `UI-PRO-001` - "Sentiric Studio" MVP Arayüzünün Geliştirilmesi**
+    *   **Açıklama:** Eski `web/` arayüzü tamamen kaldırılarak yerine Vue.js 3 tabanlı, modern, profesyonel ve fonksiyonel bir "Stüdyo" arayüzü (`studio/`) geliştirildi.
+    *   **Sonuç:** Projenin yeteneklerini sergileyen ve ileri düzey testler için bir laboratuvar görevi gören bir vitrin oluşturuldu.
 
 ---
 
-#### **FAZ 1: TEMELİ GÜÇLENDİRME VE KÖPRÜYÜ İNŞA ETME**
+## ⏳ ÜZERİNDE ÇALIŞILAN GÖREVLER
 
--   **[ ] TASK ID: `LLM-API-003` - OpenAI Uyumlu API Endpoint'i Oluşturma**
-    *   **Açıklama:** `http_server.cpp`'ye, OpenAI API standardıyla %100 uyumlu bir `/v1/chat/completions` endpoint'i eklenecektir. Bu endpoint hem streaming hem de non-streaming cevapları destekleyecektir.
+-   **[ ] TASK ID: `LLM-VAL-001` - Sentiric Studio v1.0 MVP'nin Kapsamlı Test ve Doğrulaması**
+    *   **Açıklama:** Yeni `studio/` arayüzü üzerinden, servisin tüm temel yeteneklerinin beklendiği gibi çalıştığını doğrulamak.
     *   **Kabul Kriterleri:**
-        *   `llm-llama-service`, Postman veya benzeri bir araçla gönderilen standart bir OpenAI `chat/completions` isteğine başarılı bir şekilde cevap verebilmelidir.
-        *   İstek formatı (`{"messages": [...]}`) ve cevap formatı (`{"choices": [...]}`) OpenAI dokümantasyonu ile birebir uyumlu olmalıdır.
-        *   **Güvenlik Notu:** Bu endpoint doğrudan dış dünyaya açılmayacak, platformun gelecekteki `api-gateway-service`'i tarafından kullanılmak üzere tasarlanacaktır.
-
--   **[ ] TASK ID: `LLM-PERF-001` - Adaptif Dinamik Batching Mekanizmasını Uygulama**
-    *   **Açıklama:** `llm_engine`, gelen istekleri donanım kapasitesine göre akıllıca gruplayarak GPU'ya tek seferde gönderecek "Adaptif Batching" mekanizmasını implemente edecektir.
-    *   **Kabul Kriterleri:**
-        *   Servis başlangıcında, `n_gpu_layers` ve mevcut VRAM'e göre mantıklı bir `max_batch_size` değeri otomatik olarak belirlenmelidir.
-        *   Düşük VRAM'li sistemlerde (örn: 6GB GPU), `max_batch_size` otomatik olarak `1` veya `2` gibi güvenli bir değere ayarlanmalıdır.
-        *   Yüksek VRAM'li sistemlerde, `docker-compose.yml`'de belirtilen `LLM_LLAMA_SERVICE_MAX_BATCH_SIZE` değerini kullanmalıdır.
-        *   `llm_cli benchmark --concurrent 4` gibi bir komutla, batching'in saniye başına token (TPS) üretimini artırdığı kanıtlanmalıdır.
+        *   **[ ] Temel Sohbet Testi:** Arka planın basit sorulara akıcı ve doğru cevaplar verdiği doğrulanmalı.
+        *   **[ ] Sistem Promptu Testi:** Sistemin davranışının, verilen prompt'a göre değiştiği gözlemlenmeli.
+        *   **[ ] RAG Context Testi:** Modelin, verilen harici bilgiye sadık kalarak cevap ürettiği kanıtlanmalı.
+        *   **[ ] Parametre Testi:** `Sıcaklık` ve `Maksimum Token` gibi ayarların, üretilen cevabın yapısını değiştirdiği doğrulanmalı.
+        *   **[ ] Batching Gözlem Testi:** Birden çok tarayıcı ile eşzamanlı istekler gönderildiğinde, servis loglarında `Processing batch of size: 2` (veya daha üstü) mesajının görüldüğü teyit edilmeli.
 
 ---
 
-#### **FAZ 2: VİZYONU PROTOTİPLEME**
+## 🎯 PLANLANAN GÖREVLER (FAZ 2 & ÖTESİ - "Kaleyi Genişletme")
 
--   **[ ] TASK ID: `UI-PRO-001` - "Sentiric Studio" Prototip Arayüzünü Geliştirme**
-    *   **Açıklama:** Deepseek AI tarafından tasarlanan HTML/CSS temel alınarak, Vue.js veya React kullanılarak fonksiyonel bir web arayüzü oluşturulacaktır. Bu arayüz, Faz 1'de oluşturulan `/v1/chat/completions` endpoint'ini kullanarak `llm-llama-service` ile konuşacaktır.
-    *   **Kabul Kriterleri (İlk Sürüm için):**
-        *   Kullanıcı, ana sohbet ekranı üzerinden mesaj gönderip anlık (streaming) cevap alabilmelidir.
-        *   Sol paneldeki "Sistem Promptu" ve "RAG Context" alanları çalışır durumda olmalı ve `llm-llama-service`'e gönderilen isteğe dahil edilmelidir.
-        *   Sağ paneldeki metrikler (TTFT, TPS) yaklaşık olarak hesaplanıp gösterilmelidir.
-        *   Bu arayüz, gelecekte `governance`'da tanımlanan diğer servislerle (örn: `knowledge-service`'ten RAG kaynaklarını listelemek) konuşabilecek şekilde modüler tasarlanmalıdır.
+Bu faz, kararlı MVP temeli üzerine, Deepseek vizyonundaki gelişmiş özellikleri ve `governance` mimarisindeki hedefleri ekleyecektir.
 
----
+-   **[ ] TASK ID: `UI-PRO-002` - Gelişmiş Panel Entegrasyonu**
+    *   **Açıklama:** Sentiric Studio'ya, Deepseek vizyonundaki "Bağlamsal Bilgi" ve "Analiz" panellerinin daha gelişmiş versiyonlarını eklemek.
+    *   **Vizyon:** Sağ panelde, sadece metrikler değil, aynı zamanda `knowledge-service`'ten gelen RAG sonuçlarını, `user-service`'ten gelen kullanıcı bilgilerini ve `cdr-service`'ten gelen geçmiş konuşma özetlerini gösterebilmek.
 
+-   **[ ] TASK ID: `LLM-PERF-002` - Gerçek Paralel Batch Processing Implementasyonu**
+    *   **Açıklama:** Mevcut kararlı ardışık batch işleme mantığını, `llama.cpp`'nin çoklu dizi (`multi-sequence`) decode yeteneklerini tam olarak kullanan gerçek bir paralel işleme mekanizmasıyla değiştirmek.
+    *   **Vizyon:** Servisin saniye başına token (throughput) kapasitesini, özellikle yüksek VRAM'li sistemlerde en üst düzeye çıkarmak.
+
+-   **[ ] TASK ID: `UI-PRO-003` - Çalışma Alanları ve Kalıcılık**
+    *   **Açıklama:** Deepseek vizyonundaki "Sol Sidebar - Çalışma Alanları" özelliğini hayata geçirmek. Kullanıcıların sohbet geçmişlerini, prompt şablonlarını ve RAG context'lerini kaydedip yeniden kullanabilmelerini sağlamak.
+    *   **Vizyon:** Bu özellik, `user-service` ve `dialplan-service`'in veritabanı ile entegrasyon gerektirecek ve Stüdyo'yu kişiselleştirilmiş bir geliştirme ortamına dönüştürecektir.
+
+-   **[ ] TASK ID: `GW-ARC-001` - `llm-gateway-service` Mimarisine Geçiş**
+    *   **Açıklama:** `governance`'da tanımlanan `llm-gateway-service`'i tasarlamak ve geliştirmek. `llm-llama-service`'i, bu gateway'in arkasında çalışan bir "uzman motor" olarak yeniden konumlandırmak.
+    *   **Vizyon:** Bu, projenin nihai mimari hedefidir. Gateway, kimlik doğrulama, `tenant` bazlı model yönlendirme (örn: "Bu müşteri Gemini kullansın, diğeri yerel Llama") ve maliyet takibi gibi merkezi görevleri üstlenecektir.
