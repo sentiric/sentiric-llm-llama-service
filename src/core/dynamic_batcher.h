@@ -14,10 +14,49 @@
 #include <future>
 #include <memory>
 
+// Thread-Safe Kuyruk: Motor ve HTTP sunucusu arasında köprü
+template<typename T>
+class ThreadSafeQueue {
+public:
+    void push(T value) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        queue_.push(std::move(value));
+        cond_.notify_one();
+    }
+
+    // Belirli bir süre (timeout) veri bekler
+    bool wait_and_pop(T& value, int timeout_ms = 100) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (!cond_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this]{ return !queue_.empty(); })) {
+            return false;
+        }
+        value = std::move(queue_.front());
+        queue_.pop();
+        return true;
+    }
+
+    bool empty() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return queue_.empty();
+    }
+
+private:
+    std::queue<T> queue_;
+    std::mutex mutex_;
+    std::condition_variable cond_;
+};
+
 struct BatchedRequest {
     sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest request;
+    
+    // gRPC için callback (Eski yöntem, hala destekleniyor)
     std::function<bool(const std::string&)> on_token_callback;
     std::function<bool()> should_stop_callback;
+    
+    // HTTP için Kuyruk (YENİ YÖNTEM - Çökme Önleyici)
+    ThreadSafeQueue<std::string> token_queue;
+    std::atomic<bool> is_finished{false}; // İşlem bitti mi?
+    
     std::promise<void> completion_promise;
     int32_t prompt_tokens = 0;
     int32_t completion_tokens = 0;
@@ -40,7 +79,6 @@ public:
     }
     
     std::future<void> add_request(std::shared_ptr<BatchedRequest> request) {
-        // get_future() burada sadece BİR KEZ çağrılır ve çağırana döndürülür.
         auto future = request->completion_promise.get_future();
         {
             std::lock_guard<std::mutex> lock(queue_mutex_);
@@ -64,17 +102,12 @@ private:
     void processing_loop() {
         while (running_) {
             std::vector<std::shared_ptr<BatchedRequest>> batch;
-            
             {
                 std::unique_lock<std::mutex> lock(queue_mutex_);
                 queue_cv_.wait_for(lock, max_wait_time_, [this]() {
                     return !request_queue_.empty() || !running_;
                 });
-                
-                if (!running_ && request_queue_.empty()) {
-                    return;
-                }
-                
+                if (!running_ && request_queue_.empty()) return;
                 while (!request_queue_.empty() && batch.size() < max_batch_size_) {
                     batch.push_back(std::move(request_queue_.front()));
                     request_queue_.pop();
@@ -83,26 +116,18 @@ private:
             
             if (!batch.empty() && batch_processing_callback) {
                 try {
+                    // İşlemi başlat
                     batch_processing_callback(batch);
+                    
+                    // İşlem bittiğinde tüm isteklere "bitti" işaretini koy
                     for (auto& req : batch) {
-                        // DÜZELTME: get_future() kontrolü kaldırıldı çünkü daha önce çağrıldı.
-                        // Doğrudan set_value() deneniyor.
-                        try {
-                            req->completion_promise.set_value();
-                        } catch (...) { 
-                            // Promise zaten set edilmişse veya bozulmuşsa hatayı yutuyoruz
-                        }
+                        req->is_finished = true;
+                        try { req->completion_promise.set_value(); } catch (...) {}
                     }
                 } catch (...) {
-                    spdlog::error("Batch processing failed with an exception.");
                     for (auto& req : batch) {
-                        try {
-                            // DÜZELTME: get_future() kontrolü kaldırıldı.
-                            // Mevcut hatayı promise'e iletiyoruz.
-                            req->completion_promise.set_exception(std::current_exception());
-                        } catch (...) { 
-                            // ignore if already set 
-                        }
+                        req->is_finished = true;
+                        try { req->completion_promise.set_exception(std::current_exception()); } catch (...) {}
                     }
                 }
             }
@@ -112,7 +137,6 @@ private:
     size_t max_batch_size_;
     std::chrono::milliseconds max_wait_time_;
     std::atomic<bool> running_;
-    
     std::queue<std::shared_ptr<BatchedRequest>> request_queue_;
     std::mutex queue_mutex_;
     std::condition_variable queue_cv_;

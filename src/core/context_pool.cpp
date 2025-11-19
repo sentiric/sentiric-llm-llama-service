@@ -8,10 +8,21 @@
 ContextGuard::ContextGuard(LlamaContextPool* pool, llama_context* ctx, int id, size_t matched_tokens)
     : pool_(pool), ctx_(ctx), id_(id), matched_tokens_(matched_tokens) {}
 
+// Destructor'ı GÜNCELLE
 ContextGuard::~ContextGuard() {
+    // Eğer ctx_ nullptr ise (zaten iade edilmişse) hiçbir şey yapma!
     if (ctx_ && pool_) {
-        // Engine release çağırmazsa boş state ile bırak
         pool_->release(ctx_, id_, {}); 
+    }
+}
+
+// Yeni fonksiyonu EKLE (Dosyanın sonuna doğru)
+void ContextGuard::release_early(const std::vector<llama_token>& final_tokens) {
+    if (ctx_ && pool_) {
+        pool_->release(ctx_, id_, final_tokens);
+        // KRİTİK NOKTA: Pointer'ları sıfırla ki Destructor tekrar release yapmasın!
+        ctx_ = nullptr;
+        pool_ = nullptr;
     }
 }
 

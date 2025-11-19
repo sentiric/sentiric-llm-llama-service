@@ -7,9 +7,6 @@ services:
     image: sentiric/llm-llama-service:local-cpu 
     networks:
       - sentiric-net
-    # --- LOG SEVİYESİNİ 'info' OLARAK GÜNCELLEYİN ---
-    environment:
-      - LLM_LLAMA_SERVICE_LOG_LEVEL=info
 
   llm-cli:
     build:
