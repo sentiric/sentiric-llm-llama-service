@@ -152,21 +152,22 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
             float top_p = use_request_params && params.has_top_p() ? params.top_p() : settings_.default_top_p;
             float repeat_penalty = use_request_params && params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty;
 
-            // ===== START OF FINAL SAMPLER CHAIN FIX =====
+            // ===== START OF FINAL, EVIDENCE-BASED SAMPLER CHAIN FIX =====
             LlamaSamplerGuard sampler_guard(llama_sampler_chain_default_params());
             llama_sampler* sampler_chain = sampler_guard.sampler;
 
-            // Örnekleme Zinciri: Sıralama önemlidir.
+            // Örnekleme Zinciri: llama.h @ 92bb442 ile %100 uyumlu
             // 1. Cezalar (Logit'leri değiştirir)
             llama_sampler_chain_add(sampler_chain, llama_sampler_init_penalties(n_ctx, repeat_penalty, 0.0f, 0.0f));
             // 2. Filtreler (Aday havuzunu daraltır)
             llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_k(top_k));
-            // 3. Temel Örnekleyiciler (Filtrelerden sonra her zaman bir aday bırakır)
-            llama_sampler_chain_add(sampler_chain, llama_sampler_init_tail_free(1.0f, 1));
             llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_p(top_p, 1));
-            // 4. Değiştiriciler (Nihai seçimden önce olasılıkları ayarlar)
+            // 3. Değiştiriciler (Olasılıkları ayarlar)
             llama_sampler_chain_add(sampler_chain, llama_sampler_init_temp(temperature));
-            // ===== END OF FINAL SAMPLER CHAIN FIX =====
+            // 4. Nihai Seçici (Kalan adaylar arasından olasılık dağılımına göre seçim yapar)
+            // BU EKSIKTI VE ÇÖKMEYE NEDEN OLUYORDU.
+            llama_sampler_chain_add(sampler_chain, llama_sampler_init_dist(time(NULL)));
+            // ===== END OF FINAL, EVIDENCE-BASED SAMPLER CHAIN FIX =====
 
             int n_decoded = 0;
             llama_pos n_past = n_tokens;

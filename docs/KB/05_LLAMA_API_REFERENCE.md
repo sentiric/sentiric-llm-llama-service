@@ -51,4 +51,5 @@
 | `llama_sampler_accept()` | Seçilen token'ı zincire "kabul ettirir". Bu, tekrarlama cezası gibi durumları günceller. |
 | `llama_sampler_free()` | Örnekleme zincirini bellekten temizler. |
 
+llama_sampler_init_dist()	(KRİTİK) Olasılık dağılımına göre nihai token seçimini yapan temel örnekleyici. Zincirin sonunda bulunmalıdır.
 ---
