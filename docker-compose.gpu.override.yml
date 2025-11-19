@@ -6,21 +6,24 @@ services:
     image: sentiric/llm-llama-service:local-gpu
     environment:
       
-      # --- GPU AYARLARI ---
-      - LLM_LLAMA_SERVICE_GPU_LAYERS=28
-      - LLM_LLAMA_SERVICE_CONTEXT_SIZE=1024
+      # --- GPU TEMEL AYARLARI ---
+      - LLM_LLAMA_SERVICE_GPU_LAYERS=28      # Modelin tamamını GPU'ya yükle (Gemma-1B için 28 yeterli)
+      - LLM_LLAMA_SERVICE_KV_OFFLOAD=true    # KV Cache'i VRAM'de tut (Hız için kritik)
+      - LLM_LLAMA_SERVICE_USE_MMAP=true
       
-      # BURAYI GÜNCELLE (1 -> 4)
+      # --- PERFORMANS VE HAFIZA ---
+      # 1024 yetersiz kalıyordu, 4096 yapıyoruz. 6GB VRAM bunu rahat kaldırır.
+      - LLM_LLAMA_SERVICE_CONTEXT_SIZE=4096
+      
+      # Eşzamanlılık: Aynı anda kaç istek işlenebilir?
       - LLM_LLAMA_SERVICE_THREADS=4
       - LLM_LLAMA_SERVICE_THREADS_BATCH=4
       
-      - LLM_LLAMA_SERVICE_ENABLE_WARM_UP=true
-      
-      # BATCHING AYARLARI
+      # --- BATCHING & KUYRUK (MİMARİ İÇİN ZORUNLU) ---
+      # Kodda yaptığımız Queue sistemi Batcher üzerinden çalışır.
       - LLM_LLAMA_SERVICE_ENABLE_BATCHING=true
-      - LLM_LLAMA_SERVICE_MAX_BATCH_SIZE=4
+      - LLM_LLAMA_SERVICE_MAX_BATCH_SIZE=4   # Threads sayısıyla aynı tutmak mantıklı
       - LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS=10
-
-      # --- PERFORMANS ---
-      - LLM_LLAMA_SERVICE_USE_MMAP=true
-      - LLM_LLAMA_SERVICE_KV_OFFLOAD=true
+      
+      # İlk açılışta modeli ısıtıp takılmayı önler
+      - LLM_LLAMA_SERVICE_ENABLE_WARM_UP=true

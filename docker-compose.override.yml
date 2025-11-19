@@ -1,4 +1,3 @@
-# docker-compose.override.yml
 services:
   llm-llama-service:
     build:
@@ -7,7 +6,32 @@ services:
     image: sentiric/llm-llama-service:local-cpu 
     networks:
       - sentiric-net
+    environment:
 
+      # --- CPU TEMEL AYARLARI ---
+      - LLM_LLAMA_SERVICE_GPU_LAYERS=0       # 0 = Sadece CPU
+      - LLM_LLAMA_SERVICE_KV_OFFLOAD=false   # VRAM yok, RAM kullan
+      - LLM_LLAMA_SERVICE_USE_MMAP=true      # RAM kullanımını dengeler
+      
+      # --- PERFORMANS ---
+      # CPU'da RAM boldur, 4096 rahatlıkla verilebilir.
+      - LLM_LLAMA_SERVICE_CONTEXT_SIZE=4096
+      
+      # CPU Thread Yönetimi
+      # Bilgisayarının fiziksel çekirdek sayısına göre (örn: 4 veya 8)
+      - LLM_LLAMA_SERVICE_THREADS=4
+      - LLM_LLAMA_SERVICE_THREADS_BATCH=4
+      
+      # --- BATCHING & KUYRUK (MİMARİ İÇİN ZORUNLU) ---
+      # CPU yavaş olduğu için kuyruk sistemi burada daha da kritiktir.
+      # Batching kapalı olursa Stack Overflow riski artar.
+      - LLM_LLAMA_SERVICE_ENABLE_BATCHING=true
+      - LLM_LLAMA_SERVICE_MAX_BATCH_SIZE=4
+      - LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS=10
+      
+      - LLM_LLAMA_SERVICE_ENABLE_WARM_UP=true
+
+  # CLI ayarları aynı kalabilir
   llm-cli:
     build:
       context: .

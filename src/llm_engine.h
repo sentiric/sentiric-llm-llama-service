@@ -21,18 +21,18 @@ public:
     LLMEngine(const LLMEngine&) = delete;
     LLMEngine& operator=(const LLMEngine&) = delete;
 
-    // GÜNCELLENDİ: Artık doğrudan BatchedRequest işlemiyor
     void process_single_request(std::shared_ptr<BatchedRequest> batched_request);
 
-    // YENİ: Batcher'a dışarıdan erişim için
     DynamicBatcher* get_batcher() const { return batcher_.get(); }
     bool is_batching_enabled() const { return batcher_ != nullptr; }
-
     bool is_model_loaded() const;
     LlamaContextPool& get_context_pool() { return *context_pool_; }
 
 private:
     void process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batch);
+    
+    // --- YENİ: Tekil işlem mantığını buraya taşıyoruz ---
+    void execute_single_request(std::shared_ptr<BatchedRequest> req_ptr);
 
     Settings& settings_;
     llama_model* model_ = nullptr;
