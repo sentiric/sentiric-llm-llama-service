@@ -40,6 +40,7 @@ public:
     }
     
     std::future<void> add_request(std::shared_ptr<BatchedRequest> request) {
+        // get_future() burada sadece BİR KEZ çağrılır ve çağırana döndürülür.
         auto future = request->completion_promise.get_future();
         {
             std::lock_guard<std::mutex> lock(queue_mutex_);
@@ -84,19 +85,24 @@ private:
                 try {
                     batch_processing_callback(batch);
                     for (auto& req : batch) {
-                        // set_value can only be called once, check if it has a valid future
-                        if (req->completion_promise.get_future().valid()) {
+                        // DÜZELTME: get_future() kontrolü kaldırıldı çünkü daha önce çağrıldı.
+                        // Doğrudan set_value() deneniyor.
+                        try {
                             req->completion_promise.set_value();
+                        } catch (...) { 
+                            // Promise zaten set edilmişse veya bozulmuşsa hatayı yutuyoruz
                         }
                     }
                 } catch (...) {
                     spdlog::error("Batch processing failed with an exception.");
                     for (auto& req : batch) {
                         try {
-                            if (req->completion_promise.get_future().valid()) {
-                                req->completion_promise.set_exception(std::current_exception());
-                            }
-                        } catch (const std::future_error&) { /* ignore if already set */ }
+                            // DÜZELTME: get_future() kontrolü kaldırıldı.
+                            // Mevcut hatayı promise'e iletiyoruz.
+                            req->completion_promise.set_exception(std::current_exception());
+                        } catch (...) { 
+                            // ignore if already set 
+                        }
                     }
                 }
             }
