@@ -133,7 +133,7 @@ h3 { color: var(--primary); border-bottom: 1px solid var(--border); padding-bott
 .metric-item { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
 .metric-item label { color: var(--text-secondary); }
 .metric-item .value { font-weight: 600; color: var(--text-primary); font-family: monospace; }
-.info-box { background: rgba(88, 166, 255, 0.1); border-left: 3px solid var(--primary); padding: 15px; font-size: 0.9em; border-radius: 4px; margin-top: auto;}
+.info-box { background: rgba(88, 166, 255, 0.1); border-left: 3px solid var(--primary); padding: 15px; font-size: 0.9em; border-radius: 4px; margin-top: auto; line-height: 1.6; }
 .param-label { display: flex; justify-content: space-between; font-size: 0.9em; color: #bdc1c6; margin-bottom: 8px; }
 
 pre { background-color: #010409; border: 1px solid var(--border); border-radius: 8px; padding: 15px; white-space: pre-wrap; word-wrap: break-word; }

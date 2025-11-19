@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="tr">
+
 <head>
     <meta charset="UTF-8">
     <title>Sentiric LLM Studio</title>
@@ -12,13 +13,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <div id="app">
         <aside class="panel sidebar">
             <h3>🚀 Kontrol Paneli</h3>
             <div class="form-group">
                 <label>Sistem Promptu</label>
-                <textarea v-model="systemPrompt" rows="6" placeholder="Yapay zekanın kişiliğini ve talimatlarını buraya girin..."></textarea>
+                <textarea v-model="systemPrompt" rows="6"
+                    placeholder="Yapay zekanın kişiliğini ve talimatlarını buraya girin..."></textarea>
             </div>
             <div class="form-group">
                 <label>RAG Context</label>
@@ -26,12 +29,14 @@
                     <option value="">-- Harici Bilgi Yok --</option>
                     <option v-for="ctx in availableContexts" :value="ctx">{{ ctx }}</option>
                 </select>
-                <textarea v-model="ragContext" rows="10" placeholder="RAG için kullanılacak metni buraya yapıştırın veya yukarıdan bir örnek seçin..."></textarea>
+                <textarea v-model="ragContext" rows="10"
+                    placeholder="RAG için kullanılacak metni buraya yapıştırın veya yukarıdan bir örnek seçin..."></textarea>
             </div>
-            
+
             <h3>⚙️ Üretim Parametreleri</h3>
             <div class="form-group">
-                <label class="param-label"><span>Sıcaklık (Yaratıcılık)</span><span>{{ params.temperature }}</span></label>
+                <label class="param-label"><span>Sıcaklık (Yaratıcılık)</span><span>{{ params.temperature
+                        }}</span></label>
                 <input type="range" v-model.number="params.temperature" step="0.05" min="0" max="2">
             </div>
             <div class="form-group">
@@ -43,7 +48,14 @@
         <main class="main-content">
             <header class="app-header">
                 <div class="logo">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7V17L12 22L22 17V7L12 2Z" stroke="#8ab4f8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 7L12 12L22 7" stroke="#8ab4f8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 22V12" stroke="#8ab4f8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L2 7V17L12 22L22 17V7L12 2Z" stroke="#8ab4f8" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M2 7L12 12L22 7" stroke="#8ab4f8" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                        <path d="M12 22V12" stroke="#8ab4f8" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                    </svg>
                     <span>Sentiric LLM Studio</span>
                 </div>
                 <button @click="clearHistory" class="header-button" title="Sohbet geçmişini temizle">
@@ -58,30 +70,51 @@
                         <div class="content" v-else v-html="renderAssistantMessage(msg)"></div>
                     </div>
                 </div>
-                 <div v-if="isLoading" class="spinner-wrapper"><div class="spinner"></div></div>
+                <div v-if="isLoading" class="spinner-wrapper">
+                    <div class="spinner"></div>
+                </div>
             </div>
-            
+
             <div class="input-area-wrapper">
                 <div class="input-area">
-                    <textarea ref="userInput" v-model="userInput" @keydown.enter.exact.prevent="sendMessage" :disabled="isLoading" placeholder="Mesajınızı yazın..."></textarea>
+                    <textarea ref="userInput" v-model="userInput" @keydown.enter.exact.prevent="sendMessage"
+                        :disabled="isLoading" placeholder="Mesajınızı yazın..."></textarea>
                     <button v-if="!isLoading" @click="sendMessage" class="send-button" title="Gönder">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576 6.636 10.07Zm6.787-8.201L1.591 6.602l4.339 2.76 7.494-7.493Z"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor"
+                            viewBox="0 0 16 16">
+                            <path
+                                d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576 6.636 10.07Zm6.787-8.201L1.591 6.602l4.339 2.76 7.494-7.493Z" />
+                        </svg>
                     </button>
                     <button v-if="isLoading" @click="stopGeneration" class="stop-button" title="Durdur">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="1"></rect></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 16 16">
+                            <rect x="3" y="3" width="10" height="10" rx="1"></rect>
+                        </svg>
                     </button>
                 </div>
             </div>
         </main>
-        
+
         <aside class="panel metrics-panel">
             <h3>📊 Analiz</h3>
-            <div class="metric-item"><label>İlk Token Süresi (TTFT)</label><div class="value">{{ metrics.ttft }} ms</div></div>
-            <div class="metric-item"><label>Token/Saniye (TPS)</label><div class="value">{{ metrics.tps.toFixed(2) }}</div></div>
-            <div class="metric-item"><label>Token (Prompt/Cevap)</label><div class="value">{{ metrics.promptTokens }} / {{ metrics.completionTokens }}</div></div>
-            <div class="info-box"><strong>Not:</strong> Sunucu motor ayarları (threads, batching vb.) `docker-compose.yml` üzerinden yönetilir.</div>
+            <div class="metric-item"><label>İlk Token Süresi (TTFT)</label>
+                <div class="value">{{ metrics.ttft }} ms</div>
+            </div>
+            <div class="metric-item"><label>Token/Saniye (TPS)</label>
+                <div class="value">{{ metrics.tps.toFixed(2) }}</div>
+            </div>
+            <div class="metric-item"><label>Token (Prompt/Cevap)</label>
+                <div class="value">{{ metrics.promptTokens }} / {{ metrics.completionTokens }}</div>
+            </div>
+            <div class="info-box">
+                <strong>Geliştirici Notu:</strong><br>
+                Bu arayüz, servisin API yeteneklerini test etmek için bir <strong>teknik vitrindir</strong>. Sunucu
+                motor ayarları (`threads`, `batching` vb.) `docker-compose.yml` üzerinden yönetilir.
+            </div>
         </aside>
     </div>
     <script src="app.js"></script>
 </body>
+
 </html>
