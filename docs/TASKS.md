@@ -1,42 +1,25 @@
-# 📋 Sentiric LLM Llama Service - Görev ve Yol Haritası (Faz 3)
+# 📋 Sentiric LLM Llama Service - Görev ve Yol Haritası
 
 ---
 ## 🎯 PROJE DURUMU
 - **Faz 1 (Temel):** Tamamlandı ✅
-- **Faz 2 (Stabilite & Performans):** Tamamlandı ✅ (v2.0 - Paralel Batching & Queue)
-- **Faz 3 (Yetenek & Arayüz):** Başlıyor 🚀
+- **Faz 2 (Performans):** Tamamlandı ✅
+- **Faz 3 (UI & UX):** Tamamlandı ✅ (Omni-Studio v2.0)
 
 ---
-## ⏳ AKTİF GÖREVLER (FAZ 3 - UI & Structured Output)
-
--   **[ ] TASK ID: `UI-REVAMP-001` - Sentiric Studio UI Modernizasyonu (DeepSeek Style)**
-    *   **Açıklama:** Mevcut basit Vue.js arayüzü yerine, sol panelli, çoklu oturum destekli, profesyonel "DeepSeek" tasarım diline sahip HTML/CSS yapısının entegre edilmesi.
-    *   **Özellikler:**
-        *   [ ] Sol Sidebar (Oturumlar/Projeler)
-        *   [ ] Genişletilebilir Sohbet Alanı
-        *   [ ] Sağ Panel (Bağlam/Analiz)
-        *   [ ] Mobil Uyumlu Responsive Tasarım
-    *   **Motivasyon:** Geliştirici deneyimini artırmak ve motorun gücünü görselleştirmek.
-
--   **[ ] TASK ID: `UI-VOICE-001` - Basit Sesli Komut (Speech-to-Text)**
-    *   **Açıklama:** Studio arayüzüne, tarayıcı tabanlı (Web Speech API) bir mikrofon butonu eklenmesi.
-    *   **Hedef:** IP sinyal işleme senaryoları için sesli prompt girişini simüle etmek.
-    *   **Not:** Backend STT servisi kullanılmayacak, frontend API yeterli.
-
--   **[ ] TASK ID: `LLM-GRAMMAR-001` - Structured Output (JSON Mode & GBNF)**
-    *   **Açıklama:** Motorun çıktısını belirli bir şemaya (JSON Schema) zorlamak için `llama.cpp` grammar (GBNF) desteğinin `LLMEngine`'e eklenmesi.
-    *   **Kullanım:** Agent ve Gateway servislerinin kararlı veri alabilmesi için kritik.
-    *   **API:** İsteğe `json_schema` veya `grammar` alanı eklenecek.
-
----
-## 🎯 PLANLANAN GÖREVLER (FAZ 4 - Entegrasyon)
+## ⏳ AKTİF GÖREVLER (FAZ 4 - Entegrasyon)
 
 -   **[ ] TASK ID: `GW-CONN-001` - LLM Gateway gRPC Entegrasyonu**
-    *   **Açıklama:** Bu servisin, merkezi `llm-gateway-service` tarafından bir "worker" olarak tanınması ve yönetilmesi.
+    *   **Açıklama:** Bu servisin, merkezi `llm-gateway-service` tarafından bir "worker" olarak tanınması.
 
 ---
-## ✅ TAMAMLANAN KRİTİK GÖREVLER
+## ✅ TAMAMLANAN KRİTİK GÖREVLER (SON)
 
--   **[✓] `LLM-CORE-FIX`:** Double-Free bellek hatası `ContextGuard` manual release ile çözüldü.
--   **[✓] `LLM-HTTP-FIX`:** Stack Overflow hatası `Producer-Consumer Queue` mimarisi ile çözüldü.
--   **[✓] `LLM-PERF-002`:** Gerçek Paralel İşleme (Thread Dispatching) eklendi. (1.13x overhead ile %100 paralellik).
+-   **[✓] `UI-REVAMP`:** Sentiric Omni-Studio (Glassmorphism, Mobile-First) yayınlandı.
+-   **[✓] `UI-VOICE`:** Hands-Free (Eller Serbest) kesintisiz konuşma döngüsü eklendi.
+-   **[✓] `LLM-CORE-FIX`:** "Zero-Decode" önbellek hatası (boş cevap sorunu) çözüldü.
+-   **[✓] `LLM-PERF`:** GPU KV Offload ve Fast Warm-up ile başlangıç gecikmeleri optimize edildi.
+-   **[✓] `LLM-SAFETY`:** RAG için büyük girdilerde otomatik "Truncation" (Budama) koruması eklendi.
+-   **[✓] `LLM-GRAMMAR`:** GBNF Grammar desteği eklendi.
+
+---
