@@ -132,3 +132,32 @@ details[open] summary { margin-bottom: 15px; border-bottom: 1px solid var(--bord
 .cursor { display: inline-block; width: 6px; height: 1.2em; background: var(--accent-color); animation: blink 1s infinite; vertical-align: sub; border-radius: 2px; }
 @keyframes blink { 50% { opacity: 0; } }
 .full-height { height: 100%; resize: none; }
+
+/* MOBİL UYUMLULUK */
+@media (max-width: 768px) {
+    .app-container { flex-direction: column; }
+    
+    /* Mobilde yan paneller tam ekran açılsın */
+    .side-panel { 
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0; 
+        width: 100%; z-index: 50;
+    }
+    
+    .chat-messages {
+        padding-bottom: 140px; /* Klavye payı */
+    }
+    
+    .input-wrapper {
+        position: fixed; /* Absolute yerine Fixed */
+        bottom: 0;
+        background: var(--bg-body); /* Arka planı doldur ki mesajlar alttan görünmesin */
+        padding-bottom: 20px;
+        z-index: 40;
+    }
+    
+    .command-bar {
+        width: 95%;
+    }
+    
+    .welcome-screen h2 { font-size: 1.5rem; }
+}

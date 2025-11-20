@@ -279,12 +279,13 @@ async function sendMessage() {
 function buildMessagePayload(lastUserText) {
     const payload = [];
     
-    // 1. System (Kimlik) - Her zaman en başta
+    // 1. KRİTİK: System ve RAG her zaman en başta ve KORUMALI
+    // Bunlar asla history limitine takılmamalı.
+    
     if (els.systemPrompt.value.trim()) {
         payload.push({ role: "system", content: els.systemPrompt.value });
     }
 
-    // 2. RAG Context
     if (els.ragInput.value.trim()) {
         payload.push({ 
             role: "user", 
@@ -293,15 +294,19 @@ function buildMessagePayload(lastUserText) {
         payload.push({ role: "assistant", content: "Anlaşıldı." });
     }
 
-    // 3. History
+    // 2. Konuşma Geçmişi (Dinamik)
+    // Kullanıcının belirlediği limit sadece "sohbet geçmişi" için geçerli olmalı.
     const limit = parseInt(els.historyLimit.value) || 10;
-    const historySlice = state.history.slice(0, -1).slice(-limit); 
+    
+    // Sadece gerçek sohbeti al (System/RAG hariç)
+    // slice(-limit) ile en son N mesajı alıyoruz.
+    const historySlice = state.history.slice(-limit); 
     
     historySlice.forEach(msg => {
         payload.push({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content });
     });
 
-    // 4. Son Mesaj
+    // 3. Son Mesaj
     payload.push({ role: "user", content: lastUserText });
 
     return payload;
