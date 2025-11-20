@@ -63,18 +63,16 @@ void LlamaContextPool::initialize_contexts() {
     for (size_t i = 0; i < max_size_; ++i) {
         llama_context_params ctx_params = llama_context_default_params();
         
-        // KRİTİK AYAR: Batch Size = Context Size
-        // Büyük dosyaları işlerken çökmemesi için batch limitini artırıyoruz.
+        // DÜZELTME: Batch Size Koruması
+        // Context size çok büyük olsa bile, n_batch (bir seferde işlenen token)
+        // donanım sınırlarını zorlamamalıdır. 2048 makul bir üst sınırdır.
         ctx_params.n_ctx = settings_.context_size;
-        ctx_params.n_batch = settings_.context_size; 
+        ctx_params.n_batch = std::min((uint32_t)settings_.context_size, (uint32_t)2048);
         
         ctx_params.n_threads = settings_.n_threads;
         ctx_params.n_threads_batch = settings_.n_threads_batch;
         ctx_params.offload_kqv = settings_.kv_offload;
         
-        // NOT: 'flash_attn' bu versiyonda struct üyesi değil, auto-enable oluyor.
-        // Manuel set etmeye gerek yok.
-
         llama_context* ctx = llama_init_from_model(model_, ctx_params);
         if (!ctx) throw std::runtime_error("Failed to create llama_context.");
 

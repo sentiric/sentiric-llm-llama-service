@@ -23,8 +23,6 @@ struct LlamaSamplerGuard {
     ~LlamaSamplerGuard() { if (sampler) llama_sampler_free(sampler); }
 };
 
-// LlamaGrammarGuard <-- KALDIRILDI (Sampler kendi içinde yönetiyor veya raw pointer döndürüyor ama zincir free edecek)
-
 LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gauge)
     : settings_(settings), active_contexts_gauge_(active_contexts_gauge) {
     
@@ -121,7 +119,33 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         if (n_tokens < 0) throw std::runtime_error("Tokenization failed");
         
         prompt_tokens.resize(n_tokens);
-        req_ptr->prompt_tokens = n_tokens;
+        
+        // --- TRUNCATION LOGIC (YENİ: Input Protection) ---
+        // Context boyutu aşılırsa, sondan koruyarak kes (Keep Last).
+        // Modelin cevap üretmesi için de yer bırakmalıyız.
+        uint32_t max_context = settings_.context_size;
+        uint32_t max_gen = settings_.default_max_tokens;
+        
+        // Güvenlik marjı (buffer) ile birlikte maksimum prompt boyutu
+        uint32_t safe_prompt_limit = (max_context > max_gen + 64) ? (max_context - max_gen - 64) : (max_context / 2);
+        
+        if (prompt_tokens.size() > safe_prompt_limit) {
+            spdlog::warn("⚠️ Input too large ({} tokens). Truncating to last {} tokens to fit context.", 
+                         prompt_tokens.size(), safe_prompt_limit);
+                         
+            // Basit "Keep Last" stratejisi (RAG için genellikle soru sondadır)
+            // Sistemin en azından çalışmasını sağlar.
+            std::vector<llama_token> truncated;
+            truncated.reserve(safe_prompt_limit);
+            
+            // Iterator aritmetiği ile son 'safe_prompt_limit' kadarını al
+            auto start_it = prompt_tokens.end() - safe_prompt_limit;
+            truncated.assign(start_it, prompt_tokens.end());
+            
+            prompt_tokens = std::move(truncated);
+        }
+        
+        req_ptr->prompt_tokens = prompt_tokens.size();
 
         // 2. Context Edinme
         ContextGuard guard = context_pool_->acquire(prompt_tokens);
@@ -170,9 +194,8 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         LlamaSamplerGuard sampler_guard(llama_sampler_chain_default_params());
         llama_sampler* sampler_chain = sampler_guard.sampler;
         
-        // --- GRAMMAR SAMPLER ENTEGRASYONU (BASİTLEŞTİRİLMİŞ) ---
+        // --- GRAMMAR SAMPLER ENTEGRASYONU ---
         if (!req_ptr->grammar.empty()) {
-            // llama_sampler_init_grammar(const struct llama_vocab * vocab, const char * grammar_str, const char * grammar_root);
             llama_sampler* grammar_sampler = llama_sampler_init_grammar(vocab, req_ptr->grammar.c_str(), "root");
             if (grammar_sampler) {
                 llama_sampler_chain_add(sampler_chain, grammar_sampler);
