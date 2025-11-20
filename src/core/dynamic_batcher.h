@@ -61,6 +61,9 @@ struct BatchedRequest {
     int32_t prompt_tokens = 0;
     int32_t completion_tokens = 0;
     std::string finish_reason = "stop";
+
+    // --- YENİ: Grammar Support ---
+    std::string grammar; // GBNF formatında grammar string'i
 };
 
 class DynamicBatcher {

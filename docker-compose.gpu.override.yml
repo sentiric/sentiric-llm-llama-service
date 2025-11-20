@@ -7,7 +7,7 @@ services:
     environment:
       
       # --- GPU TEMEL AYARLARI ---
-      - LLM_LLAMA_SERVICE_GPU_LAYERS=100      # Modelin tamamını GPU'ya yükle (Gemma-1B için 28 yeterli)
+      - LLM_LLAMA_SERVICE_GPU_LAYERS=28      # Modelin tamamını GPU'ya yükle (Gemma-1B için 28 yeterli)
       - LLM_LLAMA_SERVICE_KV_OFFLOAD=true    # KV Cache'i VRAM'de tut (Hız için kritik)
       - LLM_LLAMA_SERVICE_USE_MMAP=true
       

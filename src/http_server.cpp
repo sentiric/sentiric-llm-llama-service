@@ -11,6 +11,29 @@
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
+// --- STANDART JSON GRAMMAR (GBNF) ---
+const std::string GENERIC_JSON_GBNF = R"(
+root   ::= object
+value  ::= object | array | string | number | ("true" | "false" | "null") ws
+object ::=
+  "{" ws (
+    string ":" ws value
+    ("," ws string ":" ws value)*
+  )? "}" ws
+array  ::=
+  "[" ws (
+    value
+    ("," ws value)*
+  )? "]" ws
+string ::=
+  "\"" (
+    [^"\\\x7F\x00-\x1F] |
+    "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4})
+  )* "\"" ws
+number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
+ws     ::= [ \t\n\r]*
+)";
+
 // MetricsServer Implementation
 MetricsServer::MetricsServer(const std::string& host, int port, prometheus::Registry& registry)
     : host_(host), port_(port), registry_(registry) {
@@ -82,7 +105,7 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         } else { res.status = 404; }
     });
 
-    // --- CHAT COMPLETION ENDPOINT (PRODUCER-CONSUMER FIX) ---
+    // --- CHAT COMPLETION ENDPOINT (PRODUCER-CONSUMER FIX + GRAMMAR SUPPORT) ---
     svr_.Post("/v1/chat/completions", [this](const httplib::Request &req, httplib::Response &res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         
@@ -113,13 +136,21 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             auto batched_request = std::make_shared<BatchedRequest>();
             batched_request->request = grpc_request;
 
+            // --- GRAMMAR ENTEGRASYONU ---
+            // 1. OpenAI tarzı "json_object" isteği
+            if (body.contains("response_format") && 
+                body["response_format"].value("type", "") == "json_object") {
+                batched_request->grammar = GENERIC_JSON_GBNF;
+            } 
+            // 2. Doğrudan "grammar" alanı (Raw GBNF)
+            else if (body.contains("grammar")) {
+                batched_request->grammar = body["grammar"].get<std::string>();
+            }
+
             // 1. İsteği Engine/Batcher thread'ine gönder (Producer)
-            // Bu sayede HTTP thread'inde ağır iş yapıp Stack Overflow'a neden olmayız.
             if (engine_->is_batching_enabled()) {
                 engine_->get_batcher()->add_request(batched_request);
             } else {
-                // Batching kapalıysa mecbur senkron işleriz (Tavsiye edilmez ama desteklenmeli)
-                // Bu durumda stack overflow riski geri gelir, o yüzden batching hep açık olmalı.
                  std::thread([this, batched_request](){
                      engine_->process_single_request(batched_request);
                      batched_request->is_finished = true; 
@@ -128,17 +159,13 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
 
             if (stream) {
                 // 2. Tüketici Döngüsü (Consumer)
-                // Soket yazma işlemi sadece burada, HTTP thread'inde yapılır.
                 res.set_chunked_content_provider("text/event-stream",
                     [batched_request](size_t, httplib::DataSink &sink) {
                         
-                        // İstemci koptu mu?
                         batched_request->should_stop_callback = [&sink]() { return !sink.is_writable(); };
 
-                        // Kuyruğu dinle
                         while (!batched_request->is_finished || !batched_request->token_queue.empty()) {
                             std::string token;
-                            // 50ms bekle, veri varsa al
                             if (batched_request->token_queue.wait_and_pop(token, 50)) {
                                 json chunk;
                                 chunk["id"] = "chatcmpl-stream";
@@ -159,7 +186,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                     });
             } else {
                  // Non-streaming: Bekle ve topla
-                 // Basit bir bekleme döngüsü
                  std::string full_response;
                  while (!batched_request->is_finished || !batched_request->token_queue.empty()) {
                      std::string t;
@@ -168,6 +194,8 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
 
                  json response_json;
                  response_json["choices"][0]["message"]["content"] = full_response;
+                 // Eğer JSON moduysa ve cevap JSON ise, bunu parse edip object olarak döndürmek de bir seçenek olabilir,
+                 // ama standart text olarak döndürmek daha güvenlidir.
                  res.set_content(response_json.dump(), "application/json");
             }
 

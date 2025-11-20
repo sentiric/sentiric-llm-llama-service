@@ -3,6 +3,7 @@
 #include "spdlog/spdlog.h"
 #include "model_manager.h"
 #include "common.h"
+// #include "core/grammar_parser.h" <-- KALDIRILDI
 #include <stdexcept>
 #include <time.h>
 #include <algorithm>
@@ -22,6 +23,8 @@ struct LlamaSamplerGuard {
     ~LlamaSamplerGuard() { if (sampler) llama_sampler_free(sampler); }
 };
 
+// LlamaGrammarGuard <-- KALDIRILDI (Sampler kendi içinde yönetiyor veya raw pointer döndürüyor ama zincir free edecek)
+
 LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gauge)
     : settings_(settings), active_contexts_gauge_(active_contexts_gauge) {
     
@@ -40,13 +43,11 @@ LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gaug
 
     // --- OTOMATİK FORMAT ALGILAMA ---
     char arch_buffer[64] = {0};
-    // Modelin GGUF metadata'sından mimari ismini oku (örn: "llama", "gemma")
     llama_model_meta_val_str(model_, "general.architecture", arch_buffer, sizeof(arch_buffer));
     std::string arch = arch_buffer[0] ? arch_buffer : "unknown";
     
     spdlog::info("🔍 Detected Model Architecture: {}", arch);
     
-    // Mimariye uygun formatlayıcıyı oluştur
     formatter_ = create_formatter_for_model(arch);
 
     context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_, active_contexts_gauge_);
@@ -106,7 +107,6 @@ bool safe_kv_seq_rm(llama_context* ctx, llama_seq_id seq, llama_pos p0, llama_po
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
     try {
         auto& request = req_ptr->request;
-        // Doğru formatlayıcıyı kullan
         const std::string formatted_prompt = formatter_->format(request);
         const auto* vocab = llama_model_get_vocab(model_);
         
@@ -139,7 +139,7 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
              safe_kv_clear(ctx);
         }
         
-        // 4. Prompt Decode (Batch Chunking)
+        // 4. Prompt Decode
         size_t tokens_to_process = prompt_tokens.size() - matched_len;
         
         if (tokens_to_process > 0) {
@@ -170,11 +170,22 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         LlamaSamplerGuard sampler_guard(llama_sampler_chain_default_params());
         llama_sampler* sampler_chain = sampler_guard.sampler;
         
+        // --- GRAMMAR SAMPLER ENTEGRASYONU (BASİTLEŞTİRİLMİŞ) ---
+        if (!req_ptr->grammar.empty()) {
+            // llama_sampler_init_grammar(const struct llama_vocab * vocab, const char * grammar_str, const char * grammar_root);
+            llama_sampler* grammar_sampler = llama_sampler_init_grammar(vocab, req_ptr->grammar.c_str(), "root");
+            if (grammar_sampler) {
+                llama_sampler_chain_add(sampler_chain, grammar_sampler);
+                spdlog::info("✅ Grammar constraint applied.");
+            } else {
+                spdlog::error("❌ Failed to initialize grammar sampler.");
+            }
+        }
+
         llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_k(params.has_top_k() ? params.top_k() : settings_.default_top_k));
         llama_sampler_chain_add(sampler_chain, llama_sampler_init_temp(params.has_temperature() ? params.temperature() : settings_.default_temperature));
         llama_sampler_chain_add(sampler_chain, llama_sampler_init_dist(time(NULL)));
         
-        // Stop sequences (Model tipine göre formatter'dan al)
         auto stop_sequences = formatter_->get_stop_sequences();
 
         // 6. Generation Döngüsü
@@ -201,7 +212,6 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
             if (n_piece > 0) {
                 std::string token_str(piece_buf, n_piece);
                 
-                // STOP SEQUENCE KONTROLÜ
                 bool stop_triggered = false;
                 for (const auto& seq : stop_sequences) {
                     if (token_str.find(seq) != std::string::npos) {
