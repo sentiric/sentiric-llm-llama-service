@@ -1,9 +1,15 @@
 // --- STATE ---
 const $ = (id) => document.getElementById(id);
 const state = { 
-    generating: false, controller: null, history: [], 
-    autoListen: false, recognition: null, startTime: 0, tokenCount: 0,
-    autoScroll: true
+    generating: false, 
+    controller: null, 
+    history: [], 
+    autoListen: false, // Eller serbest modu
+    recognition: null, 
+    startTime: 0, 
+    tokenCount: 0,
+    autoScroll: true,
+    silenceTimer: null
 };
 
 // --- INIT ---
@@ -12,13 +18,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.setAttribute('data-theme', theme);
     
     setupEvents();
-    setupSpeech();
+    setupSpeech(); // Güncellendi
     setupMarkdown();
     checkHealth();
     setInterval(checkHealth, 10000);
 
-    // Welcome Message
-    addMessage('ai', 'Merhaba! Sentiric yerel LLM motoruna hoş geldiniz. Size nasıl yardımcı olabilirim?');
+    addMessage('ai', 'Merhaba! Sentiric yerel LLM motoru hazır. Mikrofon butonuna **çift tıklayarak** eller serbest moduna geçebilirsiniz.');
 });
 
 function setupMarkdown() {
@@ -43,15 +48,25 @@ function setupEvents() {
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            if(window.innerWidth < 768) input.blur(); // Mobilde klavyeyi kapat
+            if(window.innerWidth < 768) input.blur();
             sendMessage();
         }
     });
 
-    $('sendBtn').onclick = sendMessage;
-    $('stopBtn').onclick = () => state.controller?.abort();
+    $('sendBtn').onclick = () => {
+        // Manuel gönderim, eller serbesti kapatır
+        state.autoListen = false;
+        stopMicUI();
+        sendMessage();
+    };
     
-    // Parametre UI Güncelleme
+    $('stopBtn').onclick = () => {
+        state.autoListen = false;
+        state.controller?.abort();
+        stopMicUI();
+    };
+    
+    // Parametre UI
     $('tempInput').oninput = (e) => $('tempVal').innerText = e.target.value;
     $('tokenLimit').oninput = (e) => $('tokenLimitVal').innerText = e.target.value;
     $('ragInput').oninput = (e) => $('ragCharCount').innerText = e.target.value.length;
@@ -63,7 +78,7 @@ function setupEvents() {
         $('scrollBtn').classList.toggle('hidden', isAtBottom);
     });
 
-    // Dosya Yükleme (RAG)
+    // Dosya Yükleme
     $('fileInput').onchange = async (e) => {
         const file = e.target.files[0];
         if(!file) return;
@@ -72,7 +87,7 @@ function setupEvents() {
             const rag = $('ragInput');
             rag.value = (rag.value ? rag.value + "\n\n" : "") + `--- ${file.name} ---\n${text}`;
             $('ragCharCount').innerText = rag.value.length;
-            togglePanel('rightPanel', true); // Paneli aç
+            togglePanel('rightPanel', true);
             switchTab('rag');
         } catch(err) {
             alert("Dosya okunamadı: " + err.message);
@@ -85,16 +100,14 @@ async function sendMessage() {
     const text = $('userInput').value.trim();
     if (!text || state.generating) return;
 
-    // UI Hazırlık
     $('userInput').value = '';
     $('userInput').style.height = 'auto';
     $('emptyState').style.display = 'none';
-    state.autoScroll = true; // Kullanıcı mesaj atınca en alta git
+    state.autoScroll = true;
     
     addMessage('user', escapeHtml(text));
     state.history.push({role: 'user', content: text});
 
-    // AI Placeholder
     const aiBubble = addMessage('ai', '<span class="cursor"></span>');
     const bubbleContent = aiBubble.querySelector('.markdown-content');
     
@@ -102,6 +115,9 @@ async function sendMessage() {
     state.controller = new AbortController();
     state.startTime = Date.now();
     state.tokenCount = 0;
+
+    // Eğer mikrofondan geldiyse ve eller serbest ise, dinlemeyi geçici durdur (AI konuşurken dinlemesin)
+    if (state.recognition) state.recognition.stop();
 
     const payload = buildPayload(text);
 
@@ -126,7 +142,7 @@ async function sendMessage() {
             
             buffer += decoder.decode(value, {stream: true});
             const lines = buffer.split('\n');
-            buffer = lines.pop(); // Son yarım satırı sakla
+            buffer = lines.pop();
 
             for(const line of lines) {
                 if(line.startsWith('data: ') && line !== 'data: [DONE]') {
@@ -135,8 +151,6 @@ async function sendMessage() {
                         const content = json.choices[0]?.delta?.content;
                         if(content) {
                             fullText += content;
-                            // Canlı Markdown render (her 10 token'da bir veya basit text)
-                            // Performans için basit text + cursor yapıyoruz
                             bubbleContent.innerHTML = marked.parse(fullText) + '<span class="cursor"></span>';
                             state.tokenCount++;
                             updateStats();
@@ -147,18 +161,25 @@ async function sendMessage() {
             }
         }
 
-        // Final Render
         bubbleContent.innerHTML = marked.parse(fullText);
         enhanceCodeBlocks(aiBubble);
         addMessageActions(aiBubble, fullText);
         
         state.history.push({role: 'assistant', content: fullText});
         
-        if(state.autoListen) setTimeout(tryStartMic, 1000);
+        // --- ELLER SERBEST DÖNGÜSÜ ---
+        // AI cevabı bitince mikrofonu tekrar aç
+        if(state.autoListen) {
+            setTimeout(() => {
+                tryStartMic();
+            }, 1200); // Kullanıcıya okuması için 1.2sn ver, sonra dinlemeye başla
+        }
 
     } catch(err) {
         if(err.name !== 'AbortError') {
-            bubbleContent.innerHTML += `<br><div style="color:var(--danger); margin-top:10px; font-weight:bold">❌ Hata: ${err.message}</div>`;
+            bubbleContent.innerHTML += `<br><div style="color:var(--danger)">❌ Hata: ${err.message}</div>`;
+            state.autoListen = false; // Hata olursa döngüden çık
+            stopMicUI();
         } else {
             bubbleContent.innerHTML += ` <span style="color:var(--text-sub)">(Durduruldu)</span>`;
         }
@@ -168,22 +189,121 @@ async function sendMessage() {
     }
 }
 
+// --- SPEECH RECOGNITION (GÜNCELLENDİ) ---
+function setupSpeech() {
+    if(!('webkitSpeechRecognition' in window)) { 
+        $('micBtn').style.display='none'; 
+        return; 
+    }
+    
+    const rec = new webkitSpeechRecognition();
+    rec.lang = 'tr-TR';
+    rec.continuous = false; // Cümle bittiğinde duralım ki gönderebilelim
+    rec.interimResults = true; // Konuşurken anlık yazsın
+
+    rec.onstart = () => { 
+        $('voiceStatus').classList.remove('hidden');
+        if(state.autoListen) {
+            $('micBtn').classList.add('active-pulse'); // Eller serbest efekti
+            $('voiceStatus').innerHTML = '🔴 <b>Dialog...</b>';
+        } else {
+            $('micBtn').style.color = 'var(--danger)';
+            $('voiceStatus').innerText = 'Dinliyor...';
+        }
+    };
+
+    rec.onend = () => { 
+        // Normal duruş veya cümle sonu
+        if(state.autoListen) {
+            // Eğer eller serbestse ve içerik varsa GÖNDER
+            const val = $('userInput').value.trim();
+            if(val.length > 0 && !state.generating) {
+                sendMessage(); // Bu fonksiyon sonunda tekrar mic açacak
+            } else if (!state.generating) {
+                // Bir şey duyulmadıysa hemen tekrar dinle (Sessizlik döngüsü)
+                tryStartMic(); 
+            }
+        } else {
+            stopMicUI();
+        }
+    };
+
+    rec.onresult = (e) => {
+        let interim = '';
+        let final = '';
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+            if (e.results[i].isFinal) {
+                final += e.results[i][0].transcript;
+            } else {
+                interim += e.results[i][0].transcript;
+            }
+        }
+        
+        // Mevcut input değerini koru, yenisini ekle
+        if(final) $('userInput').value = final; // Basitlik için override ediyoruz, append yapılabilir
+        else if(interim) $('userInput').placeholder = interim; // Gri olarak göster
+    };
+
+    rec.onerror = (event) => {
+        console.error("Speech Error", event.error);
+        if(event.error === 'no-speech' && state.autoListen) {
+            // Sessizlik hatasında tekrar dene
+            return; 
+        }
+        state.autoListen = false;
+        stopMicUI();
+    };
+
+    state.recognition = rec;
+
+    // Tek Tık: Tek seferlik dinle
+    $('micBtn').onclick = () => {
+        if(state.autoListen) {
+            // Eller serbesti kapat
+            state.autoListen = false;
+            rec.stop();
+            stopMicUI();
+        } else {
+            // Tekil dinleme başlat
+            rec.start();
+        }
+    };
+
+    // Çift Tık: Eller Serbest Modu
+    $('micBtn').ondblclick = () => {
+        state.autoListen = true;
+        rec.start();
+    };
+}
+
+function tryStartMic() { 
+    try {
+        if(state.recognition && state.autoListen) state.recognition.start();
+    } catch(e) {
+        // Zaten çalışıyorsa ignore et
+    } 
+}
+
+function stopMicUI() {
+    $('micBtn').style.color = '';
+    $('micBtn').classList.remove('active-pulse');
+    $('voiceStatus').classList.add('hidden');
+}
+
+
 // --- UI BUILDERS ---
 function buildPayload(lastMsg) {
     const msgs = [];
     const sys = $('systemPrompt').value;
     const rag = $('ragInput').value;
     
-    // System Prompt + RAG Injection
     let finalSystem = sys;
     if(rag) {
         finalSystem += `\n\nBAĞLAM BİLGİSİ (Context):\n${rag}\n\n(Soruları cevaplarken sadece bu bağlamı kullan.)`;
     }
     if(finalSystem) msgs.push({role: 'system', content: finalSystem});
 
-    // History (Son 10 mesaj)
     state.history.slice(-10).forEach(m => msgs.push(m));
-    // Son mesaj zaten history'de
 
     return {
         messages: msgs,
@@ -204,7 +324,7 @@ function addMessage(role, htmlContent) {
     `;
     $('chatContainer').appendChild(div);
     if(state.autoScroll) scrollToBottom();
-    return div.querySelector('.bubble'); // İçerik güncellemeleri için bubble'ı döndür
+    return div.querySelector('.bubble');
 }
 
 function addMessageActions(bubble, rawText) {
@@ -221,10 +341,8 @@ function addMessageActions(bubble, rawText) {
 function enhanceCodeBlocks(element) {
     element.querySelectorAll('pre code').forEach((block) => {
         hljs.highlightElement(block);
-        
         const pre = block.parentElement;
         const lang = block.className.replace('hljs language-', '') || 'Code';
-        
         const header = document.createElement('div');
         header.className = 'code-header';
         header.innerHTML = `
@@ -237,7 +355,6 @@ function enhanceCodeBlocks(element) {
     });
 }
 
-// --- UTILS ---
 window.copyText = (btn, text) => {
     navigator.clipboard.writeText(decodeURIComponent(text));
     const icon = btn.querySelector('i');
@@ -262,10 +379,14 @@ function setBusy(busy) {
     state.generating = busy;
     $('sendBtn').classList.toggle('hidden', busy);
     $('stopBtn').classList.toggle('hidden', !busy);
-    if(busy) $('userInput').setAttribute('disabled', true);
-    else {
-        $('userInput').removeAttribute('disabled');
-        $('userInput').focus();
+    
+    // Hands-free modunda input'u kilitleme ki kullanıcı konuşurken görebilsin
+    if(!state.autoListen) {
+        if(busy) $('userInput').setAttribute('disabled', true);
+        else {
+            $('userInput').removeAttribute('disabled');
+            $('userInput').focus();
+        }
     }
 }
 
@@ -281,16 +402,12 @@ function escapeHtml(text) {
     return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// --- PANEL & LAYOUT ---
 window.togglePanel = (id, open = null) => {
     const el = $(id);
     const overlay = $('overlay');
-    
     if (open === true) el.classList.add('active');
     else if (open === false) el.classList.remove('active');
-    else el.classList.toggle('active'); // Toggle
-
-    // Mobilde Overlay Yönetimi
+    else el.classList.toggle('active');
     const isMobile = window.innerWidth < 768;
     if(isMobile) {
         const anyActive = $('leftPanel').classList.contains('active') || $('rightPanel').classList.contains('active');
@@ -316,18 +433,16 @@ window.toggleTheme = () => {
     const next = current === 'light' ? 'dark' : 'light';
     document.body.setAttribute('data-theme', next);
     localStorage.setItem('theme', next);
-    $('themeIcon').className = next === 'light' ? 'fas fa-moon' : 'fas fa-sun';
 };
 
 window.clearChat = () => {
     state.history = [];
     const container = $('chatContainer');
-    container.innerHTML = ''; // Hepsini sil
-    container.appendChild($('emptyState')); // Empty state geri gelsin
+    container.innerHTML = ''; 
+    container.appendChild($('emptyState')); 
     $('emptyState').style.display = 'flex';
 };
 
-// --- HEALTH CHECK ---
 async function checkHealth() {
     try {
         const res = await fetch('/health');
@@ -342,27 +457,3 @@ async function checkHealth() {
         $('connStatus').querySelector('.dot').style.backgroundColor = 'var(--danger)';
     }
 }
-
-// --- SPEECH ---
-function setupSpeech() {
-    if(!('webkitSpeechRecognition' in window)) { $('micBtn').style.display='none'; return; }
-    const rec = new webkitSpeechRecognition();
-    rec.lang = 'tr-TR';
-    rec.onstart = () => { 
-        $('micBtn').style.color = 'var(--danger)';
-        $('voiceStatus').classList.remove('hidden');
-    };
-    rec.onend = () => { 
-        $('micBtn').style.color = '';
-        $('voiceStatus').classList.add('hidden');
-        if(state.autoListen && !state.generating && $('userInput').value) sendMessage();
-    };
-    rec.onresult = (e) => $('userInput').value = e.results[0][0].transcript;
-    state.recognition = rec;
-
-    $('micBtn').onclick = () => {
-        if(state.autoListen) { state.autoListen=false; rec.stop(); }
-        else rec.start();
-    };
-}
-function tryStartMic() { try{state.recognition.start();}catch(e){} }

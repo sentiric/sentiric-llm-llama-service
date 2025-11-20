@@ -165,7 +165,7 @@ code { font-family: var(--font-mono) !important; font-size: 0.9em !important; }
 
 /* COMPOSER */
 .composer-area { 
-    position: absolute; bottom: 0; left: 0; right: 0; 
+    position: absolute; bottom: 5px; left: 0; right: 0; 
     padding: 0 20px 24px 20px;
     background: linear-gradient(to top, var(--bg-chat) 80%, transparent);
     display: flex; flex-direction: column; align-items: center; z-index: 60;
@@ -259,4 +259,27 @@ textarea {
 @media (min-width: 769px) {
     .mobile-only { display: none !important; }
     .close-btn { display: none; }
+}
+
+/* Hands-Free Aktifken Yanıp Sönme Efekti */
+.active-pulse {
+    color: white !important;
+    background: var(--danger) !important;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    animation: pulse-red 1.5s infinite;
+}
+
+@keyframes pulse-red {
+    0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+    70% {
+        transform: scale(1.05);
+        box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+    }
+    100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    }
 }

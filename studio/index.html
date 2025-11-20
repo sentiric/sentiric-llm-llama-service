@@ -100,7 +100,9 @@
         <!-- INPUT ALANI -->
         <div class="composer-area">
             <button class="scroll-bottom-btn hidden" id="scrollBtn" onclick="scrollToBottom()"><i class="fas fa-arrow-down"></i></button>
-            
+            <div class="telemetry-bar">
+                <span id="voiceStatus" class="hidden">🔴 Dinleniyor...</span>
+            </div>
             <div class="input-capsule">
                 <button class="tool-btn" onclick="$('fileInput').click()" title="RAG Dosyası Yükle">
                     <i class="fas fa-paperclip"></i>
@@ -115,9 +117,7 @@
                     <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-square"></i></button>
                 </div>
             </div>
-            <div class="telemetry-bar">
-                <span id="voiceStatus" class="hidden">🔴 Dinleniyor...</span>
-            </div>
+
         </div>
     </main>
 
