@@ -5,9 +5,10 @@ const state = {
     startTime: 0,
     tokenCount: 0,
     theme: localStorage.getItem('theme') || 'light',
-    history: [], // {role: 'user'|'model', content: '...'}
-    autoListen: false, // Hands-free mode
-    recognition: null
+    history: [], 
+    autoListen: false, 
+    recognition: null,
+    isMicRunning: false // State Guard
 };
 
 // DOM ELEMENTS
@@ -66,11 +67,11 @@ function setupEventListeners() {
             const lang = e.target.value;
             if(state.recognition) state.recognition.lang = lang;
             if(lang === 'en-US') {
-                els.systemPrompt.value = "You are a helpful, skilled, and professional AI assistant.";
+                els.systemPrompt.value = "Your name is Sentirik. You're the intelligent, helpful, and professional AI assistant in the Sentiric ecosystem. Never make up another name. Always speak politely and solution-oriented to the user. Don't create long sentences unless necessary!";
             } else {
-                els.systemPrompt.value = "Sen yardımsever, yetenekli ve profesyonel bir yapay zeka asistanısın.";
+                els.systemPrompt.value = "Senin adın Sentirik. Sen Sentiric ekosisteminin zeki, yardımsever ve profesyonel yapay zeka asistanısın. Asla başka bir isim uydurma. Kullanıcıyla her zaman nazik ve çözüm odaklı konuş. Gerekmedikçe uzun cümle oluşturma!";
             }
-            logToConsole(`Language switched to ${lang}`);
+            logToConsole(`Dil değiştirildi: ${lang}`);
         });
     }
 
@@ -89,14 +90,14 @@ function setupEventListeners() {
                 const rightPanel = document.getElementById('rightPanel');
                 if(rightPanel.style.display === 'none') togglePanel('rightPanel');
                 
-                logToConsole(`File loaded: ${file.name} (${content.length} chars)`);
+                logToConsole(`Dosya yüklendi: ${file.name} (${content.length} karakter)`);
             };
             reader.readAsText(file);
         });
     }
 }
 
-// --- SPEECH RECOGNITION ---
+// --- SPEECH RECOGNITION (ROBUST) ---
 function setupSpeechRecognition() {
     if (!('webkitSpeechRecognition' in window)) {
         els.micBtn.style.display = 'none';
@@ -109,16 +110,14 @@ function setupSpeechRecognition() {
     recognition.interimResults = false;
 
     recognition.onstart = () => {
-        if (state.isGenerating) {
-            recognition.stop();
-            return;
-        }
+        state.isMicRunning = true; // State Lock
         els.micBtn.style.color = '#ef4444'; 
         els.micBtn.classList.add('pulse');
         els.userInput.placeholder = "Dinliyorum...";
     };
 
     recognition.onend = () => {
+        state.isMicRunning = false; // State Unlock
         els.micBtn.style.color = '';
         els.micBtn.classList.remove('pulse');
         els.userInput.placeholder = "Bir şeyler yazın...";
@@ -126,7 +125,7 @@ function setupSpeechRecognition() {
         if (state.autoListen && !state.isGenerating) {
             if (els.userInput.value.trim().length === 0) {
                 setTimeout(() => {
-                    if(!state.isGenerating && state.autoListen) recognition.start();
+                    startMicSafely();
                 }, 500); 
             } else {
                 sendMessage();
@@ -140,10 +139,22 @@ function setupSpeechRecognition() {
     };
 
     recognition.onerror = (event) => {
-        console.error("Speech Error:", event.error);
+        state.isMicRunning = false;
+        if (event.error === 'no-speech' && state.autoListen) {
+            // Sessizliği yut, loop devam etsin
+        } else {
+            console.warn("Mic Error:", event.error);
+            logToConsole(`Mic Error: ${event.error}`);
+        }
     };
 
     state.recognition = recognition;
+
+    // Güvenli Başlatıcı
+    const startMicSafely = () => {
+        if (state.isMicRunning || state.isGenerating) return;
+        try { recognition.start(); } catch(e) { console.warn("Mic start blocked:", e); }
+    };
 
     els.micBtn.addEventListener('click', () => {
         if (state.autoListen) {
@@ -151,14 +162,14 @@ function setupSpeechRecognition() {
             els.autoModeIndicator.classList.add('hidden');
             recognition.stop();
         } else {
-            recognition.start();
+            startMicSafely();
         }
     });
 
     els.micBtn.addEventListener('dblclick', () => {
         state.autoListen = true;
         els.autoModeIndicator.classList.remove('hidden');
-        recognition.start();
+        startMicSafely();
     });
 }
 
@@ -184,6 +195,11 @@ async function sendMessage() {
     state.tokenCount = 0;
     
     const messagesPayload = buildMessagePayload(text);
+    
+    // LOG: Tam olarak ne gönderdiğimizi gör
+    logToConsole(`İstek gönderiliyor (${messagesPayload.length} mesaj)...`);
+    // Konsola debug için detaylı bas
+    console.log("Payload:", JSON.stringify(messagesPayload, null, 2));
 
     try {
         const response = await fetch('/v1/chat/completions', {
@@ -205,15 +221,13 @@ async function sendMessage() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullResponse = "";
-        let buffer = "";
 
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
 
             for (const line of lines) {
                 const trimmed = line.trim();
@@ -238,10 +252,11 @@ async function sendMessage() {
         
         state.history.push({ role: "assistant", content: fullResponse });
         updateMetrics(Date.now() - state.startTime, state.tokenCount);
+        logToConsole(`Yanıt tamamlandı (${state.tokenCount} token).`);
 
         if (state.autoListen && state.recognition) {
             setTimeout(() => {
-                try { state.recognition.start(); } catch(e){}
+                if(!state.isGenerating) try { state.recognition.start(); } catch(e){}
             }, 1500); 
         }
 
@@ -253,7 +268,7 @@ async function sendMessage() {
                 
             aiMsgContent.innerHTML += `<br><div style="background: #fee2e2; border: 1px solid #ef4444; color: #b91c1c; padding: 10px; border-radius: 8px; margin-top: 8px; font-size: 0.9em;"><strong>⚠️ HATA:</strong> ${errMsg}</div>`;
             
-            logToConsole(`Error: ${errMsg}`);
+            logToConsole(`HATA: ${errMsg}`);
         }
     } finally {
         setGeneratingState(false);
@@ -264,18 +279,21 @@ async function sendMessage() {
 function buildMessagePayload(lastUserText) {
     const payload = [];
     
+    // 1. System (Kimlik) - Her zaman en başta
     if (els.systemPrompt.value.trim()) {
         payload.push({ role: "system", content: els.systemPrompt.value });
     }
 
+    // 2. RAG Context
     if (els.ragInput.value.trim()) {
         payload.push({ 
             role: "user", 
-            content: `Aşağıdaki bağlamı ve kuralları kullanarak cevapla:\n\n${els.ragInput.value.trim()}` 
+            content: `Aşağıdaki bağlamı dikkate al:\n\n${els.ragInput.value.trim()}` 
         });
         payload.push({ role: "assistant", content: "Anlaşıldı." });
     }
 
+    // 3. History
     const limit = parseInt(els.historyLimit.value) || 10;
     const historySlice = state.history.slice(0, -1).slice(-limit); 
     
@@ -283,6 +301,7 @@ function buildMessagePayload(lastUserText) {
         payload.push({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content });
     });
 
+    // 4. Son Mesaj
     payload.push({ role: "user", content: lastUserText });
 
     return payload;
@@ -310,13 +329,14 @@ function clearChat() {
             <div class="welcome-icon"><i class="fas fa-eraser"></i></div>
             <h2>Sohbet Temizlendi</h2>
         </div>`;
-    logToConsole("Chat history cleared.");
+    logToConsole("Sohbet temizlendi.");
 }
 
 function logToConsole(msg) {
     const div = document.createElement('div');
     div.className = 'log-entry';
-    div.textContent = `> ${msg}`;
+    const time = new Date().toLocaleTimeString();
+    div.innerHTML = `<span style="color:#666">[${time}]</span> ${msg}`;
     els.consoleLog.prepend(div);
 }
 

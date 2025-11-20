@@ -4,14 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sentiric Studio | Pro</title>
+    
+    <!-- Favicon Fix -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <link rel="stylesheet" href="style.css">
+
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
 <body data-theme="light">
+    
     <div class="app-container">
         <!-- SOL PANEL -->
         <div class="panel side-panel" id="leftPanel" style="display: none;">
@@ -19,6 +25,7 @@
                 <span><i class="fas fa-sliders-h"></i> Ayarlar</span>
                 <button class="icon-btn" onclick="togglePanel('leftPanel')"><i class="fas fa-times"></i></button>
             </div>
+            
             <div class="panel-content">
                 <div class="setting-group">
                     <label>Dil / Language</label>
@@ -27,21 +34,26 @@
                         <option value="en-US">🇺🇸 English (US)</option>
                     </select>
                 </div>
+
                 <div class="setting-group">
-                    <label>System Prompt</label>
-                    <textarea id="systemPrompt" class="input-area" rows="5">Sen yardımsever, yetenekli ve profesyonel bir yapay zeka asistanısın.</textarea>
+                    <label>System Prompt (Kimlik)</label>
+                    <!-- GÜÇLENDİRİLMİŞ PROMPT -->
+                    <textarea id="systemPrompt" class="input-area" rows="6">Senin adın Sentirik. Sen Sentiric ekosisteminin zeki, yardımsever ve profesyonel yapay zeka asistanısın. Asla başka bir isim uydurma. Kullanıcıyla her zaman nazik ve çözüm odaklı konuş. Gerekmedikçe uzun cümle oluşturma!</textarea>
                 </div>
+
                 <div class="setting-group">
                     <div class="slider-header">
-                        <label>Temperature</label>
+                        <label>Temperature (0.1 - 1.0)</label>
                         <span id="tempVal" class="val-badge">0.7</span>
                     </div>
                     <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.7">
                 </div>
+
                 <div class="setting-group">
-                    <label>Hafıza (Geçmiş Mesaj Sayısı)</label>
-                    <input type="number" id="historyLimit" value="10" class="input-number" style="width:100%">
+                    <label>Hafıza (Mesaj Limiti)</label>
+                    <input type="number" id="historyLimit" value="15" class="input-number" style="width:100%">
                 </div>
+                
                 <div class="setting-group" style="margin-top: auto;">
                     <div class="connection-status" id="connStatus">
                         <div class="status-dot"></div>
@@ -58,30 +70,35 @@
                     <button class="icon-btn" onclick="togglePanel('leftPanel')"><i class="fas fa-cog"></i></button>
                     <div class="brand-logo"><i class="fas fa-layer-group"></i> Sentiric Studio</div>
                 </div>
+                
                 <div class="header-center">
                     <span class="model-badge"><i class="fas fa-microchip"></i> Gemma-2 (v2.1)</span>
                 </div>
+
                 <div class="header-group">
                     <button class="icon-btn" onclick="clearChat()" title="Temizle"><i class="fas fa-trash-alt"></i></button>
-                    <button class="icon-btn" onclick="togglePanel('rightPanel')" title="Bağlam"><i class="fas fa-database"></i></button>
+                    <button class="icon-btn" onclick="togglePanel('rightPanel')" title="Loglar & Bağlam"><i class="fas fa-terminal"></i></button>
                 </div>
             </div>
+            
             <div class="chat-messages" id="chatMessages">
                 <div class="welcome-screen">
                     <div class="welcome-icon"><i class="fas fa-robot"></i></div>
-                    <h2>Nasıl yardımcı olabilirim?</h2>
-                    <p>Dosya yükleyebilir, konuşarak anlaşabilir veya parametreleri test edebilirsiniz.</p>
+                    <h2>Sentiric Hazır</h2>
+                    <p>"Benim adım ne?" diye sorarak hafızayı test edebilirsiniz.</p>
                 </div>
             </div>
+
             <div class="input-wrapper">
                 <div class="command-bar">
                     <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-square"></i></button>
                     <textarea id="userInput" class="command-input" placeholder="Bir şeyler yazın... (Ctrl+Enter)" rows="1"></textarea>
+                    
                     <div class="action-group">
-                        <button class="command-btn" id="fileBtn" onclick="document.getElementById('fileInput').click()" title="Dosya Yükle (RAG)">
+                        <button class="command-btn" id="fileBtn" onclick="document.getElementById('fileInput').click()" title="Dosya Yükle">
                             <i class="fas fa-paperclip"></i>
                         </button>
-                        <button class="command-btn" id="micBtn" title="Bas-Konuş (Çift tık: Sürekli Mod)">
+                        <button class="command-btn" id="micBtn" title="Bas-Konuş (Çift tık: Eller Serbest)">
                             <i class="fas fa-microphone"></i>
                         </button>
                         <button class="command-btn send-btn" id="sendBtn"><i class="fas fa-arrow-up"></i></button>
@@ -99,31 +116,38 @@
         <!-- SAĞ PANEL -->
         <div class="panel side-panel" id="rightPanel" style="display: none;">
             <div class="panel-header">
-                <span><i class="fas fa-project-diagram"></i> Bağlam (Context)</span>
+                <span><i class="fas fa-bug"></i> Debug & Bağlam</span>
                 <button class="icon-btn" onclick="togglePanel('rightPanel')"><i class="fas fa-times"></i></button>
             </div>
+            
             <div class="context-tabs">
                 <button class="context-tab active" onclick="switchTab('rag')">RAG</button>
-                <button class="context-tab" onclick="switchTab('logs')">Loglar</button>
+                <button class="context-tab" onclick="switchTab('logs')">Canlı Log</button>
             </div>
+            
             <div class="panel-content">
                 <div id="ragTab" class="tab-content active">
                     <p class="help-text" style="font-size:0.8rem; color:#666; margin-bottom:5px;">
-                        Aşağıdaki alana yapıştırdığınız veya yüklediğiniz metin, modelin "hafızasına" eklenir.
+                        RAG (Retrieval-Augmented Generation) içeriği:
                     </p>
-                    <textarea id="ragInput" class="input-area full-height code-font" placeholder="// Proje kodlarını veya dokümanları buraya yükleyin..."></textarea>
+                    <textarea id="ragInput" class="input-area full-height code-font" placeholder="// Buraya yapıştırılan metinler modele 'bilgi' olarak verilir..."></textarea>
                 </div>
+                
                 <div id="logsTab" class="tab-content" style="display: none;">
-                    <div id="consoleLog" class="console-log"></div>
+                    <div id="consoleLog" class="console-log">
+                        <div class="log-entry system">Sistem başlatıldı.</div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+
     <div class="view-presets">
         <button class="view-btn" onclick="setView('workbench')"><i class="fas fa-columns"></i></button>
         <button class="view-btn active" onclick="setView('focus')"><i class="fas fa-expand"></i></button>
         <button class="view-btn" onclick="switchTheme()"><i class="fas fa-moon"></i></button>
     </div>
+
     <script src="app.js"></script>
 </body>
 </html>
