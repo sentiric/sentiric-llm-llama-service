@@ -236,7 +236,7 @@ textarea {
 .toggle-btn, .action-icon { background: transparent; border: none; color: var(--text-sub); font-size: 1.1rem; padding: 8px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
 .toggle-btn:hover, .action-icon:hover { background: var(--bg-sidebar); color: var(--text-main); }
 
-.theme-switch { position: fixed; bottom: 120px; left: 20px; width: 44px; height: 44px; border-radius: 50%; background: var(--bg-sidebar); border: 1px solid var(--border); box-shadow: var(--shadow-float); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 200; color: var(--text-main); transition: 0.2s; }
+.theme-switch { bottom: 120px; left: 20px; width: 44px; height: 44px; border-radius: 50%; background: var(--bg-sidebar); border: 1px solid var(--border); box-shadow: var(--shadow-float); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 200; color: var(--text-main); transition: 0.2s; }
 
 /* --- MOBILE RESPONSIVE DESIGN --- */
 @media (max-width: 768px) {

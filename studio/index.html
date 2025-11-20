@@ -71,6 +71,8 @@
                     <option value="en-US">🇺🇸 English (US)</option>
                 </select>
             </div>
+
+            <button class="theme-switch" onclick="toggleTheme()"><i class="fas fa-moon"></i></button>
         </div>
 
         <div class="footer">
@@ -86,7 +88,7 @@
             <button class="toggle-btn" onclick="togglePanel('leftPanel')"><i class="fas fa-sliders-h"></i></button>
             
             <div class="model-info">
-                <span class="model-name">Gemma 1B</span>
+                <span class="model-name">Sentiric 1B</span>
                 <span class="model-tag">Local GPU</span>
             </div>
 
@@ -150,7 +152,7 @@
             </div>
 
             <!-- LOGS TAB -->
-            <div id="logsTab" class="tab-content">
+            <div id="logsTab" class="tab-content" style="display: none;">
                 <div class="dashboard-grid">
                     <div class="dash-card">
                         <label>Hız (TPS)</label>
@@ -177,8 +179,6 @@
     <div class="overlay" id="overlay" onclick="closeAllPanels()"></div>
 
 </div>
-
-<button class="theme-switch" onclick="toggleTheme()"><i class="fas fa-moon"></i></button>
 
 <script src="app.js"></script>
 </body>
