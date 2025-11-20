@@ -4,10 +4,13 @@ const state = {
     controller: null,
     startTime: 0,
     tokenCount: 0,
-    theme: localStorage.getItem('theme') || 'light'
+    theme: localStorage.getItem('theme') || 'light',
+    history: [], // {role: 'user'|'model', content: '...'}
+    autoListen: false, // Hands-free mode
+    recognition: null
 };
 
-// DOM REFERENCES
+// DOM ELEMENTS
 const els = {
     userInput: document.getElementById('userInput'),
     chatMessages: document.getElementById('chatMessages'),
@@ -15,50 +18,37 @@ const els = {
     stopBtn: document.getElementById('stopBtn'),
     systemPrompt: document.getElementById('systemPrompt'),
     ragInput: document.getElementById('ragInput'),
-    // Params
     tempInput: document.getElementById('tempInput'),
     tempVal: document.getElementById('tempVal'),
-    topPInput: document.getElementById('topPInput'),
-    topPVal: document.getElementById('topPVal'),
-    repPenInput: document.getElementById('repPenInput'),
-    repPenVal: document.getElementById('repPenVal'),
-    seedInput: document.getElementById('seedInput'),
-    maxTokensInput: document.getElementById('maxTokensInput'),
-    // Metrics
+    historyLimit: document.getElementById('historyLimit'),
     statusDot: document.querySelector('.status-dot'),
     statusText: document.getElementById('statusText'),
-    lastLatency: document.getElementById('lastLatency'),
-    lastTPS: document.getElementById('lastTPS'),
     consoleLog: document.getElementById('consoleLog'),
-    promptTokenVal: document.getElementById('promptTokenVal'),
-    genTokenVal: document.getElementById('genTokenVal')
+    langSelect: document.getElementById('langSelect'),
+    fileInput: document.getElementById('fileInput'),
+    micBtn: document.getElementById('micBtn'),
+    autoModeIndicator: document.getElementById('autoModeIndicator'),
+    lastLatency: document.getElementById('lastLatency'),
+    tokenCountDisplay: document.getElementById('tokenCountDisplay')
 };
 
-// INIT
+// --- INIT ---
 document.addEventListener('DOMContentLoaded', () => {
     applyTheme(state.theme);
-    loadHistory();
-    
-    // Event Listeners
-    setupInputHandlers();
-    setupParamListeners();
-    
     checkHealth();
     setInterval(checkHealth, 8000);
-
-    // Default View
+    setupEventListeners();
+    setupSpeechRecognition();
     setViewInternal('focus');
 });
 
-// --- HANDLERS ---
-
-function setupInputHandlers() {
+function setupEventListeners() {
+    // Input Auto-resize & Enter
     if(els.userInput) {
         els.userInput.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = (this.scrollHeight) + 'px';
         });
-
         els.userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -66,19 +56,107 @@ function setupInputHandlers() {
             }
         });
     }
-    if(els.sendBtn) els.sendBtn.addEventListener('click', sendMessage);
+
+    if(els.sendBtn) els.sendBtn.addEventListener('click', () => sendMessage());
     if(els.stopBtn) els.stopBtn.addEventListener('click', stopGeneration);
+    
+    // Settings
+    if(els.tempInput) els.tempInput.addEventListener('input', (e) => els.tempVal.textContent = e.target.value);
+    
+    // Language Change
+    if(els.langSelect) {
+        els.langSelect.addEventListener('change', (e) => {
+            const lang = e.target.value;
+            if(state.recognition) state.recognition.lang = lang;
+            // Otomatik System Prompt güncellemesi
+            if(lang === 'en-US') {
+                els.systemPrompt.value = "You are a helpful, skilled, and professional AI assistant.";
+            } else {
+                els.systemPrompt.value = "Sen yardımsever, yetenekli ve profesyonel bir yapay zeka asistanısın.";
+            }
+            logToConsole(`Language switched to ${lang}`);
+        });
+    }
+
+    // File Upload (RAG)
+    if(els.fileInput) {
+        els.fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const content = event.target.result;
+                // Mevcut RAG içeriğine ekle
+                const current = els.ragInput.value;
+                els.ragInput.value = (current ? current + "\n\n" : "") + 
+                    `--- FILE: ${file.name} ---\n${content}`;
+                
+                // Sağ paneli aç
+                const rightPanel = document.getElementById('rightPanel');
+                if(rightPanel.style.display === 'none') togglePanel('rightPanel');
+                
+                logToConsole(`File loaded: ${file.name} (${content.length} chars)`);
+            };
+            reader.readAsText(file);
+        });
+    }
 }
 
-function setupParamListeners() {
-    const bindSlider = (input, display) => {
-        if(input && display) {
-            input.addEventListener('input', (e) => display.textContent = e.target.value);
+// --- SPEECH RECOGNITION (STT) ---
+function setupSpeechRecognition() {
+    if (!('webkitSpeechRecognition' in window)) {
+        els.micBtn.style.display = 'none';
+        return;
+    }
+
+    const recognition = new webkitSpeechRecognition();
+    recognition.lang = 'tr-TR'; // Default, will change with select
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+        els.micBtn.style.color = '#ef4444'; // Red
+        els.micBtn.classList.add('pulse');
+        els.userInput.placeholder = "Dinliyorum...";
+    };
+
+    recognition.onend = () => {
+        els.micBtn.style.color = '';
+        els.micBtn.classList.remove('pulse');
+        els.userInput.placeholder = "Bir şeyler yazın...";
+        
+        // Eğer metin geldiyse gönder
+        if (els.userInput.value.trim().length > 0 && state.autoListen) {
+            sendMessage();
         }
     };
-    bindSlider(els.tempInput, els.tempVal);
-    bindSlider(els.topPInput, els.topPVal);
-    bindSlider(els.repPenInput, els.repPenVal);
+
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        els.userInput.value = transcript;
+    };
+
+    state.recognition = recognition;
+
+    // Tek Tık: Klasik Bas-Konuş
+    els.micBtn.addEventListener('click', () => {
+        if (state.autoListen) {
+            // Sürekli modu kapat
+            state.autoListen = false;
+            els.autoModeIndicator.classList.add('hidden');
+            recognition.stop();
+        } else {
+            recognition.start();
+        }
+    });
+
+    // Çift Tık: Sürekli (Hands-Free) Mod
+    els.micBtn.addEventListener('dblclick', () => {
+        state.autoListen = true;
+        els.autoModeIndicator.classList.remove('hidden');
+        recognition.start();
+    });
 }
 
 // --- CORE LOGIC ---
@@ -87,12 +165,15 @@ async function sendMessage() {
     const text = els.userInput.value.trim();
     if (!text || state.isGenerating) return;
 
-    // UI Updates
     els.userInput.value = '';
     els.userInput.style.height = 'auto';
     document.querySelector('.welcome-screen').style.display = 'none';
 
+    // 1. Kullanıcı mesajını ekle
     appendMessage('user', text);
+    state.history.push({ role: "user", content: text });
+
+    // 2. AI "Düşünüyor" animasyonu
     const aiMsgContent = appendMessage('ai', '<span class="cursor"></span>');
     
     setGeneratingState(true);
@@ -100,33 +181,26 @@ async function sendMessage() {
     state.startTime = Date.now();
     state.tokenCount = 0;
     
-    let fullResponse = "";
-    
-    // Build Request Body (Advanced Params)
-    const requestBody = {
-        messages: buildMessages(text),
-        temperature: parseFloat(els.tempInput.value),
-        max_tokens: parseInt(els.maxTokensInput.value),
-        top_p: parseFloat(els.topPInput.value),
-        repeat_penalty: parseFloat(els.repPenInput.value),
-        seed: parseInt(els.seedInput.value),
-        stream: true
-    };
-
-    logToConsole(`Request: ${JSON.stringify(requestBody.messages.length)} msgs, Temp: ${requestBody.temperature}`);
+    // 3. Mesaj Geçmişini Hazırla (History + RAG + System)
+    const messagesPayload = buildMessagePayload(text);
 
     try {
         const response = await fetch('/v1/chat/completions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
+            body: JSON.stringify({
+                messages: messagesPayload,
+                temperature: parseFloat(els.tempInput.value),
+                stream: true
+            }),
             signal: state.controller.signal
         });
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) throw new Error(`API ${response.status}`);
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let fullResponse = "";
         let buffer = "";
 
         while (true) {
@@ -148,7 +222,6 @@ async function sendMessage() {
                             fullResponse += delta;
                             aiMsgContent.innerHTML = marked.parse(fullResponse) + '<span class="cursor"></span>';
                             state.tokenCount++;
-                            // Scroll only if near bottom
                             scrollToBottom();
                         }
                     } catch (e) {}
@@ -156,16 +229,24 @@ async function sendMessage() {
             }
         }
 
-        // Final Polish
-        finishGeneration(aiMsgContent, fullResponse);
-        saveHistory(text, fullResponse);
+        // Bitiş
+        aiMsgContent.innerHTML = marked.parse(fullResponse);
+        hljs.highlightAll();
+        
+        // Geçmişe Ekle
+        state.history.push({ role: "assistant", content: fullResponse });
+        updateMetrics(Date.now() - state.startTime, state.tokenCount);
+
+        // AUTO-LISTEN RESTART (Hands-Free)
+        if (state.autoListen && state.recognition) {
+            setTimeout(() => {
+                try { state.recognition.start(); } catch(e){}
+            }, 1000); // 1sn bekle sonra tekrar dinle
+        }
 
     } catch (err) {
         if (err.name !== 'AbortError') {
-            aiMsgContent.innerHTML += `<br><span style="color:#ef4444">[Error: ${err.message}]</span>`;
-            logToConsole(`Error: ${err.message}`);
-        } else {
-            aiMsgContent.innerHTML += " <span style='color:#888'>[Durduruldu]</span>";
+            aiMsgContent.innerHTML += `<br><span style="color:red">HATA: ${err.message}</span>`;
         }
     } finally {
         setGeneratingState(false);
@@ -173,53 +254,44 @@ async function sendMessage() {
     }
 }
 
-function buildMessages(userText) {
-    const msgs = [];
-    if (els.systemPrompt.value.trim()) {
-        msgs.push({ role: "system", content: els.systemPrompt.value });
-    }
-    const rag = els.ragInput.value.trim();
-    const content = rag ? `BAĞLAM:\n${rag}\n\nSORU:\n${userText}` : userText;
-    msgs.push({ role: "user", content: content });
-    return msgs;
-}
-
-function finishGeneration(element, fullText) {
-    element.innerHTML = marked.parse(fullText);
+function buildMessagePayload(lastUserText) {
+    const payload = [];
     
-    // Syntax Highlight
-    element.querySelectorAll('pre code').forEach((block) => {
-        hljs.highlightElement(block);
-        addCopyButton(block);
+    // 1. System Prompt
+    if (els.systemPrompt.value.trim()) {
+        payload.push({ role: "system", content: els.systemPrompt.value });
+    }
+
+    // 2. RAG Context (System mesajı gibi davranabilir veya user mesajına eklenebilir)
+    // Biz burada ayrı bir 'system' veya 'user' injection olarak ekleyeceğiz.
+    if (els.ragInput.value.trim()) {
+        payload.push({ 
+            role: "user", 
+            content: `Aşağıdaki bağlamı kullanarak soruları cevapla:\n\n${els.ragInput.value.trim()}` 
+        });
+        payload.push({ role: "assistant", content: "Anlaşıldı. Bağlamı dikkate alarak cevaplayacağım." });
+    }
+
+    // 3. History (Son N mesaj)
+    const limit = parseInt(els.historyLimit.value) || 10;
+    // Son mesaj zaten state.history'de var, ama onu tekrar eklememek için slice alıyoruz
+    // state.history şunları içerir: User, AI, User, AI...
+    // Son eklediğimiz User mesajı state.history'de var.
+    
+    // History'den son (Limit) kadarını al, ama şu anki mesajı (sonuncuyu) hariç tut çünkü aşağıda özel işleyeceğiz
+    const historySlice = state.history.slice(0, -1).slice(-limit); 
+    
+    historySlice.forEach(msg => {
+        payload.push({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content });
     });
 
-    // Metrics
-    const duration = Date.now() - state.startTime;
-    const seconds = duration / 1000;
-    const tps = state.tokenCount / seconds;
-    
-    els.lastLatency.textContent = `${duration}ms`;
-    els.lastTPS.textContent = `${tps.toFixed(1)} t/s`;
-    
-    // Mock Token Counts (Backend doesn't send usage in stream yet, normally)
-    els.genTokenVal.textContent = state.tokenCount;
-    logToConsole(`Finished: ${state.tokenCount} tokens in ${seconds.toFixed(2)}s`);
+    // 4. Son Mesaj
+    payload.push({ role: "user", content: lastUserText });
+
+    return payload;
 }
 
-// --- UTILITIES ---
-
-function addCopyButton(block) {
-    const pre = block.parentElement;
-    const btn = document.createElement('button');
-    btn.className = 'copy-btn';
-    btn.innerHTML = '<i class="fas fa-copy"></i>';
-    btn.onclick = () => {
-        navigator.clipboard.writeText(block.innerText);
-        btn.innerHTML = '<i class="fas fa-check"></i>';
-        setTimeout(() => btn.innerHTML = '<i class="fas fa-copy"></i>', 2000);
-    };
-    pre.appendChild(btn);
-}
+// --- UI HELPERS ---
 
 function appendMessage(role, html) {
     const div = document.createElement('div');
@@ -234,25 +306,20 @@ function appendMessage(role, html) {
     return div.querySelector('.msg-content');
 }
 
-function forceJSONMode() {
-    els.systemPrompt.value = "Sen bir JSON API'sisin. Sadece geçerli JSON formatında yanıt ver. Açıklama yapma.";
-    alert("System Prompt JSON modu için güncellendi.");
-}
-
 function clearChat() {
+    state.history = [];
     els.chatMessages.innerHTML = `
         <div class="welcome-screen">
             <div class="welcome-icon"><i class="fas fa-eraser"></i></div>
             <h2>Sohbet Temizlendi</h2>
         </div>`;
-    localStorage.removeItem('chatHistory');
     logToConsole("Chat history cleared.");
 }
 
 function logToConsole(msg) {
     const div = document.createElement('div');
     div.className = 'log-entry';
-    div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    div.textContent = `> ${msg}`;
     els.consoleLog.prepend(div);
 }
 
@@ -262,41 +329,13 @@ function setGeneratingState(active) {
     els.stopBtn.classList.toggle('hidden', !active);
 }
 
+function updateMetrics(duration, tokens) {
+    els.lastLatency.textContent = `${duration}ms`;
+    els.tokenCountDisplay.textContent = `${tokens} tokens`;
+}
+
 function scrollToBottom() {
     els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
-}
-
-// --- HISTORY & THEME ---
-
-function saveHistory(user, ai) {
-    let history = JSON.parse(localStorage.getItem('chatHistory') || '[]');
-    history.push({ user, ai });
-    if (history.length > 20) history.shift(); // Keep last 20
-    localStorage.setItem('chatHistory', JSON.stringify(history));
-}
-
-function loadHistory() {
-    const history = JSON.parse(localStorage.getItem('chatHistory') || '[]');
-    if (history.length > 0) {
-        document.querySelector('.welcome-screen').style.display = 'none';
-        history.forEach(item => {
-            appendMessage('user', item.user);
-            const aiDiv = appendMessage('ai', '');
-            finishGeneration(aiDiv, item.ai);
-        });
-        logToConsole("Session history loaded.");
-    }
-}
-
-window.switchTheme = function() {
-    state.theme = state.theme === 'light' ? 'dark' : 'light';
-    applyTheme(state.theme);
-    localStorage.setItem('theme', state.theme);
-};
-
-function applyTheme(theme) {
-    if (theme === 'dark') document.body.setAttribute('data-theme', 'dark');
-    else document.body.removeAttribute('data-theme');
 }
 
 async function checkHealth() {
@@ -312,14 +351,34 @@ async function checkHealth() {
     }
 }
 
-// --- VIEW LOGIC ---
+// --- VIEW EXPORTS ---
+window.togglePanel = (id) => {
+    const el = document.getElementById(id);
+    el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+};
+window.switchTab = (tab) => {
+    document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+    document.getElementById(tab + 'Tab').style.display = 'block';
+    if(event) {
+        document.querySelectorAll('.context-tab').forEach(el => el.classList.remove('active'));
+        event.target.classList.add('active');
+    }
+};
+window.clearChat = clearChat;
+window.switchTheme = () => {
+    state.theme = state.theme === 'light' ? 'dark' : 'light';
+    applyTheme(state.theme);
+    localStorage.setItem('theme', state.theme);
+};
+function applyTheme(theme) {
+    if (theme === 'dark') document.body.setAttribute('data-theme', 'dark');
+    else document.body.removeAttribute('data-theme');
+}
 function setViewInternal(mode) {
     const left = document.getElementById('leftPanel');
     const right = document.getElementById('rightPanel');
-    const buttons = document.querySelectorAll('.view-btn');
-
-    buttons.forEach(b => b.classList.remove('active'));
-    // Basit toggle
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+    
     if(mode === 'focus') {
         left.style.display = 'none';
         right.style.display = 'none';
@@ -330,17 +389,5 @@ function setViewInternal(mode) {
         document.querySelector('button[onclick*="workbench"]').classList.add('active');
     }
 }
-
 window.setView = setViewInternal;
-window.togglePanel = (id) => {
-    const el = document.getElementById(id);
-    el.style.display = el.style.display === 'none' ? 'flex' : 'none';
-};
-window.switchTab = (tab) => {
-    document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
-    document.getElementById(tab + 'Tab').style.display = 'block';
-    document.querySelectorAll('.context-tab').forEach(el => el.classList.remove('active'));
-    // Event target fix via simple loop or specialized selector if needed, but simple click works
-    if(event) event.target.classList.add('active');
-};
 function stopGeneration() { if(state.controller) state.controller.abort(); }
