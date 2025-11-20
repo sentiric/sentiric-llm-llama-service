@@ -437,12 +437,20 @@ window.toggleTheme = () => {
     localStorage.setItem('theme', next);
 };
 
+// DÜZELTME: Clear Chat Logic
 window.clearChat = () => {
     state.history = [];
     const container = $('chatContainer');
-    container.innerHTML = ''; 
-    container.appendChild($('emptyState')); 
-    $('emptyState').style.display = 'flex';
+    
+    // DOM elemanını taşımak yerine HTML string'i yeniden enjekte ediyoruz.
+    // Bu, "Node not found" hatasını kesin olarak çözer.
+    container.innerHTML = `
+        <div class="empty-state" id="emptyState" style="display: flex;">
+            <div class="logo-shine"><i class="fas fa-layer-group"></i></div>
+            <h2>Sentiric Engine Hazır</h2>
+            <p>Parametreleri ayarla, veri yükle ve sohbete başla.</p>
+        </div>
+    `;
 };
 
 async function checkHealth() {

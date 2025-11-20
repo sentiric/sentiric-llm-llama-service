@@ -247,9 +247,11 @@ textarea {
     .sidebar.right.active { transform: translateX(0); }
     
     .mobile-only { display: block !important; }
-    
-    .chat-view { padding-bottom: 120px; padding-top: 70px; }
-    
+    .chat-view { 
+        /* Eskiden 120px idi, input alanı altında kalmayı önlemek için artırdık */
+        padding-bottom: 160px; 
+        padding-top: 70px; 
+    }
     .input-capsule { padding: 8px 12px; border-radius: 20px; }
     .send-btn { width: 36px; height: 36px; border-radius: 10px; }
     
@@ -282,4 +284,34 @@ textarea {
         transform: scale(0.95);
         box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
     }
+}
+
+/* --- EKSİK OLAN EMPTY STATE STİLLERİ --- */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    color: var(--text-sub);
+    gap: 16px;
+    opacity: 0.8;
+    animation: fadeSlideIn 0.5s ease;
+}
+
+.logo-shine {
+    font-size: 4rem;
+    color: var(--border);
+    /* Şık bir parlama efekti */
+    background: linear-gradient(135deg, var(--primary-light), var(--primary));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 4px 10px rgba(99, 102, 241, 0.2));
+}
+
+.empty-state h2 {
+    color: var(--text-main);
+    font-weight: 600;
+    margin: 0;
 }
