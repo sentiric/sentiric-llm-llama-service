@@ -89,6 +89,18 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
     spdlog::info("✅ Batch processing completed.");
 }
 
+// --- YARDIMCI FONKSİYON: Safe Memory Clear ---
+// KB-04'e uygun implementasyon
+void safe_kv_clear(llama_context* ctx) {
+    // -1, -1, -1 = Tüm sequence'leri, baştan sona sil
+    llama_memory_seq_rm(llama_get_memory(ctx), -1, 0, -1);
+}
+
+// Belirli bir noktadan sonrasını sil
+bool safe_kv_seq_rm(llama_context* ctx, llama_seq_id seq, llama_pos p0, llama_pos p1) {
+    return llama_memory_seq_rm(llama_get_memory(ctx), seq, p0, p1);
+}
+
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
     try {
         auto& request = req_ptr->request;
@@ -96,8 +108,6 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         const auto* vocab = llama_model_get_vocab(model_);
         
         // 1. Tokenizasyon
-        // Not: llama_tokenize 'add_bos' parametresini true yapıyoruz.
-        // Formatter başında ayrıca <bos> eklememeli.
         std::vector<llama_token> prompt_tokens(formatted_prompt.length() + 64); 
         int n_tokens = llama_tokenize(vocab, formatted_prompt.c_str(), formatted_prompt.length(), prompt_tokens.data(), prompt_tokens.size(), true, true);
         
@@ -115,19 +125,16 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         llama_context* ctx = guard.get();
         size_t matched_len = guard.get_matched_tokens();
 
-        // 3. KV Cache Temizliği (DÜZELTİLDİ)
-        // Log hatasını (sequence inconsistency) çözen kısım burasıdır.
-        // Sequence ID 0'ı hedefleyerek, matched_len sonrasındaki her şeyi siliyoruz.
+        // 3. KV Cache Temizliği (KB-04 UYUMLU DÜZELTME)
         if (matched_len < prompt_tokens.size()) {
-            // Eğer önbellekte daha fazla veri varsa (örn: önceki istek 1000 token, biz 39 eşleştik)
-            // 39. pozisyondan sonrasını silmemiz gerekir.
-            if (!llama_kv_cache_seq_rm(ctx, 0, matched_len, -1)) {
+            // Sequence 0 için, matched_len'den sonrasını (-1) sil.
+            if (!safe_kv_seq_rm(ctx, 0, matched_len, -1)) {
                 spdlog::error("Failed to remove KV cache sequence! Resetting context.");
-                llama_kv_cache_clear(ctx);
+                safe_kv_clear(ctx);
                 matched_len = 0;
             }
         } else if (matched_len == 0) {
-             llama_kv_cache_clear(ctx);
+             safe_kv_clear(ctx);
         }
         
         // 4. Prompt Decode
@@ -136,17 +143,15 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         if (tokens_to_process > 0) {
             LlamaBatchGuard prompt_batch(tokens_to_process, 0, 1);
             for(size_t i = 0; i < tokens_to_process; ++i) {
-                // Pozisyonlar kesinlikle (matched_len + i) olmalı
                 common_batch_add(prompt_batch.batch, prompt_tokens[matched_len + i], matched_len + i, {0}, false);
             }
-            // Sadece son token logit üretir
             prompt_batch.batch.logits[prompt_batch.batch.n_tokens - 1] = true;
             
             if (llama_decode(ctx, prompt_batch.batch) != 0) {
                 spdlog::error("Prompt decode failed. Resetting context and retrying full prompt.");
-                // Retry logic: Clear and try from scratch
-                llama_kv_cache_clear(ctx);
-                // Batch'i sıfırla ve baştan oluştur
+                // Retry logic
+                safe_kv_clear(ctx);
+                
                 llama_batch_free(prompt_batch.batch);
                 prompt_batch.batch = llama_batch_init(prompt_tokens.size(), 0, 1);
                 for(size_t i = 0; i < prompt_tokens.size(); ++i) {
@@ -157,7 +162,7 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
                 if (llama_decode(ctx, prompt_batch.batch) != 0) {
                      throw std::runtime_error("Prompt decode failed even after retry.");
                 }
-                matched_len = 0; // Retry successful, but cache was cleared
+                matched_len = 0; 
             }
         }
 
@@ -173,7 +178,7 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         // 6. Generation Döngüsü
         int n_decoded = 0;
         std::vector<llama_token> final_tokens = prompt_tokens; 
-        llama_pos n_past = prompt_tokens.size(); // Son decode edilen pozisyonun bir fazlası
+        llama_pos n_past = prompt_tokens.size();
 
         while (n_decoded < settings_.default_max_tokens) {
             if (req_ptr->should_stop_callback && req_ptr->should_stop_callback()) {
@@ -193,8 +198,6 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
             
             if (n_piece > 0) {
                 std::string token_str(piece_buf, n_piece);
-                
-                // <unused...> kontrolü: Model saçmalıyorsa kullanıcıya gösterme
                 if (token_str.find("<unused") == std::string::npos) {
                      if (req_ptr->on_token_callback) {
                         if (!req_ptr->on_token_callback(token_str)) {
@@ -207,13 +210,10 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
             
             final_tokens.push_back(new_token_id);
             
-            // Sonraki token için batch hazırla
-            // Burada n_past kullanıyoruz, yani bir önceki batch'in sonu
             LlamaBatchGuard token_batch(1, 0, 1);
             common_batch_add(token_batch.batch, new_token_id, n_past, {0}, true);
             
             if (llama_decode(ctx, token_batch.batch) != 0) {
-                 // Context dolduysa normal bir bitiş kabul et
                  req_ptr->finish_reason = "length";
                  break;
             }
