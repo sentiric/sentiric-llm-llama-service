@@ -43,7 +43,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupEventListeners() {
-    // Input Auto-resize & Enter
     if(els.userInput) {
         els.userInput.addEventListener('input', function() {
             this.style.height = 'auto';
@@ -60,15 +59,12 @@ function setupEventListeners() {
     if(els.sendBtn) els.sendBtn.addEventListener('click', () => sendMessage());
     if(els.stopBtn) els.stopBtn.addEventListener('click', stopGeneration);
     
-    // Settings
     if(els.tempInput) els.tempInput.addEventListener('input', (e) => els.tempVal.textContent = e.target.value);
     
-    // Language Change
     if(els.langSelect) {
         els.langSelect.addEventListener('change', (e) => {
             const lang = e.target.value;
             if(state.recognition) state.recognition.lang = lang;
-            // Otomatik System Prompt güncellemesi
             if(lang === 'en-US') {
                 els.systemPrompt.value = "You are a helpful, skilled, and professional AI assistant.";
             } else {
@@ -78,7 +74,6 @@ function setupEventListeners() {
         });
     }
 
-    // File Upload (RAG)
     if(els.fileInput) {
         els.fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
@@ -87,12 +82,10 @@ function setupEventListeners() {
             const reader = new FileReader();
             reader.onload = (event) => {
                 const content = event.target.result;
-                // Mevcut RAG içeriğine ekle
                 const current = els.ragInput.value;
                 els.ragInput.value = (current ? current + "\n\n" : "") + 
                     `--- FILE: ${file.name} ---\n${content}`;
                 
-                // Sağ paneli aç
                 const rightPanel = document.getElementById('rightPanel');
                 if(rightPanel.style.display === 'none') togglePanel('rightPanel');
                 
@@ -103,7 +96,7 @@ function setupEventListeners() {
     }
 }
 
-// --- SPEECH RECOGNITION (STT) ---
+// --- SPEECH RECOGNITION ---
 function setupSpeechRecognition() {
     if (!('webkitSpeechRecognition' in window)) {
         els.micBtn.style.display = 'none';
@@ -111,12 +104,16 @@ function setupSpeechRecognition() {
     }
 
     const recognition = new webkitSpeechRecognition();
-    recognition.lang = 'tr-TR'; // Default, will change with select
+    recognition.lang = 'tr-TR'; 
     recognition.continuous = false;
     recognition.interimResults = false;
 
     recognition.onstart = () => {
-        els.micBtn.style.color = '#ef4444'; // Red
+        if (state.isGenerating) {
+            recognition.stop();
+            return;
+        }
+        els.micBtn.style.color = '#ef4444'; 
         els.micBtn.classList.add('pulse');
         els.userInput.placeholder = "Dinliyorum...";
     };
@@ -126,9 +123,14 @@ function setupSpeechRecognition() {
         els.micBtn.classList.remove('pulse');
         els.userInput.placeholder = "Bir şeyler yazın...";
         
-        // Eğer metin geldiyse gönder
-        if (els.userInput.value.trim().length > 0 && state.autoListen) {
-            sendMessage();
+        if (state.autoListen && !state.isGenerating) {
+            if (els.userInput.value.trim().length === 0) {
+                setTimeout(() => {
+                    if(!state.isGenerating && state.autoListen) recognition.start();
+                }, 500); 
+            } else {
+                sendMessage();
+            }
         }
     };
 
@@ -137,12 +139,14 @@ function setupSpeechRecognition() {
         els.userInput.value = transcript;
     };
 
+    recognition.onerror = (event) => {
+        console.error("Speech Error:", event.error);
+    };
+
     state.recognition = recognition;
 
-    // Tek Tık: Klasik Bas-Konuş
     els.micBtn.addEventListener('click', () => {
         if (state.autoListen) {
-            // Sürekli modu kapat
             state.autoListen = false;
             els.autoModeIndicator.classList.add('hidden');
             recognition.stop();
@@ -151,7 +155,6 @@ function setupSpeechRecognition() {
         }
     });
 
-    // Çift Tık: Sürekli (Hands-Free) Mod
     els.micBtn.addEventListener('dblclick', () => {
         state.autoListen = true;
         els.autoModeIndicator.classList.remove('hidden');
@@ -167,13 +170,12 @@ async function sendMessage() {
 
     els.userInput.value = '';
     els.userInput.style.height = 'auto';
-    document.querySelector('.welcome-screen').style.display = 'none';
+    const welcome = document.querySelector('.welcome-screen');
+    if(welcome) welcome.style.display = 'none';
 
-    // 1. Kullanıcı mesajını ekle
     appendMessage('user', text);
     state.history.push({ role: "user", content: text });
 
-    // 2. AI "Düşünüyor" animasyonu
     const aiMsgContent = appendMessage('ai', '<span class="cursor"></span>');
     
     setGeneratingState(true);
@@ -181,7 +183,6 @@ async function sendMessage() {
     state.startTime = Date.now();
     state.tokenCount = 0;
     
-    // 3. Mesaj Geçmişini Hazırla (History + RAG + System)
     const messagesPayload = buildMessagePayload(text);
 
     try {
@@ -196,7 +197,10 @@ async function sendMessage() {
             signal: state.controller.signal
         });
 
-        if (!response.ok) throw new Error(`API ${response.status}`);
+        if (!response.ok) {
+             const errText = await response.text();
+             throw new Error(`HTTP ${response.status}: ${errText || 'Servis Hatası'}`);
+        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -229,24 +233,27 @@ async function sendMessage() {
             }
         }
 
-        // Bitiş
         aiMsgContent.innerHTML = marked.parse(fullResponse);
         hljs.highlightAll();
         
-        // Geçmişe Ekle
         state.history.push({ role: "assistant", content: fullResponse });
         updateMetrics(Date.now() - state.startTime, state.tokenCount);
 
-        // AUTO-LISTEN RESTART (Hands-Free)
         if (state.autoListen && state.recognition) {
             setTimeout(() => {
                 try { state.recognition.start(); } catch(e){}
-            }, 1000); // 1sn bekle sonra tekrar dinle
+            }, 1500); 
         }
 
     } catch (err) {
         if (err.name !== 'AbortError') {
-            aiMsgContent.innerHTML += `<br><span style="color:red">HATA: ${err.message}</span>`;
+            const errMsg = err.message === 'Failed to fetch' 
+                ? 'Bağlantı Hatası: Servis kapalı veya ağ sorunu var.' 
+                : err.message;
+                
+            aiMsgContent.innerHTML += `<br><div style="background: #fee2e2; border: 1px solid #ef4444; color: #b91c1c; padding: 10px; border-radius: 8px; margin-top: 8px; font-size: 0.9em;"><strong>⚠️ HATA:</strong> ${errMsg}</div>`;
+            
+            logToConsole(`Error: ${errMsg}`);
         }
     } finally {
         setGeneratingState(false);
@@ -257,35 +264,25 @@ async function sendMessage() {
 function buildMessagePayload(lastUserText) {
     const payload = [];
     
-    // 1. System Prompt
     if (els.systemPrompt.value.trim()) {
         payload.push({ role: "system", content: els.systemPrompt.value });
     }
 
-    // 2. RAG Context (System mesajı gibi davranabilir veya user mesajına eklenebilir)
-    // Biz burada ayrı bir 'system' veya 'user' injection olarak ekleyeceğiz.
     if (els.ragInput.value.trim()) {
         payload.push({ 
             role: "user", 
-            content: `Aşağıdaki bağlamı kullanarak soruları cevapla:\n\n${els.ragInput.value.trim()}` 
+            content: `Aşağıdaki bağlamı ve kuralları kullanarak cevapla:\n\n${els.ragInput.value.trim()}` 
         });
-        payload.push({ role: "assistant", content: "Anlaşıldı. Bağlamı dikkate alarak cevaplayacağım." });
+        payload.push({ role: "assistant", content: "Anlaşıldı." });
     }
 
-    // 3. History (Son N mesaj)
     const limit = parseInt(els.historyLimit.value) || 10;
-    // Son mesaj zaten state.history'de var, ama onu tekrar eklememek için slice alıyoruz
-    // state.history şunları içerir: User, AI, User, AI...
-    // Son eklediğimiz User mesajı state.history'de var.
-    
-    // History'den son (Limit) kadarını al, ama şu anki mesajı (sonuncuyu) hariç tut çünkü aşağıda özel işleyeceğiz
     const historySlice = state.history.slice(0, -1).slice(-limit); 
     
     historySlice.forEach(msg => {
         payload.push({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content });
     });
 
-    // 4. Son Mesaj
     payload.push({ role: "user", content: lastUserText });
 
     return payload;
@@ -325,13 +322,13 @@ function logToConsole(msg) {
 
 function setGeneratingState(active) {
     state.isGenerating = active;
-    els.sendBtn.classList.toggle('hidden', active);
-    els.stopBtn.classList.toggle('hidden', !active);
+    if(els.sendBtn) els.sendBtn.classList.toggle('hidden', active);
+    if(els.stopBtn) els.stopBtn.classList.toggle('hidden', !active);
 }
 
 function updateMetrics(duration, tokens) {
-    els.lastLatency.textContent = `${duration}ms`;
-    els.tokenCountDisplay.textContent = `${tokens} tokens`;
+    if(els.lastLatency) els.lastLatency.textContent = `${duration}ms`;
+    if(els.tokenCountDisplay) els.tokenCountDisplay.textContent = `${tokens} tokens`;
 }
 
 function scrollToBottom() {
@@ -344,6 +341,9 @@ async function checkHealth() {
         if (res.ok) {
             els.statusDot.className = 'status-dot connected';
             els.statusText.textContent = 'Hazır';
+        } else {
+            els.statusDot.className = 'status-dot';
+            els.statusText.textContent = 'Servis Bekleniyor...';
         }
     } catch(e) {
         els.statusDot.className = 'status-dot';

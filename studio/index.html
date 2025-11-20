@@ -4,17 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sentiric Studio | Pro</title>
-    
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <link rel="stylesheet" href="style.css">
-
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
 <body data-theme="light">
-    
     <div class="app-container">
         <!-- SOL PANEL -->
         <div class="panel side-panel" id="leftPanel" style="display: none;">
@@ -22,7 +19,6 @@
                 <span><i class="fas fa-sliders-h"></i> Ayarlar</span>
                 <button class="icon-btn" onclick="togglePanel('leftPanel')"><i class="fas fa-times"></i></button>
             </div>
-            
             <div class="panel-content">
                 <div class="setting-group">
                     <label>Dil / Language</label>
@@ -31,12 +27,10 @@
                         <option value="en-US">🇺🇸 English (US)</option>
                     </select>
                 </div>
-
                 <div class="setting-group">
                     <label>System Prompt</label>
                     <textarea id="systemPrompt" class="input-area" rows="5">Sen yardımsever, yetenekli ve profesyonel bir yapay zeka asistanısın.</textarea>
                 </div>
-
                 <div class="setting-group">
                     <div class="slider-header">
                         <label>Temperature</label>
@@ -44,12 +38,10 @@
                     </div>
                     <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.7">
                 </div>
-
                 <div class="setting-group">
                     <label>Hafıza (Geçmiş Mesaj Sayısı)</label>
                     <input type="number" id="historyLimit" value="10" class="input-number" style="width:100%">
                 </div>
-                
                 <div class="setting-group" style="margin-top: auto;">
                     <div class="connection-status" id="connStatus">
                         <div class="status-dot"></div>
@@ -66,17 +58,14 @@
                     <button class="icon-btn" onclick="togglePanel('leftPanel')"><i class="fas fa-cog"></i></button>
                     <div class="brand-logo"><i class="fas fa-layer-group"></i> Sentiric Studio</div>
                 </div>
-                
                 <div class="header-center">
                     <span class="model-badge"><i class="fas fa-microchip"></i> Gemma-2 (v2.1)</span>
                 </div>
-
                 <div class="header-group">
                     <button class="icon-btn" onclick="clearChat()" title="Temizle"><i class="fas fa-trash-alt"></i></button>
                     <button class="icon-btn" onclick="togglePanel('rightPanel')" title="Bağlam"><i class="fas fa-database"></i></button>
                 </div>
             </div>
-            
             <div class="chat-messages" id="chatMessages">
                 <div class="welcome-screen">
                     <div class="welcome-icon"><i class="fas fa-robot"></i></div>
@@ -84,12 +73,10 @@
                     <p>Dosya yükleyebilir, konuşarak anlaşabilir veya parametreleri test edebilirsiniz.</p>
                 </div>
             </div>
-
             <div class="input-wrapper">
                 <div class="command-bar">
                     <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-square"></i></button>
                     <textarea id="userInput" class="command-input" placeholder="Bir şeyler yazın... (Ctrl+Enter)" rows="1"></textarea>
-                    
                     <div class="action-group">
                         <button class="command-btn" id="fileBtn" onclick="document.getElementById('fileInput').click()" title="Dosya Yükle (RAG)">
                             <i class="fas fa-paperclip"></i>
@@ -99,7 +86,6 @@
                         </button>
                         <button class="command-btn send-btn" id="sendBtn"><i class="fas fa-arrow-up"></i></button>
                     </div>
-                    <!-- Gizli Dosya Input -->
                     <input type="file" id="fileInput" style="display:none" accept=".txt,.md,.json,.js,.cpp,.h,.py">
                 </div>
                 <div class="footer-stats">
@@ -110,18 +96,16 @@
             </div>
         </div>
 
-        <!-- SAĞ PANEL: RAG -->
+        <!-- SAĞ PANEL -->
         <div class="panel side-panel" id="rightPanel" style="display: none;">
             <div class="panel-header">
                 <span><i class="fas fa-project-diagram"></i> Bağlam (Context)</span>
                 <button class="icon-btn" onclick="togglePanel('rightPanel')"><i class="fas fa-times"></i></button>
             </div>
-            
             <div class="context-tabs">
                 <button class="context-tab active" onclick="switchTab('rag')">RAG</button>
                 <button class="context-tab" onclick="switchTab('logs')">Loglar</button>
             </div>
-            
             <div class="panel-content">
                 <div id="ragTab" class="tab-content active">
                     <p class="help-text" style="font-size:0.8rem; color:#666; margin-bottom:5px;">
@@ -129,20 +113,17 @@
                     </p>
                     <textarea id="ragInput" class="input-area full-height code-font" placeholder="// Proje kodlarını veya dokümanları buraya yükleyin..."></textarea>
                 </div>
-                
                 <div id="logsTab" class="tab-content" style="display: none;">
                     <div id="consoleLog" class="console-log"></div>
                 </div>
             </div>
         </div>
     </div>
-
     <div class="view-presets">
         <button class="view-btn" onclick="setView('workbench')"><i class="fas fa-columns"></i></button>
         <button class="view-btn active" onclick="setView('focus')"><i class="fas fa-expand"></i></button>
         <button class="view-btn" onclick="switchTheme()"><i class="fas fa-moon"></i></button>
     </div>
-
     <script src="app.js"></script>
 </body>
 </html>

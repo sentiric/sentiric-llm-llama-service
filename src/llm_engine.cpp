@@ -89,14 +89,11 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
     spdlog::info("✅ Batch processing completed.");
 }
 
-// --- YARDIMCI FONKSİYON: Safe Memory Clear ---
-// KB-04'e uygun implementasyon
+// --- YARDIMCI FONKSİYONLAR ---
 void safe_kv_clear(llama_context* ctx) {
-    // -1, -1, -1 = Tüm sequence'leri, baştan sona sil
     llama_memory_seq_rm(llama_get_memory(ctx), -1, 0, -1);
 }
 
-// Belirli bir noktadan sonrasını sil
 bool safe_kv_seq_rm(llama_context* ctx, llama_seq_id seq, llama_pos p0, llama_pos p1) {
     return llama_memory_seq_rm(llama_get_memory(ctx), seq, p0, p1);
 }
@@ -120,14 +117,13 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         prompt_tokens.resize(n_tokens);
         req_ptr->prompt_tokens = n_tokens;
 
-        // 2. Context Edinme (Blocking)
+        // 2. Context Edinme
         ContextGuard guard = context_pool_->acquire(prompt_tokens);
         llama_context* ctx = guard.get();
         size_t matched_len = guard.get_matched_tokens();
 
-        // 3. KV Cache Temizliği (KB-04 UYUMLU DÜZELTME)
+        // 3. KV Cache Temizliği
         if (matched_len < prompt_tokens.size()) {
-            // Sequence 0 için, matched_len'den sonrasını (-1) sil.
             if (!safe_kv_seq_rm(ctx, 0, matched_len, -1)) {
                 spdlog::error("Failed to remove KV cache sequence! Resetting context.");
                 safe_kv_clear(ctx);
@@ -137,32 +133,32 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
              safe_kv_clear(ctx);
         }
         
-        // 4. Prompt Decode
+        // 4. Prompt Decode (Batch Chunking)
         size_t tokens_to_process = prompt_tokens.size() - matched_len;
         
         if (tokens_to_process > 0) {
-            LlamaBatchGuard prompt_batch(tokens_to_process, 0, 1);
-            for(size_t i = 0; i < tokens_to_process; ++i) {
-                common_batch_add(prompt_batch.batch, prompt_tokens[matched_len + i], matched_len + i, {0}, false);
-            }
-            prompt_batch.batch.logits[prompt_batch.batch.n_tokens - 1] = true;
+            // Bu versiyonda llama_n_batch fonksiyonu mevcut
+            int32_t n_batch = llama_n_batch(ctx);
             
-            if (llama_decode(ctx, prompt_batch.batch) != 0) {
-                spdlog::error("Prompt decode failed. Resetting context and retrying full prompt.");
-                // Retry logic
-                safe_kv_clear(ctx);
+            for (size_t i = 0; i < tokens_to_process; i += n_batch) {
+                int32_t n_eval = (int32_t)tokens_to_process - i;
+                if (n_eval > n_batch) n_eval = n_batch;
                 
-                llama_batch_free(prompt_batch.batch);
-                prompt_batch.batch = llama_batch_init(prompt_tokens.size(), 0, 1);
-                for(size_t i = 0; i < prompt_tokens.size(); ++i) {
-                    common_batch_add(prompt_batch.batch, prompt_tokens[i], i, {0}, false);
+                LlamaBatchGuard prompt_batch(n_eval, 0, 1);
+                for(int j = 0; j < n_eval; ++j) {
+                    common_batch_add(prompt_batch.batch, prompt_tokens[matched_len + i + j], matched_len + i + j, {0}, false);
                 }
-                prompt_batch.batch.logits[prompt_batch.batch.n_tokens - 1] = true;
+                
+                // Sadece son parçanın son token'ı logit üretsin
+                if (i + n_eval == tokens_to_process) {
+                    prompt_batch.batch.logits[n_eval - 1] = true;
+                }
                 
                 if (llama_decode(ctx, prompt_batch.batch) != 0) {
-                     throw std::runtime_error("Prompt decode failed even after retry.");
+                    spdlog::error("Prompt decode failed at chunk {}/{}. Context full or batch error.", i, tokens_to_process);
+                    safe_kv_clear(ctx);
+                    throw std::runtime_error("Prompt decode failed.");
                 }
-                matched_len = 0; 
             }
         }
 

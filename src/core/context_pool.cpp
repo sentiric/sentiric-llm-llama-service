@@ -8,19 +8,15 @@
 ContextGuard::ContextGuard(LlamaContextPool* pool, llama_context* ctx, int id, size_t matched_tokens)
     : pool_(pool), ctx_(ctx), id_(id), matched_tokens_(matched_tokens) {}
 
-// Destructor'ı GÜNCELLE
 ContextGuard::~ContextGuard() {
-    // Eğer ctx_ nullptr ise (zaten iade edilmişse) hiçbir şey yapma!
     if (ctx_ && pool_) {
         pool_->release(ctx_, id_, {}); 
     }
 }
 
-// Yeni fonksiyonu EKLE (Dosyanın sonuna doğru)
 void ContextGuard::release_early(const std::vector<llama_token>& final_tokens) {
     if (ctx_ && pool_) {
         pool_->release(ctx_, id_, final_tokens);
-        // KRİTİK NOKTA: Pointer'ları sıfırla ki Destructor tekrar release yapmasın!
         ctx_ = nullptr;
         pool_ = nullptr;
     }
@@ -66,11 +62,18 @@ void LlamaContextPool::initialize_contexts() {
     if (!model_) return;
     for (size_t i = 0; i < max_size_; ++i) {
         llama_context_params ctx_params = llama_context_default_params();
+        
+        // KRİTİK AYAR: Batch Size = Context Size
+        // Büyük dosyaları işlerken çökmemesi için batch limitini artırıyoruz.
         ctx_params.n_ctx = settings_.context_size;
         ctx_params.n_batch = settings_.context_size; 
+        
         ctx_params.n_threads = settings_.n_threads;
         ctx_params.n_threads_batch = settings_.n_threads_batch;
         ctx_params.offload_kqv = settings_.kv_offload;
+        
+        // NOT: 'flash_attn' bu versiyonda struct üyesi değil, auto-enable oluyor.
+        // Manuel set etmeye gerek yok.
 
         llama_context* ctx = llama_init_from_model(model_, ctx_params);
         if (!ctx) throw std::runtime_error("Failed to create llama_context.");
@@ -79,10 +82,7 @@ void LlamaContextPool::initialize_contexts() {
     }
 }
 
-// --- DÜZELTME: Legacy (Warmup) çağrılar için Overloading ---
 ContextGuard LlamaContextPool::acquire() {
-    // ModelWarmup vb. yerlerden parametresiz çağrıldığında 
-    // boş bir vektörle ana fonksiyonu çağırarak hatayı engelliyoruz.
     return acquire({});
 }
 
@@ -96,7 +96,6 @@ ContextGuard LlamaContextPool::acquire(const std::vector<llama_token>& input_tok
     int best_id = -1;
     size_t max_match = 0;
     
-    // Akıllı Eşleşme Algoritması
     for (size_t i = 0; i < max_size_; ++i) {
         if (is_busy_[i]) continue;
 
@@ -114,7 +113,6 @@ ContextGuard LlamaContextPool::acquire(const std::vector<llama_token>& input_tok
         }
     }
 
-    // Fallback (hiçbir şey bulunamazsa boşlardan ilkini al)
     if (best_id == -1) {
          for (size_t i = 0; i < max_size_; ++i) {
             if (!is_busy_[i]) { best_id = i; break; }
