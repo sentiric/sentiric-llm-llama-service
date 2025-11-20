@@ -1,5 +1,9 @@
+// --- STATE & UTILS ---
 const $ = (id) => document.getElementById(id);
-const state = { generating: false, controller: null, history: [], autoListen: false };
+const state = { 
+    generating: false, controller: null, history: [], 
+    autoListen: false, recognition: null, startTime: 0, tokenCount: 0 
+};
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -8,34 +12,58 @@ document.addEventListener('DOMContentLoaded', () => {
     
     setupEvents();
     setupSpeech();
-    
-    // Input Focus
-    setTimeout(() => $('userInput').focus(), 100);
+    checkHealth();
+    setInterval(checkHealth, 10000);
 });
 
 // --- EVENTS ---
 function setupEvents() {
     const input = $('userInput');
     
-    input.oninput = function() {
+    // Auto-Resize Textarea
+    input.addEventListener('input', function() {
         this.style.height = 'auto';
         this.style.height = Math.min(this.scrollHeight, 150) + 'px';
-    };
+    });
 
-    input.onkeydown = (e) => {
+    // Enter to Send
+    input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendMessage();
         }
-    };
+    });
 
     $('sendBtn').onclick = sendMessage;
     $('stopBtn').onclick = () => state.controller?.abort();
-    $('fileInput').onchange = handleFile;
+    
+    // Settings Bindings
     $('tempInput').oninput = (e) => $('tempVal').innerText = e.target.value;
+    $('historyLimit').oninput = (e) => $('historyVal').innerText = e.target.value;
+    
+    // File Upload
+    $('fileInput').onchange = async (e) => {
+        const file = e.target.files[0];
+        if(!file) return;
+        const text = await file.text();
+        const rag = $('ragInput');
+        rag.value = (rag.value ? rag.value + "\n\n" : "") + `--- ${file.name} ---\n${text}`;
+        log(`Dosya eklendi: ${file.name}`);
+        // Auto open right panel
+        togglePanel('rightPanel', true);
+    };
+
+    // Language
+    $('langSelect').onchange = (e) => {
+        const isEn = e.target.value === 'en-US';
+        if(state.recognition) state.recognition.lang = e.target.value;
+        $('systemPrompt').value = isEn 
+            ? "You are Sentiric. You are a helpful and professional AI assistant."
+            : "Senin adın Sentiric. Sen, Sentiric ekosisteminin zeki, yardımsever ve profesyonel yapay zeka asistanısın. Kullanıcıya her zaman çözüm odaklı yaklaş.";
+    };
 }
 
-// --- CORE ---
+// --- CORE LLM LOGIC ---
 async function sendMessage() {
     const text = $('userInput').value.trim();
     if (!text || state.generating) return;
@@ -45,40 +73,35 @@ async function sendMessage() {
     $('userInput').style.height = 'auto';
     $('emptyState').style.display = 'none';
     
-    // 1. User Message
+    // User Message
     addMessage('user', text);
     state.history.push({role: 'user', content: text});
 
-    // 2. AI "Thinking" Placeholder
-    const aiBubble = addMessage('ai', '<span class="thinking">Sentiric düşünüyor...</span>');
+    // AI Placeholder
+    const aiBubble = addMessage('ai', '<span class="cursor"></span>');
     
-    toggleBusy(true);
+    setBusy(true);
     state.controller = new AbortController();
-    const startTime = Date.now();
-    let tokenCount = 0;
+    state.startTime = Date.now();
+    state.tokenCount = 0;
 
     // Payload
-    const payload = {
-        messages: [
-            {role: 'system', content: $('systemPrompt').value},
-            {role: 'user', content: $('ragInput').value ? `Context:\n${$('ragInput').value}\n\nQuestion:\n${text}` : text}
-        ],
-        temperature: parseFloat($('tempInput').value),
-        stream: true
-    };
+    const payload = buildPayload(text);
+    log(`İstek gönderiliyor (${payload.messages.length} msj)...`);
 
     try {
-        const res = await fetch('/v1/chat/completions', {
+        const response = await fetch('/v1/chat/completions', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload),
             signal: state.controller.signal
         });
 
-        const reader = res.body.getReader();
+        if (!response.ok) throw new Error(await response.text());
+
+        const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullText = "";
-        let firstToken = true;
 
         while(true) {
             const {done, value} = await reader.read();
@@ -93,112 +116,168 @@ async function sendMessage() {
                         const json = JSON.parse(line.substring(6));
                         const content = json.choices[0]?.delta?.content;
                         if(content) {
-                            // İlk token geldiğinde "Thinking" yazısını sil
-                            if(firstToken) {
-                                aiBubble.innerHTML = "";
-                                firstToken = false;
-                            }
                             fullText += content;
-                            // Basit ekleme (Performans için markdown'u sonda yapıyoruz)
-                            aiBubble.innerText = fullText; 
-                            tokenCount++;
-                            scrollToBottom();
+                            // Basic render for speed
+                            aiBubble.innerHTML = escapeHtml(fullText) + '<span class="cursor"></span>';
+                            state.tokenCount++;
+                            smartScroll();
                         }
                     } catch(e){}
                 }
             }
         }
 
-        // Final Markdown Render
+        // Final Polish (Markdown + Highlight)
         aiBubble.innerHTML = marked.parse(fullText);
         hljs.highlightAll();
-        addCopyButtons(aiBubble);
+        enhanceCodeBlocks(aiBubble);
         
-        $('latencyStat').innerText = `${Date.now() - startTime}ms`;
-        $('tokenStat').innerText = `${tokenCount} t`;
+        state.history.push({role: 'assistant', content: fullText});
+        updateStats();
+        log(`Yanıt tamamlandı (${state.tokenCount} token).`);
 
-        // Auto mic
-        if(state.autoListen) setTimeout(() => tryStartMic(), 1000);
+        if(state.autoListen) setTimeout(tryStartMic, 1500);
 
     } catch(err) {
-        if(err.name !== 'AbortError') aiBubble.innerHTML += `<br><span style="color:var(--danger)">Hata: ${err.message}</span>`;
+        if(err.name !== 'AbortError') {
+            aiBubble.innerHTML += `<br><div style="color:var(--danger); margin-top:8px"><strong>Hata:</strong> ${err.message}</div>`;
+            log(`Hata: ${err.message}`);
+        }
     } finally {
-        toggleBusy(false);
+        setBusy(false);
     }
 }
 
-// --- UI HELPERS ---
+// --- HELPERS ---
+
+function buildPayload(lastMsg) {
+    const msgs = [];
+    const sys = $('systemPrompt').value;
+    const rag = $('ragInput').value;
+    
+    if(sys) msgs.push({role: 'system', content: sys});
+    if(rag) msgs.push({role: 'user', content: `BAĞLAM BİLGİSİ:\n${rag}\n\n(Bağlamı kullanarak cevapla)`});
+    if(rag) msgs.push({role: 'assistant', content: 'Anlaşıldı.'});
+    
+    const limit = parseInt($('historyLimit').value) || 10;
+    // Son mesajı hariç tut, slice yap
+    state.history.slice(-limit).forEach(m => msgs.push(m));
+    
+    // Son mesaj zaten history'e eklendi ama payload'a tekrar eklemiyoruz, 
+    // yukarıdaki slice son mesajı da içerir eğer push yapıldıysa.
+    // Düzeltme: sendMessage içinde push yapıyoruz. O yüzden slice(-limit) yeterli.
+    
+    return {
+        messages: msgs,
+        temperature: parseFloat($('tempInput').value),
+        stream: true
+    };
+}
+
 function addMessage(role, html) {
     const div = document.createElement('div');
     div.className = `message ${role}`;
     div.innerHTML = `
-        <div class="message-avatar ${role}-avatar">
+        <div class="avatar">
             <i class="fas fa-${role==='user'?'user':'robot'}"></i>
         </div>
         <div class="bubble">${html}</div>
     `;
     $('chatContainer').appendChild(div);
-    scrollToBottom();
+    smartScroll();
     return div.querySelector('.bubble');
 }
 
-function scrollToBottom() {
-    const el = $('chatContainer');
-    // Kullanıcı yukarı bakıyorsa zorla indirme
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 150) {
-        el.scrollTop = el.scrollHeight;
-    }
+function enhanceCodeBlocks(el) {
+    el.querySelectorAll('pre').forEach(pre => {
+        const code = pre.querySelector('code');
+        if(!code) return;
+        
+        // Header ekle
+        const header = document.createElement('div');
+        header.className = 'code-header';
+        header.innerHTML = `
+            <span>Code</span>
+            <button class="action-icon" style="font-size:0.8rem; padding:4px" onclick="copyText(this, '${encodeURIComponent(pre.innerText)}')">
+                <i class="fas fa-copy"></i> Kopyala
+            </button>
+        `;
+        pre.insertBefore(header, code);
+    });
 }
 
-function toggleBusy(busy) {
+window.copyText = (btn, text) => {
+    navigator.clipboard.writeText(decodeURIComponent(text));
+    const original = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i>';
+    setTimeout(() => btn.innerHTML = original, 2000);
+};
+
+function smartScroll() {
+    const el = $('chatContainer');
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    if(isNearBottom) el.scrollTop = el.scrollHeight;
+}
+
+function setBusy(busy) {
     state.generating = busy;
     $('sendBtn').classList.toggle('hidden', busy);
     $('stopBtn').classList.toggle('hidden', !busy);
 }
 
-function addCopyButtons(el) {
-    el.querySelectorAll('pre').forEach(pre => {
-        const btn = document.createElement('button');
-        btn.className = 'copy-btn';
-        btn.innerHTML = '<i class="fas fa-copy"></i> Copy';
-        btn.style.position = 'absolute';
-        btn.style.top = '5px';
-        btn.style.right = '5px';
-        btn.style.color = '#aaa';
-        btn.style.background = 'rgba(255,255,255,0.1)';
-        btn.style.border = 'none';
-        btn.style.borderRadius = '4px';
-        btn.style.padding = '4px 8px';
-        btn.style.cursor = 'pointer';
-        
-        btn.onclick = () => {
-            navigator.clipboard.writeText(pre.innerText);
-            btn.innerHTML = '<i class="fas fa-check"></i>';
-            setTimeout(() => btn.innerHTML = '<i class="fas fa-copy"></i> Copy', 2000);
-        };
-        pre.style.position = 'relative';
-        pre.appendChild(btn);
-    });
+function updateStats() {
+    const dur = Date.now() - state.startTime;
+    $('latencyVal').innerText = `${dur}ms`;
+    $('tokenVal').innerText = state.tokenCount;
+    const tps = (state.tokenCount / (dur/1000)).toFixed(1);
+    $('tpsVal').innerText = tps;
 }
 
-// --- SIDEBARS & TOGGLES ---
-window.toggleSidebar = (id) => {
+function log(msg) {
+    const d = document.createElement('div');
+    d.className = 'log-line';
+    d.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    $('consoleLog').prepend(d);
+}
+
+function escapeHtml(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// --- TOGGLES ---
+window.togglePanel = (id, forceOpen = false) => {
     const el = $(id);
-    el.classList.toggle('closed');
-    // Overlay for mobile
-    if(window.innerWidth < 768 && !el.classList.contains('closed')) {
-        const overlay = document.createElement('div');
-        overlay.className = 'overlay';
-        overlay.onclick = () => {
-            el.classList.add('closed');
-            overlay.remove();
-        };
-        document.body.appendChild(overlay);
+    if(window.innerWidth <= 768) {
+        // Mobile Logic
+        el.classList.toggle('active', forceOpen || !el.classList.contains('active'));
+        // Overlay
+        let ov = document.querySelector('.overlay');
+        if(el.classList.contains('active')) {
+            if(!ov) {
+                ov = document.createElement('div'); ov.className='overlay';
+                ov.onclick = () => { 
+                    $('leftPanel').classList.remove('active'); 
+                    $('rightPanel').classList.remove('active'); 
+                    ov.remove(); 
+                };
+                document.body.appendChild(ov);
+            }
+        } else {
+            if(ov && !$('leftPanel').classList.contains('active') && !$('rightPanel').classList.contains('active')) ov.remove();
+        }
+    } else {
+        // Desktop Logic (Margin manipulation)
+        if(id === 'leftPanel') el.classList.toggle('closed');
+        if(id === 'rightPanel') el.classList.toggle('closed');
     }
 };
 
-window.clearChat = () => {
-    $('chatContainer').innerHTML = '<div class="empty-state" style="text-align:center; margin-top:30vh; opacity:0.6"><i class="fas fa-bolt" style="font-size:3rem; margin-bottom:1rem; color:var(--border)"></i><h2>Temizlendi</h2></div>';
+window.switchTab = (tab) => {
+    $('ragTab').style.display = tab==='rag'?'block':'none';
+    $('logsTab').style.display = tab==='logs'?'block':'none';
+    const tabs = document.querySelectorAll('.tab');
+    tabs.forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
 };
 
 window.toggleTheme = () => {
@@ -208,38 +287,51 @@ window.toggleTheme = () => {
     localStorage.setItem('theme', next);
 };
 
-async function handleFile(e) {
-    const file = e.target.files[0];
-    if(!file) return;
-    const text = await file.text();
-    $('ragInput').value += `\n\n--- ${file.name} ---\n${text}`;
-    log(`Dosya Yüklendi: ${file.name}`);
-    $('rightPanel').classList.remove('closed');
-}
-
-function log(msg) {
-    const d = document.createElement('div');
-    d.innerText = `> ${msg}`;
-    $('consoleLog').prepend(d);
-}
+window.clearChat = () => {
+    state.history = [];
+    $('chatContainer').innerHTML = `
+        <div class="empty-state" id="emptyState">
+            <div class="logo-shine"><i class="fas fa-check-circle"></i></div>
+            <h2>Temizlendi</h2>
+        </div>`;
+    log("Sohbet temizlendi.");
+};
 
 // --- SPEECH ---
 function setupSpeech() {
     if(!('webkitSpeechRecognition' in window)) { $('micBtn').style.display='none'; return; }
     const rec = new webkitSpeechRecognition();
     rec.lang = 'tr-TR';
-    rec.onstart = () => $('micBtn').classList.add('mic-active');
-    rec.onend = () => {
-        $('micBtn').classList.remove('mic-active');
+    rec.onstart = () => { 
+        $('micBtn').classList.add('pulse'); 
+        $('voiceStatus').classList.remove('hidden');
+    };
+    rec.onend = () => { 
+        $('micBtn').classList.remove('pulse');
+        $('voiceStatus').classList.add('hidden');
         if(state.autoListen && !state.generating && $('userInput').value) sendMessage();
+        else if(state.autoListen) setTimeout(tryStartMic, 500);
     };
     rec.onresult = (e) => $('userInput').value = e.results[0][0].transcript;
     state.recognition = rec;
-    
+
     $('micBtn').onclick = () => {
         if(state.autoListen) { state.autoListen=false; rec.stop(); }
         else rec.start();
     };
     $('micBtn').ondblclick = () => { state.autoListen=true; rec.start(); };
 }
-function tryStartMic() { try{ state.recognition.start(); }catch(e){} }
+function tryStartMic() { try{state.recognition.start();}catch(e){} }
+
+async function checkHealth() {
+    try {
+        const res = await fetch('/health');
+        if(res.ok) {
+            $('statusText').innerText = 'Hazır';
+            $('connStatus').style.borderColor = 'var(--success)';
+        }
+    } catch(e) {
+        $('statusText').innerText = 'Koptu';
+        $('connStatus').style.borderColor = 'var(--danger)';
+    }
+}
