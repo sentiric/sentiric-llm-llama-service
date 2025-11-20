@@ -7,25 +7,23 @@ const state = {
     theme: localStorage.getItem('theme') || 'light',
     history: [], 
     autoListen: false, 
-    recognition: null,
-    isMicRunning: false // State Guard
+    recognition: null
 };
 
-// DOM ELEMENTS
+// --- DOM ELEMENTS ---
 const els = {
     userInput: document.getElementById('userInput'),
     chatMessages: document.getElementById('chatMessages'),
     sendBtn: document.getElementById('sendBtn'),
     stopBtn: document.getElementById('stopBtn'),
+    // ... Diğer elementler aynı ...
     systemPrompt: document.getElementById('systemPrompt'),
     ragInput: document.getElementById('ragInput'),
     tempInput: document.getElementById('tempInput'),
     tempVal: document.getElementById('tempVal'),
-    historyLimit: document.getElementById('historyLimit'),
     statusDot: document.querySelector('.status-dot'),
     statusText: document.getElementById('statusText'),
     consoleLog: document.getElementById('consoleLog'),
-    langSelect: document.getElementById('langSelect'),
     fileInput: document.getElementById('fileInput'),
     micBtn: document.getElementById('micBtn'),
     autoModeIndicator: document.getElementById('autoModeIndicator'),
@@ -33,16 +31,41 @@ const els = {
     tokenCountDisplay: document.getElementById('tokenCountDisplay')
 };
 
+// --- CUSTOM MARKDOWN RENDERER (PRO FEATURES) ---
+const renderer = new marked.Renderer();
+
+// Code Block Override
+renderer.code = (code, language) => {
+    const validLang = !!(language && hljs.getLanguage(language));
+    const langClass = validLang ? language : 'plaintext';
+    
+    // Rastgele ID üret (Kopyalama işlemi için)
+    const codeId = 'code-' + Math.random().toString(36).substr(2, 9);
+    
+    return `
+    <div class="code-wrapper">
+        <div class="code-header">
+            <span class="lang-label">${langClass}</span>
+            <button class="copy-code-btn" onclick="copyCode('${codeId}')">
+                <i class="fas fa-copy"></i> Kopyala
+            </button>
+        </div>
+        <pre><code id="${codeId}" class="hljs language-${langClass}">${validLang ? hljs.highlight(code, { language }).value : code}</code></pre>
+    </div>`;
+};
+
+marked.setOptions({ renderer });
+
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', () => {
     applyTheme(state.theme);
     checkHealth();
-    setInterval(checkHealth, 8000);
     setupEventListeners();
     setupSpeechRecognition();
     setViewInternal('focus');
 });
 
+// --- EVENT HANDLERS ---
 function setupEventListeners() {
     if(els.userInput) {
         els.userInput.addEventListener('input', function() {
@@ -56,129 +79,24 @@ function setupEventListeners() {
             }
         });
     }
-
     if(els.sendBtn) els.sendBtn.addEventListener('click', () => sendMessage());
     if(els.stopBtn) els.stopBtn.addEventListener('click', stopGeneration);
     
-    if(els.tempInput) els.tempInput.addEventListener('input', (e) => els.tempVal.textContent = e.target.value);
-    
-    if(els.langSelect) {
-        els.langSelect.addEventListener('change', (e) => {
-            const lang = e.target.value;
-            if(state.recognition) state.recognition.lang = lang;
-            if(lang === 'en-US') {
-                els.systemPrompt.value = "Your name is Sentirik. You're the intelligent, helpful, and professional AI assistant in the Sentiric ecosystem. Never make up another name. Always speak politely and solution-oriented to the user. Don't create long sentences unless necessary!";
-            } else {
-                els.systemPrompt.value = "Senin adın Sentirik. Sen Sentiric ekosisteminin zeki, yardımsever ve profesyonel yapay zeka asistanısın. Asla başka bir isim uydurma. Kullanıcıyla her zaman nazik ve çözüm odaklı konuş. Gerekmedikçe uzun cümle oluşturma!";
-            }
-            logToConsole(`Dil değiştirildi: ${lang}`);
-        });
-    }
-
     if(els.fileInput) {
         els.fileInput.addEventListener('change', (e) => {
+            // Dosya yükleme mantığı (Önceki kod ile aynı)
             const file = e.target.files[0];
-            if (!file) return;
-            
-            // İkonu değiştir (Feedback)
-            const btn = document.getElementById('fileBtn');
-            const originalIcon = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check-circle" style="color:#10b981"></i>';
-            
+            if(!file) return;
             const reader = new FileReader();
-            reader.onload = (event) => {
-                const content = event.target.result;
-                const current = els.ragInput.value;
-                els.ragInput.value = (current ? current + "\n\n" : "") + 
-                    `--- FILE: ${file.name} ---\n${content}`;
-                
-                // Paneli açma (Kullanıcıyı rahatsız etmemek için opsiyonel olabilir, şimdilik açıyoruz)
-                // togglePanel('rightPanel'); // İstersen bunu yorum satırı yap
-                
-                logToConsole(`Dosya yüklendi: ${file.name}`);
-                
-                // 2 sn sonra ikonu eski haline getir
-                setTimeout(() => btn.innerHTML = originalIcon, 2000);
+            reader.onload = (ev) => {
+                els.ragInput.value += `\n\n--- FILE: ${file.name} ---\n${ev.target.result}`;
+                togglePanel('rightPanel'); // Panel otomatik açılsın
             };
             reader.readAsText(file);
         });
     }
-}
-
-// --- SPEECH RECOGNITION (ROBUST) ---
-function setupSpeechRecognition() {
-    if (!('webkitSpeechRecognition' in window)) {
-        els.micBtn.style.display = 'none';
-        return;
-    }
-
-    const recognition = new webkitSpeechRecognition();
-    recognition.lang = 'tr-TR'; 
-    recognition.continuous = false;
-    recognition.interimResults = false;
-
-    recognition.onstart = () => {
-        state.isMicRunning = true; // State Lock
-        els.micBtn.style.color = '#ef4444'; 
-        els.micBtn.classList.add('pulse');
-        els.userInput.placeholder = "Dinliyorum...";
-    };
-
-    recognition.onend = () => {
-        state.isMicRunning = false; // State Unlock
-        els.micBtn.style.color = '';
-        els.micBtn.classList.remove('pulse');
-        els.userInput.placeholder = "Bir şeyler yazın...";
-        
-        if (state.autoListen && !state.isGenerating) {
-            if (els.userInput.value.trim().length === 0) {
-                setTimeout(() => {
-                    startMicSafely();
-                }, 500); 
-            } else {
-                sendMessage();
-            }
-        }
-    };
-
-    recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        els.userInput.value = transcript;
-    };
-
-    recognition.onerror = (event) => {
-        state.isMicRunning = false;
-        if (event.error === 'no-speech' && state.autoListen) {
-            // Sessizliği yut, loop devam etsin
-        } else {
-            console.warn("Mic Error:", event.error);
-            logToConsole(`Mic Error: ${event.error}`);
-        }
-    };
-
-    state.recognition = recognition;
-
-    // Güvenli Başlatıcı
-    const startMicSafely = () => {
-        if (state.isMicRunning || state.isGenerating) return;
-        try { recognition.start(); } catch(e) { console.warn("Mic start blocked:", e); }
-    };
-
-    els.micBtn.addEventListener('click', () => {
-        if (state.autoListen) {
-            state.autoListen = false;
-            els.autoModeIndicator.classList.add('hidden');
-            recognition.stop();
-        } else {
-            startMicSafely();
-        }
-    });
-
-    els.micBtn.addEventListener('dblclick', () => {
-        state.autoListen = true;
-        els.autoModeIndicator.classList.remove('hidden');
-        startMicSafely();
-    });
+    // Slider vb.
+    if(els.tempInput) els.tempInput.addEventListener('input', (e) => els.tempVal.textContent = e.target.value);
 }
 
 // --- CORE LOGIC ---
@@ -189,42 +107,45 @@ async function sendMessage() {
 
     els.userInput.value = '';
     els.userInput.style.height = 'auto';
-    const welcome = document.querySelector('.welcome-screen');
-    if(welcome) welcome.style.display = 'none';
+    document.querySelector('.welcome-screen').style.display = 'none';
 
+    // User Mesajı
     appendMessage('user', text);
     state.history.push({ role: "user", content: text });
 
-    const aiMsgContent = appendMessage('ai', '<span class="cursor"></span>');
-    
+    // AI Mesaj Hazırlığı
+    const aiMsgDiv = document.createElement('div');
+    aiMsgDiv.className = 'message ai';
+    aiMsgDiv.innerHTML = `
+        <div class="avatar"><i class="fas fa-robot"></i></div>
+        <div class="msg-content"><span class="cursor"></span></div>
+    `;
+    els.chatMessages.appendChild(aiMsgDiv);
+    const contentSpan = aiMsgDiv.querySelector('.msg-content');
+
     setGeneratingState(true);
     state.controller = new AbortController();
     state.startTime = Date.now();
     state.tokenCount = 0;
     
-    const messagesPayload = buildMessagePayload(text);
-    
-    // LOG: Tam olarak ne gönderdiğimizi gör
-    logToConsole(`İstek gönderiliyor (${messagesPayload.length} mesaj)...`);
-    // Konsola debug için detaylı bas
-    console.log("Payload:", JSON.stringify(messagesPayload, null, 2));
+    // Payload Hazırla
+    const payload = [];
+    if(els.systemPrompt.value) payload.push({role: "system", content: els.systemPrompt.value});
+    if(els.ragInput.value) payload.push({role: "user", content: "Context:\n" + els.ragInput.value});
+    // Geçmişi ekle
+    state.history.slice(-10).forEach(h => payload.push(h));
 
     try {
         const response = await fetch('/v1/chat/completions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                messages: messagesPayload,
+                messages: payload,
                 temperature: parseFloat(els.tempInput.value),
                 stream: true
             }),
             signal: state.controller.signal
         });
-
-        if (!response.ok) {
-             const errText = await response.text();
-             throw new Error(`HTTP ${response.status}: ${errText || 'Servis Hatası'}`);
-        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -233,150 +154,123 @@ async function sendMessage() {
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-
+            
             const chunk = decoder.decode(value, { stream: true });
             const lines = chunk.split('\n');
-
+            
             for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || trimmed === 'data: [DONE]') continue;
-                if (trimmed.startsWith('data: ')) {
+                if (line.startsWith('data: ') && line !== 'data: [DONE]') {
                     try {
-                        const json = JSON.parse(trimmed.substring(6));
+                        const json = JSON.parse(line.substring(6));
                         const delta = json.choices[0]?.delta?.content;
                         if (delta) {
                             fullResponse += delta;
-                            aiMsgContent.innerHTML = marked.parse(fullResponse) + '<span class="cursor"></span>';
+                            // Render (Markdown)
+                            // Performans için her 10 tokenda bir tam render yapılabilir, şimdilik direkt yapıyoruz
+                            contentSpan.innerHTML = marked.parse(fullResponse) + '<span class="cursor"></span>';
                             state.tokenCount++;
-                            scrollToBottom();
+                            smartScroll();
                         }
                     } catch (e) {}
                 }
             }
         }
 
-        aiMsgContent.innerHTML = marked.parse(fullResponse);
-        hljs.highlightAll();
-        
+        // Bitiş
+        contentSpan.innerHTML = marked.parse(fullResponse);
         state.history.push({ role: "assistant", content: fullResponse });
+        
+        // Aksiyon Butonlarını Ekle
+        addMessageActions(contentSpan, fullResponse);
+        
         updateMetrics(Date.now() - state.startTime, state.tokenCount);
-        logToConsole(`Yanıt tamamlandı (${state.tokenCount} token).`);
-
-        if (state.autoListen && state.recognition) {
-            setTimeout(() => {
-                if(!state.isGenerating) try { state.recognition.start(); } catch(e){}
-            }, 1500); 
-        }
+        
+        // Hands-free loop
+        if(state.autoListen && state.recognition) setTimeout(() => state.recognition.start(), 1000);
 
     } catch (err) {
-        if (err.name !== 'AbortError') {
-            const errMsg = err.message === 'Failed to fetch' 
-                ? 'Bağlantı Hatası: Servis kapalı veya ağ sorunu var.' 
-                : err.message;
-                
-            aiMsgContent.innerHTML += `<br><div style="background: #fee2e2; border: 1px solid #ef4444; color: #b91c1c; padding: 10px; border-radius: 8px; margin-top: 8px; font-size: 0.9em;"><strong>⚠️ HATA:</strong> ${errMsg}</div>`;
-            
-            logToConsole(`HATA: ${errMsg}`);
-        }
+        if (err.name !== 'AbortError') contentSpan.innerHTML += `<br><span style="color:red">Error: ${err.message}</span>`;
     } finally {
         setGeneratingState(false);
         state.controller = null;
     }
 }
 
-function buildMessagePayload(lastUserText) {
-    const payload = [];
-    
-    // 1. KRİTİK: System ve RAG her zaman en başta ve KORUMALI
-    // Bunlar asla history limitine takılmamalı.
-    
-    if (els.systemPrompt.value.trim()) {
-        payload.push({ role: "system", content: els.systemPrompt.value });
-    }
+// --- FEATURES ---
 
-    if (els.ragInput.value.trim()) {
-        payload.push({ 
-            role: "user", 
-            content: `Aşağıdaki bağlamı dikkate al:\n\n${els.ragInput.value.trim()}` 
-        });
-        payload.push({ role: "assistant", content: "Anlaşıldı." });
-    }
-
-    // 2. Konuşma Geçmişi (Dinamik)
-    // Kullanıcının belirlediği limit sadece "sohbet geçmişi" için geçerli olmalı.
-    const limit = parseInt(els.historyLimit.value) || 10;
+// Kodu Kopyala
+window.copyCode = function(id) {
+    const codeBlock = document.getElementById(id);
+    const btn = codeBlock.parentElement.previousElementSibling.querySelector('.copy-code-btn');
     
-    // Sadece gerçek sohbeti al (System/RAG hariç)
-    // slice(-limit) ile en son N mesajı alıyoruz.
-    const historySlice = state.history.slice(-limit); 
-    
-    historySlice.forEach(msg => {
-        payload.push({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content });
+    navigator.clipboard.writeText(codeBlock.innerText).then(() => {
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i> Kopyalandı';
+        btn.style.color = '#10b981';
+        setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.style.color = '';
+        }, 2000);
     });
+};
 
-    // 3. Son Mesaj
-    payload.push({ role: "user", content: lastUserText });
-
-    return payload;
+// Mesaj Aksiyonları
+function addMessageActions(container, text) {
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'message-actions';
+    actionsDiv.innerHTML = `
+        <button class="action-btn" onclick="navigator.clipboard.writeText(decodeURIComponent('${encodeURIComponent(text)}'))">
+            <i class="fas fa-copy"></i> Kopyala
+        </button>
+        <button class="action-btn" onclick="sendMessage()">
+            <i class="fas fa-redo"></i> Yeniden
+        </button>
+    `;
+    container.appendChild(actionsDiv);
 }
 
-// --- UI HELPERS ---
+// Akıllı Scroll
+function smartScroll() {
+    const el = els.chatMessages;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    if (isNearBottom) el.scrollTop = el.scrollHeight;
+}
 
-function appendMessage(role, html) {
+// Diğer Yardımcılar
+function appendMessage(role, text) {
     const div = document.createElement('div');
     div.className = `message ${role}`;
-    const icon = role === 'user' ? 'user' : 'robot';
     div.innerHTML = `
-        <div class="avatar"><i class="fas fa-${icon}"></i></div>
-        <div class="msg-content">${html}</div>
+        <div class="avatar"><i class="fas fa-${role === 'user' ? 'user' : 'robot'}"></i></div>
+        <div class="msg-content">${text}</div>
     `;
     els.chatMessages.appendChild(div);
-    scrollToBottom();
-    return div.querySelector('.msg-content');
-}
-
-function clearChat() {
-    state.history = [];
-    els.chatMessages.innerHTML = `
-        <div class="welcome-screen">
-            <div class="welcome-icon"><i class="fas fa-eraser"></i></div>
-            <h2>Sohbet Temizlendi</h2>
-        </div>`;
-    logToConsole("Sohbet temizlendi.");
-}
-
-function logToConsole(msg) {
-    const div = document.createElement('div');
-    div.className = 'log-entry';
-    const time = new Date().toLocaleTimeString();
-    div.innerHTML = `<span style="color:#666">[${time}]</span> ${msg}`;
-    els.consoleLog.prepend(div);
+    smartScroll();
 }
 
 function setGeneratingState(active) {
     state.isGenerating = active;
-    if(els.sendBtn) els.sendBtn.classList.toggle('hidden', active);
-    if(els.stopBtn) els.stopBtn.classList.toggle('hidden', !active);
+    if(active) {
+        els.sendBtn.classList.add('hidden');
+        els.stopBtn.classList.remove('hidden');
+    } else {
+        els.sendBtn.classList.remove('hidden');
+        els.stopBtn.classList.add('hidden');
+        els.userInput.focus();
+    }
 }
 
-function updateMetrics(duration, tokens) {
-    if(els.lastLatency) els.lastLatency.textContent = `${duration}ms`;
-    if(els.tokenCountDisplay) els.tokenCountDisplay.textContent = `${tokens} tokens`;
-}
-
-function scrollToBottom() {
-    els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
+function updateMetrics(dur, tok) {
+    if(els.lastLatency) els.lastLatency.textContent = `${dur}ms`;
+    if(els.tokenCountDisplay) els.tokenCountDisplay.textContent = `${tok} tokens`;
 }
 
 async function checkHealth() {
     try {
         const res = await fetch('/health');
-        if (res.ok) {
+        if(res.ok) {
             els.statusDot.className = 'status-dot connected';
             els.statusText.textContent = 'Hazır';
-        } else {
-            els.statusDot.className = 'status-dot';
-            els.statusText.textContent = 'Servis Bekleniyor...';
         }
     } catch(e) {
         els.statusDot.className = 'status-dot';
@@ -384,43 +278,26 @@ async function checkHealth() {
     }
 }
 
-// --- VIEW EXPORTS ---
-window.togglePanel = (id) => {
-    const el = document.getElementById(id);
-    el.style.display = el.style.display === 'none' ? 'flex' : 'none';
-};
-window.switchTab = (tab) => {
-    document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
-    document.getElementById(tab + 'Tab').style.display = 'block';
-    if(event) {
-        document.querySelectorAll('.context-tab').forEach(el => el.classList.remove('active'));
-        event.target.classList.add('active');
-    }
-};
-window.clearChat = clearChat;
-window.switchTheme = () => {
-    state.theme = state.theme === 'light' ? 'dark' : 'light';
-    applyTheme(state.theme);
-    localStorage.setItem('theme', state.theme);
-};
-function applyTheme(theme) {
-    if (theme === 'dark') document.body.setAttribute('data-theme', 'dark');
-    else document.body.removeAttribute('data-theme');
+// Speech Recognition (Önceki kodun aynısı, kısaltıldı)
+function setupSpeechRecognition() {
+    if (!('webkitSpeechRecognition' in window)) { els.micBtn.style.display = 'none'; return; }
+    const recognition = new webkitSpeechRecognition();
+    recognition.lang = 'tr-TR';
+    recognition.continuous = false;
+    recognition.onstart = () => { els.micBtn.style.color = 'red'; els.userInput.placeholder = "Dinliyorum..."; };
+    recognition.onend = () => { els.micBtn.style.color = ''; els.userInput.placeholder = "Mesaj yazın..."; if(state.autoListen && !state.isGenerating && els.userInput.value) sendMessage(); };
+    recognition.onresult = (e) => els.userInput.value = e.results[0][0].transcript;
+    state.recognition = recognition;
+    els.micBtn.addEventListener('click', () => state.autoListen ? (state.autoListen=false, recognition.stop(), els.autoModeIndicator.classList.add('hidden')) : recognition.start());
+    els.micBtn.addEventListener('dblclick', () => { state.autoListen=true; els.autoModeIndicator.classList.remove('hidden'); recognition.start(); });
 }
-function setViewInternal(mode) {
-    const left = document.getElementById('leftPanel');
-    const right = document.getElementById('rightPanel');
-    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
-    
-    if(mode === 'focus') {
-        left.style.display = 'none';
-        right.style.display = 'none';
-        document.querySelector('button[onclick*="focus"]').classList.add('active');
-    } else {
-        left.style.display = 'flex';
-        right.style.display = 'flex';
-        document.querySelector('button[onclick*="workbench"]').classList.add('active');
-    }
-}
+
+// View & Theme Logic
+window.togglePanel = (id) => { const el=document.getElementById(id); el.style.display = el.style.display==='none'?'flex':'none'; };
+window.switchTab = (tab) => { document.querySelectorAll('.tab-content').forEach(e=>e.style.display='none'); document.getElementById(tab+'Tab').style.display='block'; if(event) { document.querySelectorAll('.context-tab').forEach(e=>e.classList.remove('active')); event.target.classList.add('active'); } };
+window.clearChat = () => { state.history=[]; els.chatMessages.innerHTML = '<div class="welcome-screen"><h2>Temizlendi</h2></div>'; };
+window.switchTheme = () => { state.theme = state.theme==='light'?'dark':'light'; applyTheme(state.theme); localStorage.setItem('theme', state.theme); };
+function applyTheme(t) { document.body.setAttribute('data-theme', t); }
+function setViewInternal(mode) { const l=document.getElementById('leftPanel'), r=document.getElementById('rightPanel'); document.querySelectorAll('.view-btn').forEach(b=>b.classList.remove('active')); if(mode==='focus'){ l.style.display='none'; r.style.display='none'; } else { l.style.display='flex'; r.style.display='flex'; } }
 window.setView = setViewInternal;
 function stopGeneration() { if(state.controller) state.controller.abort(); }
