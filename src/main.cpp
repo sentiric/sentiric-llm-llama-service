@@ -131,10 +131,12 @@ int main() {
             return 1;
         }
 
-        // Model warm-up
+        // --- MODEL WARM-UP (DÜZELTİLDİ) ---
         if (settings.enable_warm_up) {
             spdlog::info("Starting model warm-up...");
-            ModelWarmup::safe_warmup(engine->get_context_pool(), settings.n_threads);
+            // ESKİ: ModelWarmup::safe_warmup(...) -> Sadece pointer alır, işlem yapmaz.
+            // YENİ: ModelWarmup::fast_warmup(...) -> Küçük bir decode işlemi yapar, CUDA'yı tetikler.
+            ModelWarmup::fast_warmup(engine->get_context_pool(), settings.n_threads);
             spdlog::info("✅ Model warm-up completed");
         }
 

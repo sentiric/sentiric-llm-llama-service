@@ -9,23 +9,20 @@ services:
     environment:
 
       # --- CPU TEMEL AYARLARI ---
-      - LLM_LLAMA_SERVICE_GPU_LAYERS=0       # 0 = Sadece CPU
-      - LLM_LLAMA_SERVICE_KV_OFFLOAD=false   # VRAM yok, RAM kullan
-      - LLM_LLAMA_SERVICE_USE_MMAP=true      # RAM kullanımını dengeler
-
-  # CLI ayarları aynı kalabilir
-  llm-cli:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: sentiric/llm-llama-service:local-cpu
-    networks:
-      - sentiric-net
-    depends_on:
-      - llm-llama-service
-    volumes:
-      - ../sentiric-certificates:/sentiric-certificates:ro
-    environment:
-      - GRPC_TLS_CA_PATH=/sentiric-certificates/certs/ca.crt
-      - LLM_LLAMA_SERVICE_CERT_PATH=/sentiric-certificates/certs/llm-llama-service-chain.crt
-      - LLM_LLAMA_SERVICE_KEY_PATH=/sentiric-certificates/certs/llm-llama-service.key
+      - LLM_LLAMA_SERVICE_GPU_LAYERS=0
+      - LLM_LLAMA_SERVICE_KV_OFFLOAD=false
+      
+      # --- PERFORMANS AYARLARI (RAM OPTİMİZASYONU) ---
+      # 16GB RAM var, Gemma 1B için 1024 çok az. 8192 yapıyoruz.
+      - LLM_LLAMA_SERVICE_CONTEXT_SIZE=8192
+      
+      # i7 İşlemci için fiziksel çekirdek sayısı (genelde 6 veya 8)
+      - LLM_LLAMA_SERVICE_THREADS=6
+      - LLM_LLAMA_SERVICE_THREADS_BATCH=6
+      
+      - LLM_LLAMA_SERVICE_ENABLE_BATCHING=false
+      
+      # KRİTİK DÜZELTME: mmap KAPATILIYOR.
+      # Model küçük (1GB), RAM büyük (16GB). 
+      # Açılışta hepsini RAM'e yükle ki ilk istekte disk okuması yapıp takılmasın.
+      - LLM_LLAMA_SERVICE_USE_MMAP=false
