@@ -4,10 +4,10 @@ const state = {
     controller: null,
     startTime: 0,
     tokenCount: 0,
-    theme: 'light'
+    theme: localStorage.getItem('theme') || 'light'
 };
 
-// DOM ELEMENTS
+// DOM REFERENCES
 const els = {
     userInput: document.getElementById('userInput'),
     chatMessages: document.getElementById('chatMessages'),
@@ -15,32 +15,44 @@ const els = {
     stopBtn: document.getElementById('stopBtn'),
     systemPrompt: document.getElementById('systemPrompt'),
     ragInput: document.getElementById('ragInput'),
+    // Params
     tempInput: document.getElementById('tempInput'),
     tempVal: document.getElementById('tempVal'),
+    topPInput: document.getElementById('topPInput'),
+    topPVal: document.getElementById('topPVal'),
+    repPenInput: document.getElementById('repPenInput'),
+    repPenVal: document.getElementById('repPenVal'),
+    seedInput: document.getElementById('seedInput'),
     maxTokensInput: document.getElementById('maxTokensInput'),
+    // Metrics
     statusDot: document.querySelector('.status-dot'),
     statusText: document.getElementById('statusText'),
-    tpsMetric: document.getElementById('tpsMetric'),
-    latencyMetric: document.getElementById('latencyMetric'),
-    tokenMetric: document.getElementById('tokenMetric')
+    lastLatency: document.getElementById('lastLatency'),
+    lastTPS: document.getElementById('lastTPS'),
+    consoleLog: document.getElementById('consoleLog'),
+    promptTokenVal: document.getElementById('promptTokenVal'),
+    genTokenVal: document.getElementById('genTokenVal')
 };
 
-// --- INIT ---
+// INIT
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Varsayılan Görünüm (Focus Mode)
-    // "window.setView" fonksiyonunu doğrudan çağırmak yerine, 
-    // parametre ile DOM elemanlarını manuel ayarlıyoruz ki event hatası olmasın.
-    setViewInternal('focus');
-
-    // 2. Event Listener'ları Bağla
-    setupEventListeners();
-
-    // 3. Sağlık Kontrolü Başlat
+    applyTheme(state.theme);
+    loadHistory();
+    
+    // Event Listeners
+    setupInputHandlers();
+    setupParamListeners();
+    
     checkHealth();
-    setInterval(checkHealth, 10000);
+    setInterval(checkHealth, 8000);
+
+    // Default View
+    setViewInternal('focus');
 });
 
-function setupEventListeners() {
+// --- HANDLERS ---
+
+function setupInputHandlers() {
     if(els.userInput) {
         els.userInput.addEventListener('input', function() {
             this.style.height = 'auto';
@@ -54,32 +66,19 @@ function setupEventListeners() {
             }
         });
     }
-
     if(els.sendBtn) els.sendBtn.addEventListener('click', sendMessage);
     if(els.stopBtn) els.stopBtn.addEventListener('click', stopGeneration);
-    
-    if(els.tempInput) {
-        els.tempInput.addEventListener('input', (e) => {
-            if(els.tempVal) els.tempVal.textContent = e.target.value;
-        });
-    }
+}
 
-    // Web Speech API
-    const micBtn = document.getElementById('micBtn');
-    if (micBtn) {
-        if ('webkitSpeechRecognition' in window) {
-            const recognition = new webkitSpeechRecognition();
-            recognition.lang = 'tr-TR';
-            recognition.onstart = () => micBtn.style.color = '#ef4444';
-            recognition.onend = () => micBtn.style.color = '';
-            recognition.onresult = (e) => {
-                if(els.userInput) els.userInput.value += e.results[0][0].transcript;
-            };
-            micBtn.addEventListener('click', () => recognition.start());
-        } else {
-            micBtn.style.display = 'none';
+function setupParamListeners() {
+    const bindSlider = (input, display) => {
+        if(input && display) {
+            input.addEventListener('input', (e) => display.textContent = e.target.value);
         }
-    }
+    };
+    bindSlider(els.tempInput, els.tempVal);
+    bindSlider(els.topPInput, els.topPVal);
+    bindSlider(els.repPenInput, els.repPenVal);
 }
 
 // --- CORE LOGIC ---
@@ -88,59 +87,47 @@ async function sendMessage() {
     const text = els.userInput.value.trim();
     if (!text || state.isGenerating) return;
 
+    // UI Updates
     els.userInput.value = '';
     els.userInput.style.height = 'auto';
-    
-    const welcome = document.querySelector('.welcome-screen');
-    if(welcome) welcome.style.display = 'none';
+    document.querySelector('.welcome-screen').style.display = 'none';
 
     appendMessage('user', text);
+    const aiMsgContent = appendMessage('ai', '<span class="cursor"></span>');
     
-    // AI "Düşünüyor" Göstergesi
-    const loadingId = 'loading-' + Date.now();
-    appendLoading(loadingId);
-
     setGeneratingState(true);
     state.controller = new AbortController();
     state.startTime = Date.now();
     state.tokenCount = 0;
     
-    // Prompt Hazırlığı
-    const messages = [];
-    if (els.systemPrompt && els.systemPrompt.value.trim()) {
-        messages.push({ role: "system", content: els.systemPrompt.value });
-    }
+    let fullResponse = "";
     
-    const ragText = els.ragInput ? els.ragInput.value.trim() : "";
-    const finalUserContent = ragText 
-        ? `BAĞLAM BİLGİSİ:\n${ragText}\n\nSORU:\n${text}`
-        : text;
+    // Build Request Body (Advanced Params)
+    const requestBody = {
+        messages: buildMessages(text),
+        temperature: parseFloat(els.tempInput.value),
+        max_tokens: parseInt(els.maxTokensInput.value),
+        top_p: parseFloat(els.topPInput.value),
+        repeat_penalty: parseFloat(els.repPenInput.value),
+        seed: parseInt(els.seedInput.value),
+        stream: true
+    };
 
-    messages.push({ role: "user", content: finalUserContent });
+    logToConsole(`Request: ${JSON.stringify(requestBody.messages.length)} msgs, Temp: ${requestBody.temperature}`);
 
     try {
         const response = await fetch('/v1/chat/completions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                messages: messages,
-                temperature: parseFloat(els.tempInput ? els.tempInput.value : 0.7),
-                max_tokens: parseInt(els.maxTokensInput ? els.maxTokensInput.value : 2048),
-                stream: true
-            }),
+            body: JSON.stringify(requestBody),
             signal: state.controller.signal
         });
 
-        // Loading'i kaldır ve gerçek AI balonunu oluştur
-        removeLoading(loadingId);
-        const aiMsgContent = appendMessage('ai', '<span class="cursor"></span>');
-
-        if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-        let fullResponse = "";
 
         while (true) {
             const { done, value } = await reader.read();
@@ -159,13 +146,9 @@ async function sendMessage() {
                         const delta = json.choices[0]?.delta?.content;
                         if (delta) {
                             fullResponse += delta;
-                            // Basit render (Markdown olmadan hız için)
-                            // aiMsgContent.textContent = fullResponse; 
-                            
-                            // Gelişmiş Render (Her chunk'ta marked çağırmak pahalıdır ama görsel için yapıyoruz)
                             aiMsgContent.innerHTML = marked.parse(fullResponse) + '<span class="cursor"></span>';
-                            
                             state.tokenCount++;
+                            // Scroll only if near bottom
                             scrollToBottom();
                         }
                     } catch (e) {}
@@ -173,17 +156,16 @@ async function sendMessage() {
             }
         }
 
-        // Bitiş Render
-        aiMsgContent.innerHTML = marked.parse(fullResponse);
-        hljs.highlightAll();
-        updateMetrics(Date.now() - state.startTime, state.tokenCount);
+        // Final Polish
+        finishGeneration(aiMsgContent, fullResponse);
+        saveHistory(text, fullResponse);
 
     } catch (err) {
-        removeLoading(loadingId); // Hata durumunda loading kaldıysa sil
         if (err.name !== 'AbortError') {
-             // Eğer AI balonu henüz oluşturulmadıysa oluştur
-             const errContent = appendMessage('ai', '');
-             errContent.innerHTML = `<span style="color:#ef4444">HATA: ${err.message}</span>`;
+            aiMsgContent.innerHTML += `<br><span style="color:#ef4444">[Error: ${err.message}]</span>`;
+            logToConsole(`Error: ${err.message}`);
+        } else {
+            aiMsgContent.innerHTML += " <span style='color:#888'>[Durduruldu]</span>";
         }
     } finally {
         setGeneratingState(false);
@@ -191,151 +173,174 @@ async function sendMessage() {
     }
 }
 
-function stopGeneration() {
-    if (state.controller) state.controller.abort();
+function buildMessages(userText) {
+    const msgs = [];
+    if (els.systemPrompt.value.trim()) {
+        msgs.push({ role: "system", content: els.systemPrompt.value });
+    }
+    const rag = els.ragInput.value.trim();
+    const content = rag ? `BAĞLAM:\n${rag}\n\nSORU:\n${userText}` : userText;
+    msgs.push({ role: "user", content: content });
+    return msgs;
 }
 
-// --- UI HELPERS ---
+function finishGeneration(element, fullText) {
+    element.innerHTML = marked.parse(fullText);
+    
+    // Syntax Highlight
+    element.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightElement(block);
+        addCopyButton(block);
+    });
 
-function appendMessage(role, content) {
+    // Metrics
+    const duration = Date.now() - state.startTime;
+    const seconds = duration / 1000;
+    const tps = state.tokenCount / seconds;
+    
+    els.lastLatency.textContent = `${duration}ms`;
+    els.lastTPS.textContent = `${tps.toFixed(1)} t/s`;
+    
+    // Mock Token Counts (Backend doesn't send usage in stream yet, normally)
+    els.genTokenVal.textContent = state.tokenCount;
+    logToConsole(`Finished: ${state.tokenCount} tokens in ${seconds.toFixed(2)}s`);
+}
+
+// --- UTILITIES ---
+
+function addCopyButton(block) {
+    const pre = block.parentElement;
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.innerHTML = '<i class="fas fa-copy"></i>';
+    btn.onclick = () => {
+        navigator.clipboard.writeText(block.innerText);
+        btn.innerHTML = '<i class="fas fa-check"></i>';
+        setTimeout(() => btn.innerHTML = '<i class="fas fa-copy"></i>', 2000);
+    };
+    pre.appendChild(btn);
+}
+
+function appendMessage(role, html) {
     const div = document.createElement('div');
     div.className = `message ${role}`;
-    
-    const avatar = role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>';
-    
+    const icon = role === 'user' ? 'user' : 'robot';
     div.innerHTML = `
-        <div class="avatar">${avatar}</div>
-        <div class="msg-content">${content}</div>
+        <div class="avatar"><i class="fas fa-${icon}"></i></div>
+        <div class="msg-content">${html}</div>
     `;
-    
     els.chatMessages.appendChild(div);
     scrollToBottom();
     return div.querySelector('.msg-content');
 }
 
-function appendLoading(id) {
-    const div = document.createElement('div');
-    div.className = 'message ai loading-msg';
-    div.id = id;
-    div.innerHTML = `
-        <div class="avatar"><i class="fas fa-robot"></i></div>
-        <div class="msg-content" style="background:transparent; box-shadow:none; padding:0;">
-            <div class="typing"><span></span><span></span><span></span></div>
-        </div>
-    `;
-    els.chatMessages.appendChild(div);
-    scrollToBottom();
+function forceJSONMode() {
+    els.systemPrompt.value = "Sen bir JSON API'sisin. Sadece geçerli JSON formatında yanıt ver. Açıklama yapma.";
+    alert("System Prompt JSON modu için güncellendi.");
 }
 
-function removeLoading(id) {
-    const el = document.getElementById(id);
-    if (el) el.remove();
+function clearChat() {
+    els.chatMessages.innerHTML = `
+        <div class="welcome-screen">
+            <div class="welcome-icon"><i class="fas fa-eraser"></i></div>
+            <h2>Sohbet Temizlendi</h2>
+        </div>`;
+    localStorage.removeItem('chatHistory');
+    logToConsole("Chat history cleared.");
+}
+
+function logToConsole(msg) {
+    const div = document.createElement('div');
+    div.className = 'log-entry';
+    div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    els.consoleLog.prepend(div);
 }
 
 function setGeneratingState(active) {
     state.isGenerating = active;
-    if (active) {
-        if(els.sendBtn) els.sendBtn.classList.add('hidden');
-        if(els.stopBtn) els.stopBtn.classList.remove('hidden');
-    } else {
-        if(els.sendBtn) els.sendBtn.classList.remove('hidden');
-        if(els.stopBtn) els.stopBtn.classList.add('hidden');
-        if(els.userInput) els.userInput.focus();
-    }
-}
-
-function updateMetrics(duration, tokens) {
-    const seconds = duration / 1000;
-    const tps = tokens / seconds;
-    if(els.tpsMetric) els.tpsMetric.textContent = tps.toFixed(2);
-    if(els.latencyMetric) els.latencyMetric.textContent = `${duration} ms`;
-    if(els.tokenMetric) els.tokenMetric.textContent = tokens;
+    els.sendBtn.classList.toggle('hidden', active);
+    els.stopBtn.classList.toggle('hidden', !active);
 }
 
 function scrollToBottom() {
-    if(els.chatMessages) els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
+    els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
+}
+
+// --- HISTORY & THEME ---
+
+function saveHistory(user, ai) {
+    let history = JSON.parse(localStorage.getItem('chatHistory') || '[]');
+    history.push({ user, ai });
+    if (history.length > 20) history.shift(); // Keep last 20
+    localStorage.setItem('chatHistory', JSON.stringify(history));
+}
+
+function loadHistory() {
+    const history = JSON.parse(localStorage.getItem('chatHistory') || '[]');
+    if (history.length > 0) {
+        document.querySelector('.welcome-screen').style.display = 'none';
+        history.forEach(item => {
+            appendMessage('user', item.user);
+            const aiDiv = appendMessage('ai', '');
+            finishGeneration(aiDiv, item.ai);
+        });
+        logToConsole("Session history loaded.");
+    }
+}
+
+window.switchTheme = function() {
+    state.theme = state.theme === 'light' ? 'dark' : 'light';
+    applyTheme(state.theme);
+    localStorage.setItem('theme', state.theme);
+};
+
+function applyTheme(theme) {
+    if (theme === 'dark') document.body.setAttribute('data-theme', 'dark');
+    else document.body.removeAttribute('data-theme');
 }
 
 async function checkHealth() {
     try {
         const res = await fetch('/health');
-        const data = await res.json();
-        if (data.status === 'healthy') {
-            if(els.statusDot) els.statusDot.className = 'status-dot connected';
-            if(els.statusText) els.statusText.textContent = 'Hazır';
-        } else {
-            if(els.statusDot) els.statusDot.className = 'status-dot';
-            if(els.statusText) els.statusText.textContent = 'Model Yükleniyor...';
+        if (res.ok) {
+            els.statusDot.className = 'status-dot connected';
+            els.statusText.textContent = 'Hazır';
         }
-    } catch (e) {
-        if(els.statusDot) els.statusDot.className = 'status-dot';
-        if(els.statusText) els.statusText.textContent = 'Bağlantı Yok';
+    } catch(e) {
+        els.statusDot.className = 'status-dot';
+        els.statusText.textContent = 'Koptu';
     }
 }
 
-// --- GLOBAL EXPORTS & VIEW LOGIC ---
-
-window.togglePanel = function(id) {
-    const panel = document.getElementById(id);
-    if (!panel) return;
-    
-    if (panel.style.display === 'none') {
-        panel.style.display = 'flex';
-        // Timeout to allow CSS transition
-        setTimeout(() => panel.style.opacity = '1', 10);
-    } else {
-        panel.style.display = 'none';
-        panel.style.opacity = '0';
-    }
-};
-
-window.switchTab = function(tabName) {
-    document.querySelectorAll('.context-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
-    
-    // event.currentTarget hatasını önlemek için, fonksiyonu çağıran elemanı bul
-    // Basit çözüm: event global değişkenini kullan (inline onclick için çalışır)
-    if (window.event) {
-        window.event.currentTarget.classList.add('active');
-    }
-    document.getElementById(tabName + 'Tab').style.display = 'block';
-};
-
-// Internal helper to set view without relying on event object
+// --- VIEW LOGIC ---
 function setViewInternal(mode) {
     const left = document.getElementById('leftPanel');
     const right = document.getElementById('rightPanel');
     const buttons = document.querySelectorAll('.view-btn');
 
-    // Update buttons visual state
-    buttons.forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.getAttribute('onclick').includes(`'${mode}'`)) {
-            btn.classList.add('active');
-        }
-    });
-
-    if (mode === 'focus') {
-        if(left) left.style.display = 'none';
-        if(right) right.style.display = 'none';
-    } else if (mode === 'workbench') {
-        if(left) left.style.display = 'flex';
-        if(right) right.style.display = 'flex';
+    buttons.forEach(b => b.classList.remove('active'));
+    // Basit toggle
+    if(mode === 'focus') {
+        left.style.display = 'none';
+        right.style.display = 'none';
+        document.querySelector('button[onclick*="focus"]').classList.add('active');
+    } else {
+        left.style.display = 'flex';
+        right.style.display = 'flex';
+        document.querySelector('button[onclick*="workbench"]').classList.add('active');
     }
 }
 
-// Public function called by buttons
-window.setView = function(mode) {
-    setViewInternal(mode);
+window.setView = setViewInternal;
+window.togglePanel = (id) => {
+    const el = document.getElementById(id);
+    el.style.display = el.style.display === 'none' ? 'flex' : 'none';
 };
-
-window.switchTheme = function() {
-    const body = document.body;
-    if (state.theme === 'dark') {
-        body.removeAttribute('data-theme'); // Light is default
-        state.theme = 'light';
-    } else {
-        body.setAttribute('data-theme', 'dark');
-        state.theme = 'dark';
-    }
+window.switchTab = (tab) => {
+    document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+    document.getElementById(tab + 'Tab').style.display = 'block';
+    document.querySelectorAll('.context-tab').forEach(el => el.classList.remove('active'));
+    // Event target fix via simple loop or specialized selector if needed, but simple click works
+    if(event) event.target.classList.add('active');
 };
+function stopGeneration() { if(state.controller) state.controller.abort(); }

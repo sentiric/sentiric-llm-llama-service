@@ -3,43 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sentiric Studio</title>
+    <title>Sentiric Studio | Pro Workbench</title>
     
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"> <!-- Kod bloğu her zaman dark olsun -->
     <link rel="stylesheet" href="style.css">
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
-<body>
+<body data-theme="light">
     
     <div class="app-container">
-        <!-- SOL PANEL: AYARLAR -->
+        <!-- SOL PANEL: KONFİGÜRASYON -->
         <div class="panel side-panel" id="leftPanel" style="display: none;">
             <div class="panel-header">
-                <span><i class="fas fa-sliders-h"></i> Ayarlar</span>
+                <span><i class="fas fa-sliders-h"></i> Konfigürasyon</span>
                 <button class="icon-btn" onclick="togglePanel('leftPanel')"><i class="fas fa-times"></i></button>
             </div>
             
             <div class="panel-content">
                 <div class="setting-group">
                     <label>System Prompt</label>
-                    <textarea id="systemPrompt" class="input-area" rows="6">Sen yardımsever ve profesyonel bir yapay zeka asistanısın.</textarea>
+                    <textarea id="systemPrompt" class="input-area" rows="5">Sen yardımsever, yetenekli ve profesyonel bir yapay zeka asistanısın.</textarea>
+                    <button class="secondary-btn" onclick="forceJSONMode()" style="margin-top:8px; width:100%">
+                        <i class="fas fa-code"></i> JSON Modunu Zorla
+                    </button>
+                </div>
+
+                <!-- Temel Ayarlar -->
+                <div class="setting-group">
+                    <div class="slider-header">
+                        <label>Temperature (Yaratıcılık)</label>
+                        <span id="tempVal" class="val-badge">0.7</span>
+                    </div>
+                    <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.7">
                 </div>
 
                 <div class="setting-group">
-                    <label>Sıcaklık: <span id="tempVal" class="val-badge">0.7</span></label>
-                    <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.7" style="width:100%">
+                    <div class="slider-header">
+                        <label>Max Tokens (Uzunluk)</label>
+                        <input type="number" id="maxTokensInput" value="2048" class="input-number">
+                    </div>
                 </div>
 
-                <div class="setting-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="maxTokensInput" value="2048" class="input-line">
-                </div>
+                <!-- Gelişmiş Ayarlar (Collapsible) -->
+                <details class="advanced-settings">
+                    <summary>Gelişmiş Parametreler</summary>
+                    
+                    <div class="setting-group">
+                        <div class="slider-header">
+                            <label title="Olasılık kümülatif toplamı">Top-P (Nucleus)</label>
+                            <span id="topPVal" class="val-badge">0.95</span>
+                        </div>
+                        <input type="range" id="topPInput" min="0.1" max="1.0" step="0.05" value="0.95">
+                    </div>
+
+                    <div class="setting-group">
+                        <div class="slider-header">
+                            <label title="Tekrar cezası (1.0 = yok)">Repeat Penalty</label>
+                            <span id="repPenVal" class="val-badge">1.1</span>
+                        </div>
+                        <input type="range" id="repPenInput" min="1.0" max="2.0" step="0.05" value="1.1">
+                    </div>
+
+                    <div class="setting-group">
+                        <label title="Tekrarlanabilir sonuçlar için sabit sayı">Seed (-1 = Random)</label>
+                        <input type="number" id="seedInput" value="-1" class="input-area input-line">
+                    </div>
+                </details>
                 
-                <div class="setting-group">
+                <div class="setting-group" style="margin-top: auto;">
                     <div class="connection-status" id="connStatus">
                         <div class="status-dot"></div>
                         <span id="statusText">Bağlantı Bekleniyor...</span>
@@ -51,68 +86,74 @@
         <!-- MERKEZ PANEL: CHAT -->
         <div class="panel chat-panel">
             <div class="panel-header chat-header">
-                <div style="display:flex; gap:10px; align-items:center;">
-                    <button class="icon-btn" onclick="togglePanel('leftPanel')"><i class="fas fa-cog"></i></button>
-                    <div class="brand-logo"><i class="fas fa-cube"></i> Sentiric</div>
+                <div class="header-group">
+                    <button class="icon-btn" onclick="togglePanel('leftPanel')" title="Ayarlar"><i class="fas fa-cog"></i></button>
+                    <div class="brand-logo"><i class="fas fa-layer-group"></i> Sentiric Studio</div>
                 </div>
                 
-                <div style="display:flex; gap:10px; align-items:center;">
-                     <button class="icon-btn" onclick="togglePanel('rightPanel')"><i class="fas fa-book"></i></button>
+                <div class="header-center">
+                    <span class="model-badge"><i class="fas fa-microchip"></i> Gemma-2-Instruct (v2.1)</span>
+                </div>
+
+                <div class="header-group">
+                    <button class="icon-btn" onclick="clearChat()" title="Temizle"><i class="fas fa-trash-alt"></i></button>
+                    <button class="icon-btn" onclick="togglePanel('rightPanel')" title="Bağlam"><i class="fas fa-database"></i></button>
                 </div>
             </div>
             
             <div class="chat-messages" id="chatMessages">
                 <div class="welcome-screen">
-                    <div class="welcome-icon"><i class="fas fa-magic"></i></div>
-                    <h2>Sentiric Studio'ya Hoş Geldiniz</h2>
-                    <p>Modeli test etmek için aşağıya bir mesaj yazın veya sol menüden ayarları değiştirin.</p>
+                    <div class="welcome-icon"><i class="fas fa-laptop-code"></i></div>
+                    <h2>Mühendislik Çalışma Alanı</h2>
+                    <p>Sol panelden "Gelişmiş Parametreler" ile motorun ince ayarını yapabilirsiniz.</p>
                 </div>
             </div>
 
-            <!-- FLOATING INPUT BAR -->
             <div class="input-wrapper">
                 <div class="command-bar">
-                    <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-stop"></i> Durdur</button>
-                    
-                    <textarea id="userInput" class="command-input" placeholder="Bir şeyler yazın... (Ctrl+Enter)" rows="1"></textarea>
-                    
-                    <div style="display:flex; gap:5px;">
+                    <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-square"></i></button>
+                    <textarea id="userInput" class="command-input" placeholder="Mesajınızı yazın... (Ctrl+Enter)" rows="1"></textarea>
+                    <div class="action-group">
                         <button class="command-btn" id="micBtn"><i class="fas fa-microphone"></i></button>
-                        <button class="command-btn send-btn" id="sendBtn"><i class="fas fa-paper-plane"></i></button>
+                        <button class="command-btn send-btn" id="sendBtn"><i class="fas fa-arrow-up"></i></button>
                     </div>
+                </div>
+                <div class="footer-stats">
+                    <span id="lastLatency">0ms</span> • <span id="lastTPS">0 t/s</span>
                 </div>
             </div>
         </div>
 
-        <!-- SAĞ PANEL: RAG -->
+        <!-- SAĞ PANEL: RAG & METRICS -->
         <div class="panel side-panel" id="rightPanel" style="display: none;">
             <div class="panel-header">
-                <span><i class="fas fa-database"></i> Bağlam</span>
+                <span><i class="fas fa-project-diagram"></i> Bağlam</span>
                 <button class="icon-btn" onclick="togglePanel('rightPanel')"><i class="fas fa-times"></i></button>
             </div>
             
             <div class="context-tabs">
-                <button class="context-tab active" onclick="switchTab('rag')">Metin (RAG)</button>
-                <button class="context-tab" onclick="switchTab('metrics')">Metrikler</button>
+                <button class="context-tab active" onclick="switchTab('rag')">RAG</button>
+                <button class="context-tab" onclick="switchTab('logs')">Loglar</button>
             </div>
             
             <div class="panel-content">
                 <div id="ragTab" class="tab-content active">
-                    <textarea id="ragInput" class="input-area full-height" placeholder="Doküman içeriğini buraya yapıştırın..."></textarea>
+                    <textarea id="ragInput" class="input-area full-height code-font" placeholder="// Doküman veya JSON verisi yapıştırın..."></textarea>
                 </div>
                 
-                <div id="metricsTab" class="tab-content" style="display: none;">
-                    <div class="metric-card">
-                        <div class="metric-label">Hız (TPS)</div>
-                        <div class="metric-value" id="tpsMetric">--</div>
+                <div id="logsTab" class="tab-content" style="display: none;">
+                    <div class="metric-grid">
+                        <div class="metric-box">
+                            <div class="m-label">Prompt Tokens</div>
+                            <div class="m-val" id="promptTokenVal">0</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="m-label">Gen Tokens</div>
+                            <div class="m-val" id="genTokenVal">0</div>
+                        </div>
                     </div>
-                    <div class="metric-card">
-                        <div class="metric-label">Gecikme</div>
-                        <div class="metric-value" id="latencyMetric">-- ms</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">Token</div>
-                        <div class="metric-value" id="tokenMetric">0</div>
+                    <div id="consoleLog" class="console-log">
+                        <div class="log-entry system">Sistem hazır.</div>
                     </div>
                 </div>
             </div>
@@ -120,9 +161,9 @@
     </div>
 
     <div class="view-presets">
-        <button class="view-btn" onclick="setView('workbench')" title="Panelleri Aç"><i class="fas fa-columns"></i></button>
-        <button class="view-btn active" onclick="setView('focus')" title="Odak Modu"><i class="fas fa-compress"></i></button>
-        <button class="view-btn" onclick="switchTheme()" title="Tema"><i class="fas fa-adjust"></i></button>
+        <button class="view-btn" onclick="setView('workbench')"><i class="fas fa-columns"></i></button>
+        <button class="view-btn active" onclick="setView('focus')"><i class="fas fa-expand"></i></button>
+        <button class="view-btn" onclick="switchTheme()"><i class="fas fa-moon"></i></button>
     </div>
 
     <script src="app.js"></script>
