@@ -10,27 +10,30 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     
-    <!-- Syntax Highlighting -->
+    <!-- Syntax Highlighting & Markdown -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <link rel="stylesheet" href="style.css">
 
+    <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
 </head>
 <body data-theme="light">
 
 <div class="layout">
     
-    <!-- SOL PANEL: MOTOR KONTROLÜ -->
+    <!-- SOL PANEL: AYARLAR (Mobile: Drawer) -->
     <aside class="sidebar left" id="leftPanel">
         <div class="header">
             <div class="brand"><i class="fas fa-cube"></i> Sentirik Studio</div>
+            <button class="close-btn mobile-only" onclick="togglePanel('leftPanel')"><i class="fas fa-times"></i></button>
         </div>
         
         <div class="scroll-content">
             <div class="section">
-                <div class="section-title">Kimlik & Persona</div>
-                <textarea id="systemPrompt" class="input-area code-font" rows="6"></textarea>
+                <div class="section-title">Persona & Sistem</div>
+                <textarea id="systemPrompt" class="input-area code-font" rows="6" placeholder="Sen yardımsever bir yapay zeka asistanısın..."></textarea>
             </div>
 
             <div class="section">
@@ -39,17 +42,17 @@
                 <div class="control">
                     <div class="label-row">
                         <label>Yaratıcılık (Temp)</label>
-                        <span id="tempVal" class="badge">0.7</span>
+                        <span id="tempVal" class="badge">0.8</span>
                     </div>
-                    <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.7">
+                    <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.8">
                 </div>
 
                 <div class="control">
                     <div class="label-row">
-                        <label>Hafıza Limiti</label>
-                        <span id="historyVal" class="badge">10</span>
+                        <label>Maks. Token</label>
+                        <span id="tokenLimitVal" class="badge">1024</span>
                     </div>
-                    <input type="range" id="historyLimit" min="0" max="50" step="1" value="10">
+                    <input type="range" id="tokenLimit" min="64" max="4096" step="64" value="1024">
                 </div>
             </div>
 
@@ -72,15 +75,16 @@
     <!-- ORTA PANEL: SOHBET -->
     <main class="main-stage">
         <header class="top-bar">
-            <button class="toggle-btn mobile-only" onclick="togglePanel('leftPanel')"><i class="fas fa-bars"></i></button>
+            <button class="toggle-btn" onclick="togglePanel('leftPanel')"><i class="fas fa-sliders-h"></i></button>
             
             <div class="model-info">
-                <i class="fas fa-microchip"></i> (Quantized)
+                <span class="model-name">Gemma 1B</span>
+                <span class="model-tag">Local GPU</span>
             </div>
 
             <div class="actions">
-                <button class="action-icon" onclick="clearChat()" title="Temizle"><i class="fas fa-eraser"></i></button>
-                <button class="toggle-btn mobile-only" onclick="togglePanel('rightPanel')"><i class="fas fa-database"></i></button>
+                <button class="action-icon" onclick="clearChat()" title="Sohbeti Temizle"><i class="fas fa-trash-alt"></i></button>
+                <button class="toggle-btn" onclick="togglePanel('rightPanel')"><i class="fas fa-database"></i></button>
             </div>
         </header>
 
@@ -88,21 +92,27 @@
             <div class="empty-state" id="emptyState">
                 <div class="logo-shine"><i class="fas fa-layer-group"></i></div>
                 <h2>Sentiric Engine Hazır</h2>
-                <p>Sol panelden parametreleri ayarlayın, sağ panelden veri yükleyin.</p>
+                <p>Parametreleri ayarla, veri yükle ve sohbete başla.</p>
             </div>
+            <!-- Mesajlar Buraya Gelecek -->
         </div>
 
+        <!-- INPUT ALANI -->
         <div class="composer-area">
+            <button class="scroll-bottom-btn hidden" id="scrollBtn" onclick="scrollToBottom()"><i class="fas fa-arrow-down"></i></button>
+            
             <div class="input-capsule">
-                <button class="tool-btn" onclick="$('fileInput').click()" title="Dosya Yükle"><i class="fas fa-paperclip"></i></button>
+                <button class="tool-btn" onclick="$('fileInput').click()" title="RAG Dosyası Yükle">
+                    <i class="fas fa-paperclip"></i>
+                </button>
                 <input type="file" id="fileInput" hidden>
                 
-                <textarea id="userInput" placeholder="Bir mesaj yazın..." rows="1"></textarea>
-                
+                <textarea id="userInput" placeholder="Bir şeyler yazın..." rows="1"></textarea>
+                 <button class="tool-btn" id="micBtn" title="Sesli Yazma"><i class="fas fa-microphone"></i></button>
                 <div class="right-tools">
-                    <button class="tool-btn" id="micBtn"><i class="fas fa-microphone"></i></button>
-                    <button class="send-btn" id="sendBtn"><i class="fas fa-arrow-up"></i></button>
-                    <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-stop"></i></button>
+                   
+                    <button class="send-btn" id="sendBtn"><i class="fas fa-paper-plane"></i></button>
+                    <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-square"></i></button>
                 </div>
             </div>
             <div class="telemetry-bar">
@@ -111,22 +121,24 @@
         </div>
     </main>
 
-    <!-- SAĞ PANEL: VERİ & LOG -->
+    <!-- SAĞ PANEL: RAG & LOG (Mobile: Drawer) -->
     <aside class="sidebar right" id="rightPanel">
         <div class="header">
             <div class="tab-group">
                 <button class="tab active" onclick="switchTab('rag')">RAG / Veri</button>
-                <button class="tab" onclick="switchTab('logs')">Loglar</button>
+                <button class="tab" onclick="switchTab('logs')">Metrikler</button>
             </div>
+            <button class="close-btn mobile-only" onclick="togglePanel('rightPanel')"><i class="fas fa-times"></i></button>
         </div>
 
         <div class="scroll-content">
             <!-- RAG TAB -->
             <div id="ragTab" class="tab-content active">
                 <div class="info-box">
-                    <i class="fas fa-info-circle"></i> Buraya yapıştırılan veya yüklenen metinler modelin hafızasına eklenir.
+                    <i class="fas fa-info-circle"></i> Buraya eklenen metinler, modelin "Context Window"una enjekte edilir.
                 </div>
-                <textarea id="ragInput" class="full-code-area" placeholder="// RAG içeriği buraya..."></textarea>
+                <textarea id="ragInput" class="full-code-area" placeholder="// Bağlam verisi veya doküman içeriği..."></textarea>
+                <div class="rag-stats">Karakter: <span id="ragCharCount">0</span></div>
             </div>
 
             <!-- LOGS TAB -->
@@ -141,20 +153,24 @@
                         <div class="value" id="latencyVal">--</div>
                     </div>
                     <div class="dash-card full">
-                        <label>Son Token Sayısı</label>
+                        <label>Son Çıktı Token</label>
                         <div class="value" id="tokenVal">0</div>
                     </div>
                 </div>
+                <div class="console-title">Sistem Logları</div>
                 <div class="console-output" id="consoleLog">
-                    <div class="log-line system">> Sistem başlatıldı.</div>
+                    <div class="log-line system">> Arayüz başlatıldı.</div>
                 </div>
             </div>
         </div>
     </aside>
 
+    <!-- OVERLAY (Mobile Only) -->
+    <div class="overlay" id="overlay" onclick="closeAllPanels()"></div>
+
 </div>
 
-<button class="theme-switch" onclick="toggleTheme()"><i class="fas fa-adjust"></i></button>
+<button class="theme-switch" onclick="toggleTheme()"><i class="fas fa-moon"></i></button>
 
 <script src="app.js"></script>
 </body>

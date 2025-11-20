@@ -1,8 +1,9 @@
-// --- STATE & UTILS ---
+// --- STATE ---
 const $ = (id) => document.getElementById(id);
 const state = { 
     generating: false, controller: null, history: [], 
-    autoListen: false, recognition: null, startTime: 0, tokenCount: 0 
+    autoListen: false, recognition: null, startTime: 0, tokenCount: 0,
+    autoScroll: true
 };
 
 // --- INIT ---
@@ -12,24 +13,37 @@ document.addEventListener('DOMContentLoaded', () => {
     
     setupEvents();
     setupSpeech();
+    setupMarkdown();
     checkHealth();
     setInterval(checkHealth, 10000);
+
+    // Welcome Message
+    addMessage('ai', 'Merhaba! Sentiric yerel LLM motoruna hoş geldiniz. Size nasıl yardımcı olabilirim?');
 });
+
+function setupMarkdown() {
+    marked.setOptions({
+        highlight: function(code, lang) {
+            const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+            return hljs.highlight(code, { language }).value;
+        },
+        langPrefix: 'hljs language-'
+    });
+}
 
 // --- EVENTS ---
 function setupEvents() {
     const input = $('userInput');
     
-    // Auto-Resize Textarea
     input.addEventListener('input', function() {
         this.style.height = 'auto';
-        this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+        this.style.height = Math.min(this.scrollHeight, 200) + 'px';
     });
 
-    // Enter to Send
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
+            if(window.innerWidth < 768) input.blur(); // Mobilde klavyeyi kapat
             sendMessage();
         }
     });
@@ -37,57 +51,59 @@ function setupEvents() {
     $('sendBtn').onclick = sendMessage;
     $('stopBtn').onclick = () => state.controller?.abort();
     
-    // Settings Bindings
+    // Parametre UI Güncelleme
     $('tempInput').oninput = (e) => $('tempVal').innerText = e.target.value;
-    $('historyLimit').oninput = (e) => $('historyVal').innerText = e.target.value;
-    
-    // File Upload
+    $('tokenLimit').oninput = (e) => $('tokenLimitVal').innerText = e.target.value;
+    $('ragInput').oninput = (e) => $('ragCharCount').innerText = e.target.value.length;
+
+    // Scroll Dedektörü
+    $('chatContainer').addEventListener('scroll', function() {
+        const isAtBottom = this.scrollHeight - this.scrollTop - this.clientHeight < 50;
+        state.autoScroll = isAtBottom;
+        $('scrollBtn').classList.toggle('hidden', isAtBottom);
+    });
+
+    // Dosya Yükleme (RAG)
     $('fileInput').onchange = async (e) => {
         const file = e.target.files[0];
         if(!file) return;
-        const text = await file.text();
-        const rag = $('ragInput');
-        rag.value = (rag.value ? rag.value + "\n\n" : "") + `--- ${file.name} ---\n${text}`;
-        log(`Dosya eklendi: ${file.name}`);
-        // Auto open right panel
-        togglePanel('rightPanel', true);
-    };
-
-    // Language
-    $('langSelect').onchange = (e) => {
-        const isEn = e.target.value === 'en-US';
-        if(state.recognition) state.recognition.lang = e.target.value;
-        $('systemPrompt').value = isEn 
-            ? ""
-            : "";
+        try {
+            const text = await file.text();
+            const rag = $('ragInput');
+            rag.value = (rag.value ? rag.value + "\n\n" : "") + `--- ${file.name} ---\n${text}`;
+            $('ragCharCount').innerText = rag.value.length;
+            togglePanel('rightPanel', true); // Paneli aç
+            switchTab('rag');
+        } catch(err) {
+            alert("Dosya okunamadı: " + err.message);
+        }
     };
 }
 
-// --- CORE LLM LOGIC ---
+// --- CORE LOGIC ---
 async function sendMessage() {
     const text = $('userInput').value.trim();
     if (!text || state.generating) return;
 
-    // UI Reset
+    // UI Hazırlık
     $('userInput').value = '';
     $('userInput').style.height = 'auto';
     $('emptyState').style.display = 'none';
+    state.autoScroll = true; // Kullanıcı mesaj atınca en alta git
     
-    // User Message
-    addMessage('user', text);
+    addMessage('user', escapeHtml(text));
     state.history.push({role: 'user', content: text});
 
     // AI Placeholder
     const aiBubble = addMessage('ai', '<span class="cursor"></span>');
+    const bubbleContent = aiBubble.querySelector('.markdown-content');
     
     setBusy(true);
     state.controller = new AbortController();
     state.startTime = Date.now();
     state.tokenCount = 0;
 
-    // Payload
     const payload = buildPayload(text);
-    log(`İstek gönderiliyor (${payload.messages.length} msj)...`);
 
     try {
         const response = await fetch('/v1/chat/completions', {
@@ -102,14 +118,16 @@ async function sendMessage() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullText = "";
+        let buffer = "";
 
         while(true) {
             const {done, value} = await reader.read();
             if(done) break;
             
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n');
-            
+            buffer += decoder.decode(value, {stream: true});
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Son yarım satırı sakla
+
             for(const line of lines) {
                 if(line.startsWith('data: ') && line !== 'data: [DONE]') {
                     try {
@@ -117,112 +135,138 @@ async function sendMessage() {
                         const content = json.choices[0]?.delta?.content;
                         if(content) {
                             fullText += content;
-                            // Basic render for speed
-                            aiBubble.innerHTML = escapeHtml(fullText) + '<span class="cursor"></span>';
+                            // Canlı Markdown render (her 10 token'da bir veya basit text)
+                            // Performans için basit text + cursor yapıyoruz
+                            bubbleContent.innerHTML = marked.parse(fullText) + '<span class="cursor"></span>';
                             state.tokenCount++;
-                            smartScroll();
+                            updateStats();
+                            if(state.autoScroll) scrollToBottom();
                         }
                     } catch(e){}
                 }
             }
         }
 
-        // Final Polish (Markdown + Highlight)
-        aiBubble.innerHTML = marked.parse(fullText);
-        hljs.highlightAll();
+        // Final Render
+        bubbleContent.innerHTML = marked.parse(fullText);
         enhanceCodeBlocks(aiBubble);
+        addMessageActions(aiBubble, fullText);
         
         state.history.push({role: 'assistant', content: fullText});
-        updateStats();
-        log(`Yanıt tamamlandı (${state.tokenCount} token).`);
-
-        if(state.autoListen) setTimeout(tryStartMic, 1500);
+        
+        if(state.autoListen) setTimeout(tryStartMic, 1000);
 
     } catch(err) {
         if(err.name !== 'AbortError') {
-            aiBubble.innerHTML += `<br><div style="color:var(--danger); margin-top:8px"><strong>Hata:</strong> ${err.message}</div>`;
-            log(`Hata: ${err.message}`);
+            bubbleContent.innerHTML += `<br><div style="color:var(--danger); margin-top:10px; font-weight:bold">❌ Hata: ${err.message}</div>`;
+        } else {
+            bubbleContent.innerHTML += ` <span style="color:var(--text-sub)">(Durduruldu)</span>`;
         }
     } finally {
         setBusy(false);
+        if(state.autoScroll) scrollToBottom();
     }
 }
 
-// --- HELPERS ---
-
+// --- UI BUILDERS ---
 function buildPayload(lastMsg) {
     const msgs = [];
     const sys = $('systemPrompt').value;
     const rag = $('ragInput').value;
     
-    if(sys) msgs.push({role: 'system', content: sys});
-    if(rag) msgs.push({role: 'user', content: `BAĞLAM BİLGİSİ:\n${rag}\n\n(Bağlamı kullanarak cevapla)`});
-    if(rag) msgs.push({role: 'assistant', content: 'Anlaşıldı.'});
-    
-    const limit = parseInt($('historyLimit').value) || 10;
-    // Son mesajı hariç tut, slice yap
-    state.history.slice(-limit).forEach(m => msgs.push(m));
-    
-    // Son mesaj zaten history'e eklendi ama payload'a tekrar eklemiyoruz, 
-    // yukarıdaki slice son mesajı da içerir eğer push yapıldıysa.
-    // Düzeltme: sendMessage içinde push yapıyoruz. O yüzden slice(-limit) yeterli.
-    
+    // System Prompt + RAG Injection
+    let finalSystem = sys;
+    if(rag) {
+        finalSystem += `\n\nBAĞLAM BİLGİSİ (Context):\n${rag}\n\n(Soruları cevaplarken sadece bu bağlamı kullan.)`;
+    }
+    if(finalSystem) msgs.push({role: 'system', content: finalSystem});
+
+    // History (Son 10 mesaj)
+    state.history.slice(-10).forEach(m => msgs.push(m));
+    // Son mesaj zaten history'de
+
     return {
         messages: msgs,
         temperature: parseFloat($('tempInput').value),
+        max_tokens: parseInt($('tokenLimit').value),
         stream: true
     };
 }
 
-function addMessage(role, html) {
+function addMessage(role, htmlContent) {
     const div = document.createElement('div');
     div.className = `message ${role}`;
     div.innerHTML = `
-        <div class="avatar">
-            <i class="fas fa-${role==='user'?'user':'robot'}"></i>
+        <div class="avatar"><i class="fas fa-${role==='user'?'user':'robot'}"></i></div>
+        <div class="bubble">
+            <div class="markdown-content">${htmlContent}</div>
         </div>
-        <div class="bubble">${html}</div>
     `;
     $('chatContainer').appendChild(div);
-    smartScroll();
-    return div.querySelector('.bubble');
+    if(state.autoScroll) scrollToBottom();
+    return div.querySelector('.bubble'); // İçerik güncellemeleri için bubble'ı döndür
 }
 
-function enhanceCodeBlocks(el) {
-    el.querySelectorAll('pre').forEach(pre => {
-        const code = pre.querySelector('code');
-        if(!code) return;
+function addMessageActions(bubble, rawText) {
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'msg-actions';
+    actionsDiv.innerHTML = `
+        <button class="msg-btn" onclick="copyText(this, '${encodeURIComponent(rawText)}')" title="Kopyala">
+            <i class="fas fa-copy"></i>
+        </button>
+    `;
+    bubble.appendChild(actionsDiv);
+}
+
+function enhanceCodeBlocks(element) {
+    element.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightElement(block);
         
-        // Header ekle
+        const pre = block.parentElement;
+        const lang = block.className.replace('hljs language-', '') || 'Code';
+        
         const header = document.createElement('div');
         header.className = 'code-header';
         header.innerHTML = `
-            <span>Code</span>
-            <button class="action-icon" style="font-size:0.8rem; padding:4px" onclick="copyText(this, '${encodeURIComponent(pre.innerText)}')">
+            <span class="code-lang">${lang}</span>
+            <button class="copy-code-btn" onclick="copyCode(this)">
                 <i class="fas fa-copy"></i> Kopyala
             </button>
         `;
-        pre.insertBefore(header, code);
+        pre.insertBefore(header, block);
     });
 }
 
+// --- UTILS ---
 window.copyText = (btn, text) => {
     navigator.clipboard.writeText(decodeURIComponent(text));
-    const original = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-check"></i>';
-    setTimeout(() => btn.innerHTML = original, 2000);
+    const icon = btn.querySelector('i');
+    icon.className = 'fas fa-check';
+    setTimeout(() => icon.className = 'fas fa-copy', 2000);
 };
 
-function smartScroll() {
+window.copyCode = (btn) => {
+    const code = btn.parentElement.nextElementSibling.innerText;
+    navigator.clipboard.writeText(code);
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i> Kopyalandı';
+    setTimeout(() => btn.innerHTML = originalHtml, 2000);
+};
+
+function scrollToBottom() {
     const el = $('chatContainer');
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
-    if(isNearBottom) el.scrollTop = el.scrollHeight;
+    el.scrollTop = el.scrollHeight;
 }
 
 function setBusy(busy) {
     state.generating = busy;
     $('sendBtn').classList.toggle('hidden', busy);
     $('stopBtn').classList.toggle('hidden', !busy);
+    if(busy) $('userInput').setAttribute('disabled', true);
+    else {
+        $('userInput').removeAttribute('disabled');
+        $('userInput').focus();
+    }
 }
 
 function updateStats() {
@@ -233,50 +277,37 @@ function updateStats() {
     $('tpsVal').innerText = tps;
 }
 
-function log(msg) {
-    const d = document.createElement('div');
-    d.className = 'log-line';
-    d.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-    $('consoleLog').prepend(d);
-}
-
 function escapeHtml(text) {
     return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// --- TOGGLES ---
-window.togglePanel = (id, forceOpen = false) => {
+// --- PANEL & LAYOUT ---
+window.togglePanel = (id, open = null) => {
     const el = $(id);
-    if(window.innerWidth <= 768) {
-        // Mobile Logic
-        el.classList.toggle('active', forceOpen || !el.classList.contains('active'));
-        // Overlay
-        let ov = document.querySelector('.overlay');
-        if(el.classList.contains('active')) {
-            if(!ov) {
-                ov = document.createElement('div'); ov.className='overlay';
-                ov.onclick = () => { 
-                    $('leftPanel').classList.remove('active'); 
-                    $('rightPanel').classList.remove('active'); 
-                    ov.remove(); 
-                };
-                document.body.appendChild(ov);
-            }
-        } else {
-            if(ov && !$('leftPanel').classList.contains('active') && !$('rightPanel').classList.contains('active')) ov.remove();
-        }
-    } else {
-        // Desktop Logic (Margin manipulation)
-        if(id === 'leftPanel') el.classList.toggle('closed');
-        if(id === 'rightPanel') el.classList.toggle('closed');
+    const overlay = $('overlay');
+    
+    if (open === true) el.classList.add('active');
+    else if (open === false) el.classList.remove('active');
+    else el.classList.toggle('active'); // Toggle
+
+    // Mobilde Overlay Yönetimi
+    const isMobile = window.innerWidth < 768;
+    if(isMobile) {
+        const anyActive = $('leftPanel').classList.contains('active') || $('rightPanel').classList.contains('active');
+        overlay.classList.toggle('active', anyActive);
     }
+};
+
+window.closeAllPanels = () => {
+    $('leftPanel').classList.remove('active');
+    $('rightPanel').classList.remove('active');
+    $('overlay').classList.remove('active');
 };
 
 window.switchTab = (tab) => {
     $('ragTab').style.display = tab==='rag'?'block':'none';
     $('logsTab').style.display = tab==='logs'?'block':'none';
-    const tabs = document.querySelectorAll('.tab');
-    tabs.forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     event.target.classList.add('active');
 };
 
@@ -285,17 +316,32 @@ window.toggleTheme = () => {
     const next = current === 'light' ? 'dark' : 'light';
     document.body.setAttribute('data-theme', next);
     localStorage.setItem('theme', next);
+    $('themeIcon').className = next === 'light' ? 'fas fa-moon' : 'fas fa-sun';
 };
 
 window.clearChat = () => {
     state.history = [];
-    $('chatContainer').innerHTML = `
-        <div class="empty-state" id="emptyState">
-            <div class="logo-shine"><i class="fas fa-check-circle"></i></div>
-            <h2>Temizlendi</h2>
-        </div>`;
-    log("Sohbet temizlendi.");
+    const container = $('chatContainer');
+    container.innerHTML = ''; // Hepsini sil
+    container.appendChild($('emptyState')); // Empty state geri gelsin
+    $('emptyState').style.display = 'flex';
 };
+
+// --- HEALTH CHECK ---
+async function checkHealth() {
+    try {
+        const res = await fetch('/health');
+        if(res.ok) {
+            $('statusText').innerText = 'Bağlı';
+            $('statusText').style.color = 'var(--success)';
+            $('connStatus').querySelector('.dot').style.backgroundColor = 'var(--success)';
+        }
+    } catch(e) {
+        $('statusText').innerText = 'Koptu';
+        $('statusText').style.color = 'var(--danger)';
+        $('connStatus').querySelector('.dot').style.backgroundColor = 'var(--danger)';
+    }
+}
 
 // --- SPEECH ---
 function setupSpeech() {
@@ -303,14 +349,13 @@ function setupSpeech() {
     const rec = new webkitSpeechRecognition();
     rec.lang = 'tr-TR';
     rec.onstart = () => { 
-        $('micBtn').classList.add('pulse'); 
+        $('micBtn').style.color = 'var(--danger)';
         $('voiceStatus').classList.remove('hidden');
     };
     rec.onend = () => { 
-        $('micBtn').classList.remove('pulse');
+        $('micBtn').style.color = '';
         $('voiceStatus').classList.add('hidden');
         if(state.autoListen && !state.generating && $('userInput').value) sendMessage();
-        else if(state.autoListen) setTimeout(tryStartMic, 500);
     };
     rec.onresult = (e) => $('userInput').value = e.results[0][0].transcript;
     state.recognition = rec;
@@ -319,19 +364,5 @@ function setupSpeech() {
         if(state.autoListen) { state.autoListen=false; rec.stop(); }
         else rec.start();
     };
-    $('micBtn').ondblclick = () => { state.autoListen=true; rec.start(); };
 }
 function tryStartMic() { try{state.recognition.start();}catch(e){} }
-
-async function checkHealth() {
-    try {
-        const res = await fetch('/health');
-        if(res.ok) {
-            $('statusText').innerText = 'Hazır';
-            $('connStatus').style.borderColor = 'var(--success)';
-        }
-    } catch(e) {
-        $('statusText').innerText = 'Koptu';
-        $('connStatus').style.borderColor = 'var(--danger)';
-    }
-}
