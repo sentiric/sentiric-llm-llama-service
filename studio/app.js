@@ -80,6 +80,11 @@ function setupEventListeners() {
             const file = e.target.files[0];
             if (!file) return;
             
+            // İkonu değiştir (Feedback)
+            const btn = document.getElementById('fileBtn');
+            const originalIcon = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check-circle" style="color:#10b981"></i>';
+            
             const reader = new FileReader();
             reader.onload = (event) => {
                 const content = event.target.result;
@@ -87,10 +92,13 @@ function setupEventListeners() {
                 els.ragInput.value = (current ? current + "\n\n" : "") + 
                     `--- FILE: ${file.name} ---\n${content}`;
                 
-                const rightPanel = document.getElementById('rightPanel');
-                if(rightPanel.style.display === 'none') togglePanel('rightPanel');
+                // Paneli açma (Kullanıcıyı rahatsız etmemek için opsiyonel olabilir, şimdilik açıyoruz)
+                // togglePanel('rightPanel'); // İstersen bunu yorum satırı yap
                 
-                logToConsole(`Dosya yüklendi: ${file.name} (${content.length} karakter)`);
+                logToConsole(`Dosya yüklendi: ${file.name}`);
+                
+                // 2 sn sonra ikonu eski haline getir
+                setTimeout(() => btn.innerHTML = originalIcon, 2000);
             };
             reader.readAsText(file);
         });
