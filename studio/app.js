@@ -66,9 +66,10 @@ function setupEvents() {
         stopMicUI();
     };
     
-    // Parametre UI
+    // Parametre UI (GÜNCELLENDİ)
     $('tempInput').oninput = (e) => $('tempVal').innerText = e.target.value;
     $('tokenLimit').oninput = (e) => $('tokenLimitVal').innerText = e.target.value;
+    $('historyLimit').oninput = (e) => $('historyVal').innerText = e.target.value;
     $('ragInput').oninput = (e) => $('ragCharCount').innerText = e.target.value.length;
 
     // Scroll Dedektörü
@@ -303,7 +304,8 @@ function buildPayload(lastMsg) {
     }
     if(finalSystem) msgs.push({role: 'system', content: finalSystem});
 
-    state.history.slice(-10).forEach(m => msgs.push(m));
+    const limit = parseInt($('historyLimit').value) || 10;
+    state.history.slice(-limit).forEach(m => msgs.push(m));
 
     return {
         messages: msgs,
