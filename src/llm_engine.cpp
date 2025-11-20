@@ -3,7 +3,6 @@
 #include "spdlog/spdlog.h"
 #include "model_manager.h"
 #include "common.h"
-// #include "core/grammar_parser.h" <-- KALDIRILDI
 #include <stdexcept>
 #include <time.h>
 #include <algorithm>
@@ -120,28 +119,17 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         
         prompt_tokens.resize(n_tokens);
         
-        // --- TRUNCATION LOGIC (YENİ: Input Protection) ---
-        // Context boyutu aşılırsa, sondan koruyarak kes (Keep Last).
-        // Modelin cevap üretmesi için de yer bırakmalıyız.
+        // --- TRUNCATION LOGIC ---
         uint32_t max_context = settings_.context_size;
         uint32_t max_gen = settings_.default_max_tokens;
-        
-        // Güvenlik marjı (buffer) ile birlikte maksimum prompt boyutu
         uint32_t safe_prompt_limit = (max_context > max_gen + 64) ? (max_context - max_gen - 64) : (max_context / 2);
         
         if (prompt_tokens.size() > safe_prompt_limit) {
-            spdlog::warn("⚠️ Input too large ({} tokens). Truncating to last {} tokens to fit context.", 
-                         prompt_tokens.size(), safe_prompt_limit);
-                         
-            // Basit "Keep Last" stratejisi (RAG için genellikle soru sondadır)
-            // Sistemin en azından çalışmasını sağlar.
+            spdlog::warn("⚠️ Input too large ({} tokens). Truncating to last {} tokens.", prompt_tokens.size(), safe_prompt_limit);
             std::vector<llama_token> truncated;
             truncated.reserve(safe_prompt_limit);
-            
-            // Iterator aritmetiği ile son 'safe_prompt_limit' kadarını al
             auto start_it = prompt_tokens.end() - safe_prompt_limit;
             truncated.assign(start_it, prompt_tokens.end());
-            
             prompt_tokens = std::move(truncated);
         }
         
@@ -152,7 +140,18 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         llama_context* ctx = guard.get();
         size_t matched_len = guard.get_matched_tokens();
 
+        // --- DÜZELTME: ZERO-DECODE BUG FIX ---
+        // Eğer prompt tamamen önbellekte varsa (matched_len == prompt_tokens.size()),
+        // son token'ı önbellekten silip tekrar işlemeye (decode) zorlamalıyız.
+        // Aksi takdirde model yeni logits üretmez ve eski context'in sonundaki EOS token'ı tekrar üretir.
+        if (matched_len == prompt_tokens.size() && matched_len > 0) {
+            matched_len--; 
+            // Log'da görelim
+            spdlog::debug("🔄 Forced re-decode of last token to prevent stale cache state.");
+        }
+
         // 3. KV Cache Temizliği
+        // matched_len'den sonraki her şeyi sil (önceki cevabı unut)
         if (matched_len < prompt_tokens.size()) {
             if (!safe_kv_seq_rm(ctx, 0, matched_len, -1)) {
                 spdlog::error("Failed to remove KV cache sequence! Resetting context.");
@@ -194,14 +193,10 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         LlamaSamplerGuard sampler_guard(llama_sampler_chain_default_params());
         llama_sampler* sampler_chain = sampler_guard.sampler;
         
-        // --- GRAMMAR SAMPLER ENTEGRASYONU ---
         if (!req_ptr->grammar.empty()) {
             llama_sampler* grammar_sampler = llama_sampler_init_grammar(vocab, req_ptr->grammar.c_str(), "root");
             if (grammar_sampler) {
                 llama_sampler_chain_add(sampler_chain, grammar_sampler);
-                spdlog::info("✅ Grammar constraint applied.");
-            } else {
-                spdlog::error("❌ Failed to initialize grammar sampler.");
             }
         }
 
