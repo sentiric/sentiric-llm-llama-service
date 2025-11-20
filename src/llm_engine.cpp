@@ -133,13 +133,11 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
              safe_kv_clear(ctx);
         }
         
-        // 4. Prompt Decode (Batch Chunking)
+        // 4. Prompt Decode
         size_t tokens_to_process = prompt_tokens.size() - matched_len;
         
         if (tokens_to_process > 0) {
-            // Bu versiyonda llama_n_batch fonksiyonu mevcut
             int32_t n_batch = llama_n_batch(ctx);
-            
             for (size_t i = 0; i < tokens_to_process; i += n_batch) {
                 int32_t n_eval = (int32_t)tokens_to_process - i;
                 if (n_eval > n_batch) n_eval = n_batch;
@@ -149,13 +147,12 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
                     common_batch_add(prompt_batch.batch, prompt_tokens[matched_len + i + j], matched_len + i + j, {0}, false);
                 }
                 
-                // Sadece son parçanın son token'ı logit üretsin
                 if (i + n_eval == tokens_to_process) {
                     prompt_batch.batch.logits[n_eval - 1] = true;
                 }
                 
                 if (llama_decode(ctx, prompt_batch.batch) != 0) {
-                    spdlog::error("Prompt decode failed at chunk {}/{}. Context full or batch error.", i, tokens_to_process);
+                    spdlog::error("Prompt decode failed at chunk {}/{}.", i, tokens_to_process);
                     safe_kv_clear(ctx);
                     throw std::runtime_error("Prompt decode failed.");
                 }
@@ -170,6 +167,9 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_k(params.has_top_k() ? params.top_k() : settings_.default_top_k));
         llama_sampler_chain_add(sampler_chain, llama_sampler_init_temp(params.has_temperature() ? params.temperature() : settings_.default_temperature));
         llama_sampler_chain_add(sampler_chain, llama_sampler_init_dist(time(NULL)));
+        
+        // Stop sequences (formatter'dan al)
+        auto stop_sequences = formatter_->get_stop_sequences();
 
         // 6. Generation Döngüsü
         int n_decoded = 0;
@@ -194,6 +194,21 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
             
             if (n_piece > 0) {
                 std::string token_str(piece_buf, n_piece);
+                
+                // --- STOP SEQUENCE KONTROLÜ ---
+                bool stop_triggered = false;
+                for (const auto& seq : stop_sequences) {
+                    if (token_str.find(seq) != std::string::npos) {
+                        stop_triggered = true;
+                        break;
+                    }
+                }
+                if (stop_triggered) {
+                    req_ptr->finish_reason = "stop";
+                    break;
+                }
+                // ------------------------------
+
                 if (token_str.find("<unused") == std::string::npos) {
                      if (req_ptr->on_token_callback) {
                         if (!req_ptr->on_token_callback(token_str)) {
