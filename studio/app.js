@@ -58,8 +58,8 @@ function setupEvents() {
         const isEn = e.target.value === 'en-US';
         if(state.recognition) state.recognition.lang = e.target.value;
         $('systemPrompt').value = isEn 
-            ? "Your name is Sentirik. You are the intelligent, helpful, and professional AI assistant of the Sentirik ecosystem. Always approach the user with a solution-oriented approach."
-            : "Senin adın Sentirik. Sen, Sentirik ekosisteminin zeki, yardımsever ve profesyonel yapay zeka asistanısın. Kullanıcıya her zaman çözüm odaklı yaklaş.";
+            ? ""
+            : "";
     };
 }
 

@@ -38,10 +38,15 @@ LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gaug
     model_ = llama_model_load_from_file(settings_.model_path.c_str(), model_params);
     if (!model_) throw std::runtime_error("Model load failed.");
 
+    // --- OTOMATİK FORMAT ALGILAMA ---
     char arch_buffer[64] = {0};
+    // Modelin GGUF metadata'sından mimari ismini oku (örn: "llama", "gemma")
     llama_model_meta_val_str(model_, "general.architecture", arch_buffer, sizeof(arch_buffer));
     std::string arch = arch_buffer[0] ? arch_buffer : "unknown";
-    spdlog::info("Model Architecture Detected: {}", arch);
+    
+    spdlog::info("🔍 Detected Model Architecture: {}", arch);
+    
+    // Mimariye uygun formatlayıcıyı oluştur
     formatter_ = create_formatter_for_model(arch);
 
     context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_, active_contexts_gauge_);
@@ -101,6 +106,7 @@ bool safe_kv_seq_rm(llama_context* ctx, llama_seq_id seq, llama_pos p0, llama_po
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
     try {
         auto& request = req_ptr->request;
+        // Doğru formatlayıcıyı kullan
         const std::string formatted_prompt = formatter_->format(request);
         const auto* vocab = llama_model_get_vocab(model_);
         
@@ -133,7 +139,7 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
              safe_kv_clear(ctx);
         }
         
-        // 4. Prompt Decode
+        // 4. Prompt Decode (Batch Chunking)
         size_t tokens_to_process = prompt_tokens.size() - matched_len;
         
         if (tokens_to_process > 0) {
@@ -168,7 +174,7 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         llama_sampler_chain_add(sampler_chain, llama_sampler_init_temp(params.has_temperature() ? params.temperature() : settings_.default_temperature));
         llama_sampler_chain_add(sampler_chain, llama_sampler_init_dist(time(NULL)));
         
-        // Stop sequences (formatter'dan al)
+        // Stop sequences (Model tipine göre formatter'dan al)
         auto stop_sequences = formatter_->get_stop_sequences();
 
         // 6. Generation Döngüsü
@@ -195,7 +201,7 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
             if (n_piece > 0) {
                 std::string token_str(piece_buf, n_piece);
                 
-                // --- STOP SEQUENCE KONTROLÜ ---
+                // STOP SEQUENCE KONTROLÜ
                 bool stop_triggered = false;
                 for (const auto& seq : stop_sequences) {
                     if (token_str.find(seq) != std::string::npos) {
@@ -207,7 +213,6 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
                     req_ptr->finish_reason = "stop";
                     break;
                 }
-                // ------------------------------
 
                 if (token_str.find("<unused") == std::string::npos) {
                      if (req_ptr->on_token_callback) {
