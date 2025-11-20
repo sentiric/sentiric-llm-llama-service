@@ -4,7 +4,7 @@ const state = {
     controller: null,
     startTime: 0,
     tokenCount: 0,
-    theme: 'dark' // 'dark' or 'light'
+    theme: 'light' // Varsayılan Light Theme
 };
 
 // DOM ELEMENTS
@@ -27,46 +27,60 @@ const els = {
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', () => {
+    // 1. Sağlık Kontrolü Başlat
     checkHealth();
     setInterval(checkHealth, 10000);
+
+    // 2. Event Listener'ları Bağla
     setupEventListeners();
+
+    // 3. Temiz Başlangıç: Odak Modu (Paneller Kapalı)
+    setView('focus');
 });
 
 function setupEventListeners() {
-    // Auto-resize textarea
-    els.userInput.addEventListener('input', function() {
-        this.style.height = 'auto';
-        this.style.height = (this.scrollHeight) + 'px';
-    });
+    // Textarea Auto-resize
+    if(els.userInput) {
+        els.userInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
 
-    // Send on Enter
-    els.userInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    });
+        // Enter ile Gönderme
+        els.userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+    }
 
-    // Buttons
-    els.sendBtn.addEventListener('click', sendMessage);
-    els.stopBtn.addEventListener('click', stopGeneration);
+    // Butonlar
+    if(els.sendBtn) els.sendBtn.addEventListener('click', sendMessage);
+    if(els.stopBtn) els.stopBtn.addEventListener('click', stopGeneration);
     
-    // Slider Update
-    els.tempInput.addEventListener('input', (e) => els.tempVal.textContent = e.target.value);
+    // Slider Değer Güncelleme
+    if(els.tempInput) {
+        els.tempInput.addEventListener('input', (e) => {
+            if(els.tempVal) els.tempVal.textContent = e.target.value;
+        });
+    }
 
-    // Mic Button (Basic Web Speech API)
+    // Mikrofon (Varsa)
     const micBtn = document.getElementById('micBtn');
-    if ('webkitSpeechRecognition' in window) {
-        const recognition = new webkitSpeechRecognition();
-        recognition.lang = 'tr-TR';
-        recognition.onstart = () => micBtn.style.color = '#ef4444';
-        recognition.onend = () => micBtn.style.color = '';
-        recognition.onresult = (e) => {
-            els.userInput.value += e.results[0][0].transcript;
-        };
-        micBtn.addEventListener('click', () => recognition.start());
-    } else {
-        micBtn.style.display = 'none';
+    if (micBtn) {
+        if ('webkitSpeechRecognition' in window) {
+            const recognition = new webkitSpeechRecognition();
+            recognition.lang = 'tr-TR';
+            recognition.onstart = () => micBtn.style.color = '#ef4444';
+            recognition.onend = () => micBtn.style.color = '';
+            recognition.onresult = (e) => {
+                if(els.userInput) els.userInput.value += e.results[0][0].transcript;
+            };
+            micBtn.addEventListener('click', () => recognition.start());
+        } else {
+            micBtn.style.display = 'none';
+        }
     }
 }
 
@@ -76,15 +90,17 @@ async function sendMessage() {
     const text = els.userInput.value.trim();
     if (!text || state.isGenerating) return;
 
-    // UI Updates
+    // UI Temizle
     els.userInput.value = '';
     els.userInput.style.height = 'auto';
+    
+    // Hoşgeldin ekranını kaldır
     const welcome = document.querySelector('.welcome-screen');
-    if(welcome) welcome.remove();
+    if(welcome) welcome.style.display = 'none';
 
     appendMessage('user', text);
     
-    // Prepare AI Message Container
+    // AI Mesaj Kutusu Oluştur
     const aiMsgContent = appendMessage('ai', '<span class="cursor"></span>');
     
     setGeneratingState(true);
@@ -94,14 +110,14 @@ async function sendMessage() {
     
     let fullResponse = "";
 
-    // Build Prompt
+    // Prompt Hazırla
     const messages = [];
-    if (els.systemPrompt.value.trim()) {
+    if (els.systemPrompt && els.systemPrompt.value.trim()) {
         messages.push({ role: "system", content: els.systemPrompt.value });
     }
     
-    // Inject RAG if present
-    const ragText = els.ragInput.value.trim();
+    // RAG Bağlamı Ekle
+    const ragText = els.ragInput ? els.ragInput.value.trim() : "";
     const finalUserContent = ragText 
         ? `BAĞLAM BİLGİSİ:\n${ragText}\n\nKULLANICI SORUSU:\n${text}`
         : text;
@@ -114,8 +130,8 @@ async function sendMessage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 messages: messages,
-                temperature: parseFloat(els.tempInput.value),
-                max_tokens: parseInt(els.maxTokensInput.value),
+                temperature: parseFloat(els.tempInput ? els.tempInput.value : 0.7),
+                max_tokens: parseInt(els.maxTokensInput ? els.maxTokensInput.value : 2048),
                 stream: true
             }),
             signal: state.controller.signal
@@ -153,7 +169,7 @@ async function sendMessage() {
             }
         }
 
-        // Finalize
+        // Bitiş
         aiMsgContent.innerHTML = marked.parse(fullResponse);
         hljs.highlightAll();
         updateMetrics(Date.now() - state.startTime, state.tokenCount);
@@ -174,16 +190,16 @@ function stopGeneration() {
     if (state.controller) state.controller.abort();
 }
 
-// --- UI HELPERS ---
+// --- UI YARDIMCILARI ---
 
 function appendMessage(role, content) {
     const div = document.createElement('div');
     div.className = `message ${role}`;
     
-    const avatar = role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>';
+    const avatarIcon = role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>';
     
     div.innerHTML = `
-        <div class="avatar">${avatar}</div>
+        <div class="avatar">${avatarIcon}</div>
         <div class="msg-content">${content}</div>
     `;
     
@@ -195,25 +211,25 @@ function appendMessage(role, content) {
 function setGeneratingState(active) {
     state.isGenerating = active;
     if (active) {
-        els.sendBtn.classList.add('hidden');
-        els.stopBtn.classList.remove('hidden');
+        if(els.sendBtn) els.sendBtn.classList.add('hidden');
+        if(els.stopBtn) els.stopBtn.classList.remove('hidden');
     } else {
-        els.sendBtn.classList.remove('hidden');
-        els.stopBtn.classList.add('hidden');
-        els.userInput.focus();
+        if(els.sendBtn) els.sendBtn.classList.remove('hidden');
+        if(els.stopBtn) els.stopBtn.classList.add('hidden');
+        if(els.userInput) els.userInput.focus();
     }
 }
 
 function updateMetrics(duration, tokens) {
     const seconds = duration / 1000;
     const tps = tokens / seconds;
-    els.tpsMetric.textContent = tps.toFixed(2);
-    els.latencyMetric.textContent = `${duration} ms`;
-    els.tokenMetric.textContent = tokens;
+    if(els.tpsMetric) els.tpsMetric.textContent = tps.toFixed(2);
+    if(els.latencyMetric) els.latencyMetric.textContent = `${duration} ms`;
+    if(els.tokenMetric) els.tokenMetric.textContent = tokens;
 }
 
 function scrollToBottom() {
-    els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
+    if(els.chatMessages) els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
 }
 
 async function checkHealth() {
@@ -221,72 +237,68 @@ async function checkHealth() {
         const res = await fetch('/health');
         const data = await res.json();
         if (data.status === 'healthy') {
-            els.statusDot.className = 'status-dot connected';
-            els.statusText.textContent = 'Bağlı';
+            if(els.statusDot) els.statusDot.className = 'status-dot connected';
+            if(els.statusText) els.statusText.textContent = 'Hazır';
         } else {
-            els.statusDot.className = 'status-dot';
-            els.statusText.textContent = 'Hazırlanıyor...';
+            if(els.statusDot) els.statusDot.className = 'status-dot';
+            if(els.statusText) els.statusText.textContent = 'Yükleniyor...';
         }
     } catch (e) {
-        els.statusDot.className = 'status-dot';
-        els.statusText.textContent = 'Bağlantı Yok';
+        if(els.statusDot) els.statusDot.className = 'status-dot';
+        if(els.statusText) els.statusText.textContent = 'Bağlantı Yok';
     }
 }
 
-// --- PANEL & VIEW LOGIC ---
+// --- PANEL & VIEW LOGIC (Global Functions for HTML onClick) ---
 
-function togglePanel(id) {
+window.togglePanel = function(id) {
     const panel = document.getElementById(id);
+    if (!panel) return;
+    
     if (panel.style.display === 'none') {
         panel.style.display = 'flex';
     } else {
         panel.style.display = 'none';
     }
-}
+};
 
-function switchTab(tabName) {
-    // Reset active classes
+window.switchTab = function(tabName) {
+    // Butonları güncelle
     document.querySelectorAll('.context-tab').forEach(t => t.classList.remove('active'));
+    // İçerikleri gizle
     document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
     
-    // Set active
-    event.target.classList.add('active');
+    // Aktif yap
+    event.currentTarget.classList.add('active');
     document.getElementById(tabName + 'Tab').style.display = 'block';
-}
+};
 
-function setView(mode) {
+window.setView = function(mode) {
     // Reset Buttons
     document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
     event.currentTarget.classList.add('active');
 
     const left = document.getElementById('leftPanel');
     const right = document.getElementById('rightPanel');
-    const sidebar = document.getElementById('mainSidebar');
 
     if (mode === 'focus') {
-        left.style.display = 'none';
-        right.style.display = 'none';
-        sidebar.style.display = 'none'; // Full focus
+        // Her iki paneli kapat
+        if(left) left.style.display = 'none';
+        if(right) right.style.display = 'none';
     } else if (mode === 'workbench') {
-        left.style.display = 'flex';
-        right.style.display = 'flex';
-        sidebar.style.display = 'flex';
+        // Her iki paneli aç
+        if(left) left.style.display = 'flex';
+        if(right) right.style.display = 'flex';
     }
-}
+};
 
-function switchTheme() {
+window.switchTheme = function() {
     const body = document.body;
     if (state.theme === 'dark') {
         body.setAttribute('data-theme', 'light');
         state.theme = 'light';
     } else {
-        body.setAttribute('data-theme', 'professional');
+        body.setAttribute('data-theme', 'dark');
         state.theme = 'dark';
     }
-}
-
-// --- RESIZE LOGIC ---
-let isResizing = false;
-let currentResizer = null;
-
-document.querySelectorAll('.panel-resize-handle').forEach(handle => {
+};

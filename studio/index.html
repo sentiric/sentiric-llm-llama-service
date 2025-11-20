@@ -3,180 +3,138 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sentiric Studio | AI Workbench</title>
+    <title>Sentiric Studio | Clean Workbench</title>
     
-    <!-- Fonts & Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    
-    <!-- Syntax Highlighting -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-    
-    <!-- Custom Styles -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
     <link rel="stylesheet" href="style.css">
 
-    <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
-<body data-theme="professional"> <!-- Varsayılan Tema -->
+<!-- Varsayılan Tema: LIGHT (Temiz Görünüm) -->
+<body data-theme="light">
     
     <div class="app-container">
-        <!-- SOL ANA SIDEBAR (Navigasyon) -->
-        <div class="sidebar collapsed-mobile" id="mainSidebar">
-            <div class="sidebar-header">
-                <div class="brand">
-                    <i class="fas fa-cube"></i> Sentiric
-                </div>
+        <!-- SOL PANEL: AYARLAR -->
+        <div class="panel side-panel" id="leftPanel" style="display: none;">
+            <div class="panel-header">
+                <div class="panel-title"><i class="fas fa-sliders-h"></i> Ayarlar</div>
+                <button class="icon-btn" onclick="togglePanel('leftPanel')"><i class="fas fa-times"></i></button>
             </div>
             
-            <div class="workspace-list">
-                <div class="workspace-section">
-                    <div class="section-title">Modeller</div>
-                    <div class="workspace-item active">
-                        <div class="workspace-icon"><i class="fas fa-microchip"></i></div>
-                        <div class="workspace-info">
-                            <div class="workspace-name">Gemma-2-Instruct</div>
-                            <div class="workspace-meta">Aktif • Quantized</div>
-                        </div>
-                    </div>
+            <div class="panel-content">
+                <div class="setting-group">
+                    <label>System Prompt</label>
+                    <textarea id="systemPrompt" class="input-area" rows="6">Sen yardımsever ve profesyonel bir yapay zeka asistanısın.</textarea>
                 </div>
 
-                <div class="workspace-section">
-                    <div class="section-title">Oturumlar</div>
-                    <div class="workspace-item" onclick="window.location.reload()">
-                        <div class="workspace-icon"><i class="fas fa-plus"></i></div>
-                        <div class="workspace-info">
-                            <div class="workspace-name">Yeni Oturum</div>
-                        </div>
-                    </div>
+                <div class="setting-group">
+                    <label>Sıcaklık (Temperature): <span id="tempVal" class="val-badge">0.7</span></label>
+                    <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.7">
                 </div>
-            </div>
-            
-            <div class="sidebar-footer">
-                <div class="connection-status" id="connStatus">
-                    <div class="status-dot"></div>
-                    <span id="statusText">Bağlanıyor...</span>
+
+                <div class="setting-group">
+                    <label>Maksimum Token</label>
+                    <input type="number" id="maxTokensInput" value="2048" class="input-line">
+                </div>
+                
+                <div class="setting-group">
+                    <div class="connection-status" id="connStatus">
+                        <div class="status-dot"></div>
+                        <span id="statusText">Bağlantı Bekleniyor...</span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- PANEL KONTEYNERI (Resizable Layout) -->
-        <div class="panel-container">
+        <!-- MERKEZ PANEL: CHAT (WORKBENCH) -->
+        <div class="panel chat-panel">
+            <div class="panel-header chat-header">
+                <div class="header-left">
+                    <!-- Sol Paneli Açma Butonu -->
+                    <button class="panel-toggle-btn" onclick="togglePanel('leftPanel')" title="Ayarlar"><i class="fas fa-cog"></i></button>
+                    <div class="brand-logo"><i class="fas fa-cube"></i> Sentiric</div>
+                </div>
+                
+                <div class="header-center">
+                    <span class="model-badge">Gemma-2-Instruct (Quantized)</span>
+                </div>
+
+                <div class="header-right">
+                     <!-- Sağ Paneli Açma Butonu -->
+                     <button class="panel-toggle-btn" onclick="togglePanel('rightPanel')" title="Bağlam & RAG"><i class="fas fa-book"></i></button>
+                </div>
+            </div>
             
-            <!-- SOL PANEL: AYARLAR (Eski File Explorer) -->
-            <div class="panel side-panel" id="leftPanel">
-                <div class="panel-header">
-                    <div class="panel-title"><i class="fas fa-sliders-h"></i> Konfigürasyon</div>
-                    <button class="panel-btn" onclick="togglePanel('leftPanel')"><i class="fas fa-times"></i></button>
-                </div>
-                
-                <div class="panel-content">
-                    <div class="setting-group">
-                        <label>System Prompt</label>
-                        <textarea id="systemPrompt" class="input-area" rows="6">Sen yardımsever ve profesyonel bir yapay zeka asistanısın.</textarea>
-                    </div>
-
-                    <div class="setting-group">
-                        <label>Temperature: <span id="tempVal" class="val-badge">0.7</span></label>
-                        <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.7">
-                    </div>
-
-                    <div class="setting-group">
-                        <label>Max Tokens</label>
-                        <input type="number" id="maxTokensInput" value="2048" class="input-line">
-                    </div>
+            <!-- Mesaj Alanı -->
+            <div class="chat-messages" id="chatMessages">
+                <div class="welcome-screen">
+                    <div class="welcome-icon"><i class="fas fa-feather-alt"></i></div>
+                    <h2>Temiz Çalışma Alanı</h2>
+                    <p>Ayarlar için sol, RAG verisi için sağ paneli kullanabilirsiniz.</p>
                 </div>
             </div>
 
-            <!-- Resize Handle Left -->
-            <div class="panel-resize-handle" id="resizeLeft"></div>
-
-            <!-- MERKEZ PANEL: CHAT -->
-            <div class="panel chat-panel">
-                <div class="panel-header chat-header">
-                    <div class="header-left">
-                        <button class="panel-toggle-btn" onclick="togglePanel('leftPanel')" title="Ayarları Aç/Kapat"><i class="fas fa-cog"></i></button>
-                        <div class="chat-title">AI Workbench</div>
-                    </div>
-                    <div class="header-right">
-                         <button class="panel-toggle-btn" onclick="togglePanel('rightPanel')" title="Bağlamı Aç/Kapat"><i class="fas fa-columns"></i></button>
-                    </div>
-                </div>
-                
-                <!-- Mesaj Alanı -->
-                <div class="chat-messages" id="chatMessages">
-                    <div class="welcome-screen">
-                        <div class="welcome-icon"><i class="fas fa-layer-group"></i></div>
-                        <h2>Sentiric Studio'ya Hoş Geldiniz</h2>
-                        <p>RAG, Streaming ve Parametre Tuning için optimize edilmiş çalışma alanı.</p>
-                    </div>
-                </div>
-
-                <!-- Input Alanı (Command Bar Style) -->
-                <div class="input-wrapper">
-                    <div class="command-bar">
-                        <button class="tool-btn stop-btn hidden" id="stopBtn"><i class="fas fa-square"></i> Durdur</button>
-                        
-                        <textarea id="userInput" class="command-input" placeholder="Mesajınızı yazın... (Ctrl+Enter gönderir)" rows="1"></textarea>
-                        
-                        <div class="command-actions">
-                            <button class="command-btn" id="micBtn"><i class="fas fa-microphone"></i></button>
-                            <button class="command-btn send-btn" id="sendBtn"><i class="fas fa-paper-plane"></i></button>
-                        </div>
-                    </div>
-                    <div class="footer-info">Sentiric LLM Engine v2.1 • Local Inference</div>
-                </div>
-            </div>
-
-            <!-- Resize Handle Right -->
-            <div class="panel-resize-handle" id="resizeRight"></div>
-
-            <!-- SAĞ PANEL: RAG & METRICS -->
-            <div class="panel side-panel" id="rightPanel">
-                <div class="panel-header">
-                    <div class="panel-title"><i class="fas fa-database"></i> Bağlam & Veri</div>
-                    <button class="panel-btn" onclick="togglePanel('rightPanel')"><i class="fas fa-times"></i></button>
-                </div>
-                
-                <div class="context-tabs">
-                    <button class="context-tab active" onclick="switchTab('rag')">RAG (Text)</button>
-                    <button class="context-tab" onclick="switchTab('metrics')">Metrikler</button>
-                </div>
-                
-                <div class="panel-content">
-                    <!-- RAG TAB -->
-                    <div id="ragTab" class="tab-content active">
-                        <p class="help-text">Buraya yapıştırılan metin, modelin cevabını şekillendirmek için <strong>System Prompt</strong> ile birleştirilir.</p>
-                        <textarea id="ragInput" class="input-area full-height" placeholder="Doküman içeriğini buraya yapıştırın..."></textarea>
-                    </div>
+            <!-- Input Alanı -->
+            <div class="input-wrapper">
+                <div class="command-bar">
+                    <button class="tool-btn stop-btn hidden" id="stopBtn"><i class="fas fa-stop"></i> Durdur</button>
                     
-                    <!-- METRICS TAB -->
-                    <div id="metricsTab" class="tab-content" style="display: none;">
-                        <div class="metric-card">
-                            <div class="metric-label">TPS (Token/sn)</div>
-                            <div class="metric-value" id="tpsMetric">--</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-label">Latency (Gecikme)</div>
-                            <div class="metric-value" id="latencyMetric">-- ms</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-label">Üretilen Token</div>
-                            <div class="metric-value" id="tokenMetric">0</div>
-                        </div>
+                    <textarea id="userInput" class="command-input" placeholder="Bir şeyler yazın... (Ctrl+Enter gönderir)" rows="1"></textarea>
+                    
+                    <div class="command-actions">
+                        <button class="command-btn" id="micBtn"><i class="fas fa-microphone"></i></button>
+                        <button class="command-btn send-btn" id="sendBtn"><i class="fas fa-paper-plane"></i></button>
                     </div>
                 </div>
             </div>
+        </div>
 
+        <!-- SAĞ PANEL: RAG & VERİ -->
+        <div class="panel side-panel" id="rightPanel" style="display: none;">
+            <div class="panel-header">
+                <div class="panel-title"><i class="fas fa-database"></i> Bağlam</div>
+                <button class="icon-btn" onclick="togglePanel('rightPanel')"><i class="fas fa-times"></i></button>
+            </div>
+            
+            <div class="context-tabs">
+                <button class="context-tab active" onclick="switchTab('rag')">Metin (RAG)</button>
+                <button class="context-tab" onclick="switchTab('metrics')">Metrikler</button>
+            </div>
+            
+            <div class="panel-content">
+                <!-- RAG TAB -->
+                <div id="ragTab" class="tab-content active">
+                    <p class="help-text">Model bu metni okuyarak soruları cevaplayacaktır.</p>
+                    <textarea id="ragInput" class="input-area full-height" placeholder="Doküman içeriğini buraya yapıştırın..."></textarea>
+                </div>
+                
+                <!-- METRICS TAB -->
+                <div id="metricsTab" class="tab-content" style="display: none;">
+                    <div class="metric-card">
+                        <div class="metric-label">Hız (TPS)</div>
+                        <div class="metric-value" id="tpsMetric">--</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Gecikme (Latency)</div>
+                        <div class="metric-value" id="latencyMetric">-- ms</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Toplam Token</div>
+                        <div class="metric-value" id="tokenMetric">0</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- GÖRÜNÜM PRESETS (Sağ Alt) -->
+    <!-- Alt Kontrol Çubuğu -->
     <div class="view-presets">
-        <button class="view-btn active" onclick="setView('workbench')" title="Tam Görünüm"><i class="fas fa-columns"></i></button>
-        <button class="view-btn" onclick="setView('focus')" title="Odak Modu"><i class="fas fa-expand"></i></button>
-        <button class="view-btn" onclick="switchTheme()" title="Tema Değiştir"><i class="fas fa-moon"></i></button>
+        <button class="view-btn" onclick="setView('workbench')" title="Panelleri Aç"><i class="fas fa-columns"></i></button>
+        <button class="view-btn active" onclick="setView('focus')" title="Odak Modu (Kapat)"><i class="fas fa-compress"></i></button>
+        <button class="view-btn" onclick="switchTheme()" title="Gece/Gündüz Modu"><i class="fas fa-adjust"></i></button>
     </div>
 
     <script src="app.js"></script>
