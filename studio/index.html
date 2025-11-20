@@ -3,22 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sentiric Studio | Ultimate</title>
-    
-    <!-- Favicon -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
-
-    <!-- Fonts & Icons -->
+    <title>Sentiric Studio</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
-    
-    <!-- Syntax Highlighter Theme (Atom One Dark) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-    
-    <!-- Custom CSS -->
     <link rel="stylesheet" href="style.css">
-
-    <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
@@ -26,119 +16,90 @@
 
     <div class="app-layout">
         
-        <!-- SOL PANEL: AYARLAR -->
-        <aside class="sidebar" id="settingsPanel">
+        <!-- LEFT SIDEBAR -->
+        <aside class="sidebar closed" id="leftPanel">
             <div class="sidebar-header">
-                <div class="brand">
-                    <i class="fas fa-cube accent-icon"></i> Sentiric
-                </div>
-                <button class="icon-btn" onclick="toggleSidebar('settingsPanel')">
-                    <i class="fas fa-times"></i>
-                </button>
+                <div class="brand"><i class="fas fa-cube" style="color:var(--primary)"></i> Sentiric</div>
+                <button class="circle-btn" onclick="toggleSidebar('leftPanel')"><i class="fas fa-times"></i></button>
             </div>
-
             <div class="sidebar-content">
                 <div class="control-group">
-                    <label>Dil / Language</label>
-                    <select id="langSelect" class="input-control">
-                        <option value="tr-TR">🇹🇷 Türkçe</option>
-                        <option value="en-US">🇺🇸 English</option>
+                    <label>Persona / System Prompt</label>
+                    <textarea id="systemPrompt" class="input-control" rows="6">Senin adın Sentiric. Zeki ve yardımsever bir asistansın.</textarea>
+                </div>
+                <div class="control-group">
+                    <label>Sıcaklık: <span id="tempVal">0.7</span></label>
+                    <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.7" style="width:100%">
+                </div>
+                <div class="control-group">
+                    <label>Dil Modeli</label>
+                    <select class="input-control" id="langSelect">
+                        <option value="tr-TR">Türkçe</option>
+                        <option value="en-US">English</option>
                     </select>
-                </div>
-
-                <div class="control-group">
-                    <label>System Prompt (Persona)</label>
-                    <textarea id="systemPrompt" class="input-control" rows="6">Senin adın Sentiric. Sen, Sentiric ekosisteminin yardımsever ve profesyonel yapay zeka asistanısın.</textarea>
-                </div>
-
-                <div class="control-group">
-                    <label>Yaratıcılık (Temperature): <span id="tempDisplay">0.7</span></label>
-                    <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.7" class="range-input">
-                </div>
-                
-                <div class="control-group">
-                    <label>Hafıza Limiti</label>
-                    <input type="number" id="historyLimit" value="10" class="input-control">
-                </div>
-            </div>
-
-            <div class="sidebar-footer">
-                <div class="status-badge">
-                    <span class="status-dot" id="statusDot"></span>
-                    <span id="statusText">Bağlanıyor...</span>
                 </div>
             </div>
         </aside>
 
-        <!-- ANA CHAT ALANI -->
+        <!-- MAIN CHAT -->
         <main class="chat-area">
-            <!-- Header -->
             <header class="top-bar">
-                <button class="icon-btn mobile-only" onclick="toggleSidebar('settingsPanel')">
-                    <i class="fas fa-bars"></i>
-                </button>
+                <div style="display:flex; gap:12px;">
+                    <button class="circle-btn" onclick="toggleSidebar('leftPanel')" title="Ayarlar"><i class="fas fa-sliders-h"></i></button>
+                    <div class="brand mobile-only" style="display:none">Sentiric</div>
+                </div>
                 
                 <div class="model-pill">
-                    <i class="fas fa-microchip"></i> Gemma-2 (v2.1)
+                    <span class="status-indicator"></span> Gemma-2 (v2.1)
                 </div>
 
-                <div class="actions">
-                    <button class="icon-btn" onclick="clearChat()" title="Temizle"><i class="fas fa-trash-alt"></i></button>
-                    <button class="icon-btn desktop-only" onclick="toggleSidebar('contextPanel')" title="Bağlam"><i class="fas fa-database"></i></button>
+                <div style="display:flex; gap:12px;">
+                    <button class="circle-btn" onclick="clearChat()" title="Temizle"><i class="fas fa-trash-alt"></i></button>
+                    <button class="circle-btn" onclick="toggleSidebar('rightPanel')" title="Bağlam"><i class="fas fa-code"></i></button>
                 </div>
             </header>
 
-            <!-- Messages -->
             <div id="chatContainer" class="chat-container">
-                <div class="empty-state" id="emptyState">
-                    <div class="icon-box"><i class="fas fa-bolt"></i></div>
-                    <h2>Sentiric Studio</h2>
-                    <p>Mühendislik seviyesinde LLM testi için hazırım.</p>
+                <div class="empty-state" id="emptyState" style="text-align:center; margin-top:30vh; opacity:0.6">
+                    <i class="fas fa-bolt" style="font-size:3rem; margin-bottom:1rem; color:var(--border)"></i>
+                    <h2>Sistem Hazır</h2>
                 </div>
-                <!-- Mesajlar JS ile buraya gelecek -->
             </div>
 
-            <!-- Input Area -->
             <div class="input-region">
                 <div class="input-box">
-                    <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Dosya Yükle">
-                        <i class="fas fa-paperclip"></i>
-                    </button>
+                    <button class="circle-btn" onclick="$('fileInput').click()" title="Dosya Ekle"><i class="fas fa-plus"></i></button>
+                    <input type="file" id="fileInput" hidden>
                     
-                    <textarea id="userInput" placeholder="Bir mesaj yazın... (Ctrl+Enter)" rows="1"></textarea>
+                    <textarea id="userInput" placeholder="Bir şeyler yazın..." rows="1"></textarea>
                     
-                    <div class="right-controls">
-                        <button class="mic-btn" id="micBtn" title="Sesli Yazma"><i class="fas fa-microphone"></i></button>
-                        <button class="send-btn" id="sendBtn"><i class="fas fa-arrow-up"></i></button>
-                        <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-stop"></i></button>
+                    <div class="controls">
+                        <button class="circle-btn" id="micBtn"><i class="fas fa-microphone"></i></button>
+                        <button class="circle-btn send-btn" id="sendBtn"><i class="fas fa-arrow-up"></i></button>
+                        <button class="circle-btn stop-btn hidden" id="stopBtn" style="background:var(--danger); color:white"><i class="fas fa-stop"></i></button>
                     </div>
                 </div>
-                <input type="file" id="fileInput" hidden>
                 <div class="footer-info">
-                    <span id="latencyStat">0ms</span> • <span id="tokenStat">0 tokens</span> • <span id="voiceStatus" class="hidden">🔴 Dinleniyor</span>
+                    <span id="statusText">Hazır</span> • <span id="latencyStat">0ms</span> • <span id="tokenStat">0 t</span>
                 </div>
             </div>
         </main>
 
-        <!-- SAĞ PANEL: BAĞLAM & LOG -->
-        <aside class="sidebar right-sidebar" id="contextPanel">
+        <!-- RIGHT SIDEBAR -->
+        <aside class="right-sidebar closed" id="rightPanel">
             <div class="sidebar-header">
-                <div class="title"><i class="fas fa-code-branch"></i> Bağlam</div>
-                <button class="icon-btn" onclick="toggleSidebar('contextPanel')"><i class="fas fa-times"></i></button>
+                <div class="brand">Bağlam & Log</div>
+                <button class="circle-btn" onclick="toggleSidebar('rightPanel')"><i class="fas fa-times"></i></button>
             </div>
-            
-            <div class="tabs">
-                <button class="tab-btn active" onclick="switchTab('rag')">RAG</button>
-                <button class="tab-btn" onclick="switchTab('logs')">Loglar</button>
-            </div>
-
             <div class="sidebar-content">
-                <div id="ragTab" class="tab-pane active">
-                    <textarea id="ragInput" class="input-control code-area" placeholder="// Doküman veya kod yapıştırın..."></textarea>
+                <div class="control-group">
+                    <label>RAG Verisi</label>
+                    <textarea id="ragInput" class="input-control" rows="10" style="font-family:monospace; font-size:0.8rem" placeholder="// Buraya yapıştırılan metinler modele verilir..."></textarea>
                 </div>
-                <div id="logsTab" class="tab-pane">
-                    <div id="consoleLog" class="log-console">
-                        <div class="log-line system">> Sistem başlatıldı.</div>
+                <div class="control-group">
+                    <label>Canlı Log</label>
+                    <div id="consoleLog" style="background:#111; color:#0f0; padding:10px; border-radius:8px; font-family:monospace; font-size:0.7rem; height:200px; overflow-y:auto">
+                        <div>> Sistem başlatıldı.</div>
                     </div>
                 </div>
             </div>
@@ -146,10 +107,7 @@
 
     </div>
 
-    <!-- Floating Theme Toggle -->
-    <button class="theme-toggle" onclick="toggleTheme()">
-        <i class="fas fa-adjust"></i>
-    </button>
+    <button class="theme-toggle" onclick="toggleTheme()"><i class="fas fa-moon"></i></button>
 
     <script src="app.js"></script>
 </body>
