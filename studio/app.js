@@ -1,44 +1,45 @@
-// STATE MANAGEMENT
+// GLOBAL STATE
 const state = {
     isGenerating: false,
     controller: null,
     startTime: 0,
-    tokenCount: 0
+    tokenCount: 0,
+    theme: 'dark' // 'dark' or 'light'
 };
 
 // DOM ELEMENTS
 const els = {
     userInput: document.getElementById('userInput'),
-    chatHistory: document.getElementById('chatHistory'),
+    chatMessages: document.getElementById('chatMessages'),
     sendBtn: document.getElementById('sendBtn'),
     stopBtn: document.getElementById('stopBtn'),
-    micBtn: document.getElementById('micBtn'),
     systemPrompt: document.getElementById('systemPrompt'),
+    ragInput: document.getElementById('ragInput'),
     tempInput: document.getElementById('tempInput'),
     tempVal: document.getElementById('tempVal'),
     maxTokensInput: document.getElementById('maxTokensInput'),
-    ragInput: document.getElementById('ragInput'),
-    statusDot: document.getElementById('statusDot'),
+    statusDot: document.querySelector('.status-dot'),
     statusText: document.getElementById('statusText'),
     tpsMetric: document.getElementById('tpsMetric'),
-    latencyMetric: document.getElementById('latencyMetric')
+    latencyMetric: document.getElementById('latencyMetric'),
+    tokenMetric: document.getElementById('tokenMetric')
 };
 
-// INITIALIZATION
+// --- INIT ---
 document.addEventListener('DOMContentLoaded', () => {
     checkHealth();
-    setInterval(checkHealth, 10000); // 10 sn'de bir sağlık kontrolü
-    
+    setInterval(checkHealth, 10000);
+    setupEventListeners();
+});
+
+function setupEventListeners() {
     // Auto-resize textarea
     els.userInput.addEventListener('input', function() {
         this.style.height = 'auto';
         this.style.height = (this.scrollHeight) + 'px';
     });
 
-    // Slider value update
-    els.tempInput.addEventListener('input', (e) => els.tempVal.textContent = e.target.value);
-
-    // Enter key to send
+    // Send on Enter
     els.userInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -46,71 +47,46 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Buttons
     els.sendBtn.addEventListener('click', sendMessage);
     els.stopBtn.addEventListener('click', stopGeneration);
-});
+    
+    // Slider Update
+    els.tempInput.addEventListener('input', (e) => els.tempVal.textContent = e.target.value);
 
-// --- CORE LOGIC ---
-
-async function checkHealth() {
-    try {
-        const res = await fetch('/health');
-        if (res.ok) {
-            const data = await res.json();
-            if (data.status === 'healthy') {
-                updateStatus(true, 'Bağlı & Hazır');
-            } else {
-                updateStatus(false, 'Model Yükleniyor...');
-            }
-        } else {
-            updateStatus(false, 'Servis Erişilemez');
-        }
-    } catch (e) {
-        updateStatus(false, 'Bağlantı Hatası');
+    // Mic Button (Basic Web Speech API)
+    const micBtn = document.getElementById('micBtn');
+    if ('webkitSpeechRecognition' in window) {
+        const recognition = new webkitSpeechRecognition();
+        recognition.lang = 'tr-TR';
+        recognition.onstart = () => micBtn.style.color = '#ef4444';
+        recognition.onend = () => micBtn.style.color = '';
+        recognition.onresult = (e) => {
+            els.userInput.value += e.results[0][0].transcript;
+        };
+        micBtn.addEventListener('click', () => recognition.start());
+    } else {
+        micBtn.style.display = 'none';
     }
 }
 
-function updateStatus(isOnline, text) {
-    els.statusDot.className = isOnline ? 'status-indicator connected' : 'status-indicator';
-    els.statusText.textContent = text;
-    els.sendBtn.disabled = !isOnline;
-}
-
-function appendMessage(role, content) {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `message ${role}`;
-    
-    const avatarIcon = role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>';
-    const roleName = role === 'user' ? 'Siz' : 'Sentiric AI';
-
-    msgDiv.innerHTML = `
-        <div class="message-avatar" title="${roleName}">${avatarIcon}</div>
-        <div class="message-content">${content}</div>
-    `;
-
-    // Empty state varsa kaldır
-    const emptyState = document.querySelector('.empty-state');
-    if (emptyState) emptyState.remove();
-
-    els.chatHistory.appendChild(msgDiv);
-    scrollToBottom();
-    return msgDiv.querySelector('.message-content');
-}
+// --- CORE LOGIC (API) ---
 
 async function sendMessage() {
     const text = els.userInput.value.trim();
     if (!text || state.isGenerating) return;
 
-    // UI Reset
+    // UI Updates
     els.userInput.value = '';
     els.userInput.style.height = 'auto';
+    const welcome = document.querySelector('.welcome-screen');
+    if(welcome) welcome.remove();
+
+    appendMessage('user', text);
     
-    appendMessage('user', escapeHtml(text));
+    // Prepare AI Message Container
+    const aiMsgContent = appendMessage('ai', '<span class="cursor"></span>');
     
-    // AI Placeholder
-    const aiContentDiv = appendMessage('ai', '<span class="cursor"></span>');
-    
-    // Prepare Generation
     setGeneratingState(true);
     state.controller = new AbortController();
     state.startTime = Date.now();
@@ -118,18 +94,19 @@ async function sendMessage() {
     
     let fullResponse = "";
 
+    // Build Prompt
     const messages = [];
-    // 1. System Prompt
     if (els.systemPrompt.value.trim()) {
         messages.push({ role: "system", content: els.systemPrompt.value });
     }
     
-    // 2. RAG Context Injection
-    const userContent = els.ragInput.value.trim() 
-        ? `BAĞLAM BİLGİSİ:\n${els.ragInput.value.trim()}\n\nSORU:\n${text}`
+    // Inject RAG if present
+    const ragText = els.ragInput.value.trim();
+    const finalUserContent = ragText 
+        ? `BAĞLAM BİLGİSİ:\n${ragText}\n\nKULLANICI SORUSU:\n${text}`
         : text;
 
-    messages.push({ role: "user", content: userContent });
+    messages.push({ role: "user", content: finalUserContent });
 
     try {
         const response = await fetch('/v1/chat/completions', {
@@ -144,7 +121,7 @@ async function sendMessage() {
             signal: state.controller.signal
         });
 
-        if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
+        if (!response.ok) throw new Error(`API Error: ${response.status}`);
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -156,7 +133,7 @@ async function sendMessage() {
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
-            buffer = lines.pop(); // Eksik parça varsa sonraki tura sakla
+            buffer = lines.pop();
 
             for (const line of lines) {
                 const trimmed = line.trim();
@@ -167,27 +144,25 @@ async function sendMessage() {
                         const delta = json.choices[0]?.delta?.content;
                         if (delta) {
                             fullResponse += delta;
-                            // Canlı Markdown render (performans için her chunk'ta değil de,
-                            // belki requestAnimationFrame ile yapılabilir ama şimdilik direkt yapıyoruz)
-                            aiContentDiv.innerHTML = marked.parse(fullResponse) + '<span class="cursor"></span>';
+                            aiMsgContent.innerHTML = marked.parse(fullResponse) + '<span class="cursor"></span>';
                             state.tokenCount++;
                             scrollToBottom();
                         }
-                    } catch (e) { console.warn("JSON Parse error", e); }
+                    } catch (e) {}
                 }
             }
         }
 
-        // Final render (cursor'ı kaldır ve highlight yap)
-        aiContentDiv.innerHTML = marked.parse(fullResponse);
+        // Finalize
+        aiMsgContent.innerHTML = marked.parse(fullResponse);
         hljs.highlightAll();
         updateMetrics(Date.now() - state.startTime, state.tokenCount);
 
     } catch (err) {
         if (err.name === 'AbortError') {
-            aiContentDiv.innerHTML += " <br><em>[İşlem kullanıcı tarafından durduruldu]</em>";
+            aiMsgContent.innerHTML += " <br><em>[Durduruldu]</em>";
         } else {
-            aiContentDiv.innerHTML += `<br><div style="color:#ef4444; margin-top:10px;">HATA: ${err.message}</div>`;
+            aiMsgContent.innerHTML += `<br><span style="color:#ef4444">HATA: ${err.message}</span>`;
         }
     } finally {
         setGeneratingState(false);
@@ -196,67 +171,122 @@ async function sendMessage() {
 }
 
 function stopGeneration() {
-    if (state.controller) {
-        state.controller.abort();
-    }
+    if (state.controller) state.controller.abort();
 }
 
-// --- UTILS ---
+// --- UI HELPERS ---
 
-function setGeneratingState(isGenerating) {
-    state.isGenerating = isGenerating;
-    if (isGenerating) {
+function appendMessage(role, content) {
+    const div = document.createElement('div');
+    div.className = `message ${role}`;
+    
+    const avatar = role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>';
+    
+    div.innerHTML = `
+        <div class="avatar">${avatar}</div>
+        <div class="msg-content">${content}</div>
+    `;
+    
+    els.chatMessages.appendChild(div);
+    scrollToBottom();
+    return div.querySelector('.msg-content');
+}
+
+function setGeneratingState(active) {
+    state.isGenerating = active;
+    if (active) {
         els.sendBtn.classList.add('hidden');
         els.stopBtn.classList.remove('hidden');
-        els.userInput.disabled = true;
     } else {
         els.sendBtn.classList.remove('hidden');
         els.stopBtn.classList.add('hidden');
-        els.userInput.disabled = false;
         els.userInput.focus();
     }
 }
 
-function scrollToBottom() {
-    const chatArea = els.chatHistory;
-    // Sadece kullanıcı en alttaysa otomatik kaydır (UX kuralı)
-    // Ancak burada basitlik adına her zaman kaydırıyoruz.
-    chatArea.scrollTop = chatArea.scrollHeight;
-}
-
-function updateMetrics(durationMs, tokens) {
-    const seconds = durationMs / 1000;
+function updateMetrics(duration, tokens) {
+    const seconds = duration / 1000;
     const tps = tokens / seconds;
-    
     els.tpsMetric.textContent = tps.toFixed(2);
-    els.latencyMetric.textContent = `${durationMs} ms`;
+    els.latencyMetric.textContent = `${duration} ms`;
+    els.tokenMetric.textContent = tokens;
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+function scrollToBottom() {
+    els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
 }
 
-// --- WEB SPEECH API (Microphone) ---
-if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'tr-TR';
-    recognition.continuous = false;
+async function checkHealth() {
+    try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        if (data.status === 'healthy') {
+            els.statusDot.className = 'status-dot connected';
+            els.statusText.textContent = 'Bağlı';
+        } else {
+            els.statusDot.className = 'status-dot';
+            els.statusText.textContent = 'Hazırlanıyor...';
+        }
+    } catch (e) {
+        els.statusDot.className = 'status-dot';
+        els.statusText.textContent = 'Bağlantı Yok';
+    }
+}
+
+// --- PANEL & VIEW LOGIC ---
+
+function togglePanel(id) {
+    const panel = document.getElementById(id);
+    if (panel.style.display === 'none') {
+        panel.style.display = 'flex';
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+function switchTab(tabName) {
+    // Reset active classes
+    document.querySelectorAll('.context-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
     
-    recognition.onstart = () => els.micBtn.style.color = '#ef4444';
-    recognition.onend = () => els.micBtn.style.color = '';
-    
-    recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        els.userInput.value += (els.userInput.value ? ' ' : '') + transcript;
-        els.userInput.style.height = 'auto';
-        els.userInput.style.height = els.userInput.scrollHeight + 'px';
-        els.userInput.focus();
-    };
-
-    els.micBtn.addEventListener('click', () => recognition.start());
-} else {
-    els.micBtn.style.display = 'none';
+    // Set active
+    event.target.classList.add('active');
+    document.getElementById(tabName + 'Tab').style.display = 'block';
 }
+
+function setView(mode) {
+    // Reset Buttons
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+
+    const left = document.getElementById('leftPanel');
+    const right = document.getElementById('rightPanel');
+    const sidebar = document.getElementById('mainSidebar');
+
+    if (mode === 'focus') {
+        left.style.display = 'none';
+        right.style.display = 'none';
+        sidebar.style.display = 'none'; // Full focus
+    } else if (mode === 'workbench') {
+        left.style.display = 'flex';
+        right.style.display = 'flex';
+        sidebar.style.display = 'flex';
+    }
+}
+
+function switchTheme() {
+    const body = document.body;
+    if (state.theme === 'dark') {
+        body.setAttribute('data-theme', 'light');
+        state.theme = 'light';
+    } else {
+        body.setAttribute('data-theme', 'professional');
+        state.theme = 'dark';
+    }
+}
+
+// --- RESIZE LOGIC ---
+let isResizing = false;
+let currentResizer = null;
+
+document.querySelectorAll('.panel-resize-handle').forEach(handle => {
