@@ -4,7 +4,7 @@ const state = {
     controller: null,
     startTime: 0,
     tokenCount: 0,
-    theme: 'light' // Varsayılan Light Theme
+    theme: 'light'
 };
 
 // DOM ELEMENTS
@@ -27,26 +27,26 @@ const els = {
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Sağlık Kontrolü Başlat
-    checkHealth();
-    setInterval(checkHealth, 10000);
+    // 1. Varsayılan Görünüm (Focus Mode)
+    // "window.setView" fonksiyonunu doğrudan çağırmak yerine, 
+    // parametre ile DOM elemanlarını manuel ayarlıyoruz ki event hatası olmasın.
+    setViewInternal('focus');
 
     // 2. Event Listener'ları Bağla
     setupEventListeners();
 
-    // 3. Temiz Başlangıç: Odak Modu (Paneller Kapalı)
-    setView('focus');
+    // 3. Sağlık Kontrolü Başlat
+    checkHealth();
+    setInterval(checkHealth, 10000);
 });
 
 function setupEventListeners() {
-    // Textarea Auto-resize
     if(els.userInput) {
         els.userInput.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = (this.scrollHeight) + 'px';
         });
 
-        // Enter ile Gönderme
         els.userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -55,18 +55,16 @@ function setupEventListeners() {
         });
     }
 
-    // Butonlar
     if(els.sendBtn) els.sendBtn.addEventListener('click', sendMessage);
     if(els.stopBtn) els.stopBtn.addEventListener('click', stopGeneration);
     
-    // Slider Değer Güncelleme
     if(els.tempInput) {
         els.tempInput.addEventListener('input', (e) => {
             if(els.tempVal) els.tempVal.textContent = e.target.value;
         });
     }
 
-    // Mikrofon (Varsa)
+    // Web Speech API
     const micBtn = document.getElementById('micBtn');
     if (micBtn) {
         if ('webkitSpeechRecognition' in window) {
@@ -84,42 +82,38 @@ function setupEventListeners() {
     }
 }
 
-// --- CORE LOGIC (API) ---
+// --- CORE LOGIC ---
 
 async function sendMessage() {
     const text = els.userInput.value.trim();
     if (!text || state.isGenerating) return;
 
-    // UI Temizle
     els.userInput.value = '';
     els.userInput.style.height = 'auto';
     
-    // Hoşgeldin ekranını kaldır
     const welcome = document.querySelector('.welcome-screen');
     if(welcome) welcome.style.display = 'none';
 
     appendMessage('user', text);
     
-    // AI Mesaj Kutusu Oluştur
-    const aiMsgContent = appendMessage('ai', '<span class="cursor"></span>');
-    
+    // AI "Düşünüyor" Göstergesi
+    const loadingId = 'loading-' + Date.now();
+    appendLoading(loadingId);
+
     setGeneratingState(true);
     state.controller = new AbortController();
     state.startTime = Date.now();
     state.tokenCount = 0;
     
-    let fullResponse = "";
-
-    // Prompt Hazırla
+    // Prompt Hazırlığı
     const messages = [];
     if (els.systemPrompt && els.systemPrompt.value.trim()) {
         messages.push({ role: "system", content: els.systemPrompt.value });
     }
     
-    // RAG Bağlamı Ekle
     const ragText = els.ragInput ? els.ragInput.value.trim() : "";
     const finalUserContent = ragText 
-        ? `BAĞLAM BİLGİSİ:\n${ragText}\n\nKULLANICI SORUSU:\n${text}`
+        ? `BAĞLAM BİLGİSİ:\n${ragText}\n\nSORU:\n${text}`
         : text;
 
     messages.push({ role: "user", content: finalUserContent });
@@ -137,11 +131,16 @@ async function sendMessage() {
             signal: state.controller.signal
         });
 
-        if (!response.ok) throw new Error(`API Error: ${response.status}`);
+        // Loading'i kaldır ve gerçek AI balonunu oluştur
+        removeLoading(loadingId);
+        const aiMsgContent = appendMessage('ai', '<span class="cursor"></span>');
+
+        if (!response.ok) throw new Error(`API Hatası: ${response.status}`);
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
+        let fullResponse = "";
 
         while (true) {
             const { done, value } = await reader.read();
@@ -160,7 +159,12 @@ async function sendMessage() {
                         const delta = json.choices[0]?.delta?.content;
                         if (delta) {
                             fullResponse += delta;
+                            // Basit render (Markdown olmadan hız için)
+                            // aiMsgContent.textContent = fullResponse; 
+                            
+                            // Gelişmiş Render (Her chunk'ta marked çağırmak pahalıdır ama görsel için yapıyoruz)
                             aiMsgContent.innerHTML = marked.parse(fullResponse) + '<span class="cursor"></span>';
+                            
                             state.tokenCount++;
                             scrollToBottom();
                         }
@@ -169,16 +173,17 @@ async function sendMessage() {
             }
         }
 
-        // Bitiş
+        // Bitiş Render
         aiMsgContent.innerHTML = marked.parse(fullResponse);
         hljs.highlightAll();
         updateMetrics(Date.now() - state.startTime, state.tokenCount);
 
     } catch (err) {
-        if (err.name === 'AbortError') {
-            aiMsgContent.innerHTML += " <br><em>[Durduruldu]</em>";
-        } else {
-            aiMsgContent.innerHTML += `<br><span style="color:#ef4444">HATA: ${err.message}</span>`;
+        removeLoading(loadingId); // Hata durumunda loading kaldıysa sil
+        if (err.name !== 'AbortError') {
+             // Eğer AI balonu henüz oluşturulmadıysa oluştur
+             const errContent = appendMessage('ai', '');
+             errContent.innerHTML = `<span style="color:#ef4444">HATA: ${err.message}</span>`;
         }
     } finally {
         setGeneratingState(false);
@@ -190,22 +195,41 @@ function stopGeneration() {
     if (state.controller) state.controller.abort();
 }
 
-// --- UI YARDIMCILARI ---
+// --- UI HELPERS ---
 
 function appendMessage(role, content) {
     const div = document.createElement('div');
     div.className = `message ${role}`;
     
-    const avatarIcon = role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>';
+    const avatar = role === 'user' ? '<i class="fas fa-user"></i>' : '<i class="fas fa-robot"></i>';
     
     div.innerHTML = `
-        <div class="avatar">${avatarIcon}</div>
+        <div class="avatar">${avatar}</div>
         <div class="msg-content">${content}</div>
     `;
     
     els.chatMessages.appendChild(div);
     scrollToBottom();
     return div.querySelector('.msg-content');
+}
+
+function appendLoading(id) {
+    const div = document.createElement('div');
+    div.className = 'message ai loading-msg';
+    div.id = id;
+    div.innerHTML = `
+        <div class="avatar"><i class="fas fa-robot"></i></div>
+        <div class="msg-content" style="background:transparent; box-shadow:none; padding:0;">
+            <div class="typing"><span></span><span></span><span></span></div>
+        </div>
+    `;
+    els.chatMessages.appendChild(div);
+    scrollToBottom();
+}
+
+function removeLoading(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
 }
 
 function setGeneratingState(active) {
@@ -241,7 +265,7 @@ async function checkHealth() {
             if(els.statusText) els.statusText.textContent = 'Hazır';
         } else {
             if(els.statusDot) els.statusDot.className = 'status-dot';
-            if(els.statusText) els.statusText.textContent = 'Yükleniyor...';
+            if(els.statusText) els.statusText.textContent = 'Model Yükleniyor...';
         }
     } catch (e) {
         if(els.statusDot) els.statusDot.className = 'status-dot';
@@ -249,7 +273,7 @@ async function checkHealth() {
     }
 }
 
-// --- PANEL & VIEW LOGIC (Global Functions for HTML onClick) ---
+// --- GLOBAL EXPORTS & VIEW LOGIC ---
 
 window.togglePanel = function(id) {
     const panel = document.getElementById(id);
@@ -257,45 +281,58 @@ window.togglePanel = function(id) {
     
     if (panel.style.display === 'none') {
         panel.style.display = 'flex';
+        // Timeout to allow CSS transition
+        setTimeout(() => panel.style.opacity = '1', 10);
     } else {
         panel.style.display = 'none';
+        panel.style.opacity = '0';
     }
 };
 
 window.switchTab = function(tabName) {
-    // Butonları güncelle
     document.querySelectorAll('.context-tab').forEach(t => t.classList.remove('active'));
-    // İçerikleri gizle
     document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
     
-    // Aktif yap
-    event.currentTarget.classList.add('active');
+    // event.currentTarget hatasını önlemek için, fonksiyonu çağıran elemanı bul
+    // Basit çözüm: event global değişkenini kullan (inline onclick için çalışır)
+    if (window.event) {
+        window.event.currentTarget.classList.add('active');
+    }
     document.getElementById(tabName + 'Tab').style.display = 'block';
 };
 
-window.setView = function(mode) {
-    // Reset Buttons
-    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
-    event.currentTarget.classList.add('active');
-
+// Internal helper to set view without relying on event object
+function setViewInternal(mode) {
     const left = document.getElementById('leftPanel');
     const right = document.getElementById('rightPanel');
+    const buttons = document.querySelectorAll('.view-btn');
+
+    // Update buttons visual state
+    buttons.forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('onclick').includes(`'${mode}'`)) {
+            btn.classList.add('active');
+        }
+    });
 
     if (mode === 'focus') {
-        // Her iki paneli kapat
         if(left) left.style.display = 'none';
         if(right) right.style.display = 'none';
     } else if (mode === 'workbench') {
-        // Her iki paneli aç
         if(left) left.style.display = 'flex';
         if(right) right.style.display = 'flex';
     }
+}
+
+// Public function called by buttons
+window.setView = function(mode) {
+    setViewInternal(mode);
 };
 
 window.switchTheme = function() {
     const body = document.body;
     if (state.theme === 'dark') {
-        body.setAttribute('data-theme', 'light');
+        body.removeAttribute('data-theme'); // Light is default
         state.theme = 'light';
     } else {
         body.setAttribute('data-theme', 'dark');
