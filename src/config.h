@@ -1,4 +1,3 @@
-// src/config.h
 #pragma once
 
 #include <string>
@@ -55,6 +54,11 @@ struct Settings {
     
     // Warm-up ayarları
     bool enable_warm_up = true;
+
+    // --- GATEWAY INTEGRATION CONFIG ---
+    std::string worker_id = "worker-default";
+    std::string worker_group = "default-group";
+    std::string gateway_address = ""; // Boş ise Gateway bağlantısı pasif
 };
 
 inline Settings load_settings() {
@@ -135,6 +139,11 @@ inline Settings load_settings() {
     s.batch_timeout_ms = get_env_var_as_int("LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS", s.batch_timeout_ms);
     
     s.enable_warm_up = get_env_var_as_bool("LLM_LLAMA_SERVICE_ENABLE_WARM_UP", s.enable_warm_up);
+
+    // Gateway Integration
+    s.worker_id = get_env_var("LLM_WORKER_ID", "worker-" + std::to_string(std::rand()));
+    s.worker_group = get_env_var("LLM_WORKER_GROUP", "default");
+    s.gateway_address = get_env_var("LLM_GATEWAY_ADDRESS", "");
     
     // Legacy path for backward compatibility
     s.legacy_model_path = get_env_var("LLM_LLAMA_SERVICE_MODEL_PATH", s.legacy_model_path);

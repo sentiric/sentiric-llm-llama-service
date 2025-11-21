@@ -1,4 +1,3 @@
-// src/main.cpp
 #include "config.h"
 #include "llm_engine.h"
 #include "grpc_server.h"
@@ -9,6 +8,7 @@
 #include <csignal>
 #include <future>
 #include <grpcpp/grpcpp.h>
+#include <grpcpp/health_check_service_interface.h> // GEREKLİ: Health Check Interface
 #include <grpcpp/security/server_credentials.h>
 #include <fstream>
 #include <sstream>
@@ -81,7 +81,7 @@ int main() {
 
     auto settings = load_settings();
     spdlog::set_level(spdlog::level::from_str(settings.log_level));
-    spdlog::info("Sentiric LLM Llama Service starting...");
+    spdlog::info("Sentiric LLM Llama Service starting (Worker ID: {}, Group: {})...", settings.worker_id, settings.worker_group);
 
     // 1. Prometheus Metrik Altyapısını Kur
     auto registry = std::make_shared<prometheus::Registry>();
@@ -106,7 +106,6 @@ int main() {
         .Help("Current number of active llama_context instances")
         .Register(*registry);
 
-    // Metrik örneklerini oluştur - KULLANILACAK
     AppMetrics metrics = {
         requests_total_family.Add({}),
         request_latency_family.Add({}, prometheus::Histogram::BucketBoundaries{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0}),
@@ -122,6 +121,9 @@ int main() {
     std::thread metrics_thread;
 
     try {
+        // --- ENABLE STANDARD GRPC HEALTH CHECK ---
+        grpc::EnableDefaultHealthCheckService(true);
+
         spdlog::info("Configuration: host={}, http_port={}, grpc_port={}", settings.host, settings.http_port, settings.grpc_port);
         
         auto engine = std::make_shared<LLMEngine>(settings, metrics.active_contexts);
@@ -131,11 +133,9 @@ int main() {
             return 1;
         }
 
-        // --- MODEL WARM-UP (DÜZELTİLDİ) ---
+        // --- MODEL WARM-UP ---
         if (settings.enable_warm_up) {
             spdlog::info("Starting model warm-up...");
-            // ESKİ: ModelWarmup::safe_warmup(...) -> Sadece pointer alır, işlem yapmaz.
-            // YENİ: ModelWarmup::fast_warmup(...) -> Küçük bir decode işlemi yapar, CUDA'yı tetikler.
             ModelWarmup::fast_warmup(engine->get_context_pool(), settings.n_threads);
             spdlog::info("✅ Model warm-up completed");
         }
@@ -171,6 +171,18 @@ int main() {
             spdlog::critical("gRPC server failed to start on {}", grpc_address);
             return 1;
         }
+
+        // --- SET HEALTH STATUS TO SERVING ---
+        // Bu adım, Gateway'in bizi "Ready" olarak görmesini sağlar.
+        auto health_service = grpc_server_ptr->GetHealthCheckService();
+        if (health_service) {
+            health_service->SetServingStatus("sentiric.llm.v1.LLMLocalService", true);
+            health_service->SetServingStatus("", true); // Genel servis durumu
+            spdlog::info("✅ gRPC Health Status set to SERVING. Ready for Gateway traffic.");
+        } else {
+            spdlog::warn("⚠️ gRPC Health Check Service could not be retrieved. Gateway discovery might fail.");
+        }
+
         spdlog::info("🚀 gRPC server listening on {}", grpc_address);
 
         http_server = std::make_shared<HttpServer>(engine, settings.host, settings.http_port);
@@ -187,6 +199,13 @@ int main() {
         shutdown_future.wait();
         
         spdlog::info("Shutting down servers...");
+        
+        // Health check'i NOT_SERVING yap ki Gateway yeni istek göndermesin
+        if (health_service) {
+            health_service->SetServingStatus("", false);
+            spdlog::info("gRPC Health Status set to NOT_SERVING.");
+        }
+
         http_server->stop();
         metrics_server->stop();
         grpc_server_ptr->Shutdown(std::chrono::system_clock::now() + std::chrono::seconds(5));
