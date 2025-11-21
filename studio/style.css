@@ -150,7 +150,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); cursor: pointer; 
 .msg-btn:hover { color: var(--primary); border-color: var(--primary); }
 
 /* CODE BLOCKS (Mac Style) */
-pre { margin: 12px 0; border-radius: 12px; background: #1e1e1e !important; border: 1px solid rgba(255,255,255,0.1); overflow: hidden; }
+pre { margin: 12px 0; border-radius: 12px; background: var(--bg-app) !important; border: 1px solid rgba(255,255,255,0.1); overflow: hidden; }
 .code-header { 
     display: flex; justify-content: space-between; align-items: center;
     padding: 8px 16px; background: #2d2d2d; font-family: var(--font-ui); font-size: 0.75rem; color: #aaa; border-bottom: 1px solid #333;
@@ -244,7 +244,7 @@ textarea {
 .theme-switch { bottom: 120px; left: 20px; width: 44px; height: 44px; border-radius: 50%; background: var(--bg-sidebar); border: 1px solid var(--border); box-shadow: var(--shadow-float); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 200; color: var(--text-main); transition: 0.2s; }
 
 /* --- MOBILE RESPONSIVE DESIGN --- */
-@media (max-width: 768px) {
+@media (max-width: 958px) {
     .sidebar { position: fixed; top: 0; bottom: 0; left: 0; transform: translateX(-100%); width: 85%; max-width: 320px; box-shadow: var(--shadow-float); }
     .sidebar.active { transform: translateX(0); }
     
@@ -264,7 +264,7 @@ textarea {
     .msg-actions { opacity: 1; position: static; margin-top: 8px; flex-direction: row; justify-content: flex-end; }
 }
 
-@media (min-width: 769px) {
+@media (min-width: 959px) {
     .mobile-only { display: none !important; }
     .close-btn { display: none; }
 }
@@ -401,3 +401,31 @@ textarea {
    Daha basit yöntem: Textarea value'sunu güncellemek ama gri göstermek.
    Ancak 'interim' sonuçlar henüz input'a girmediği için ayrı katman mantıklı.
 */
+
+/* Toggle Switch (TTS İçin) */
+.switch { position: relative; display: inline-block; width: 34px; height: 20px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+.slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+input:checked + .slider { background-color: var(--primary); }
+input:checked + .slider:before { transform: translateX(14px); }
+
+/* Audio Visualizer Canvas */
+.audio-canvas {
+    width: 80px;
+    height: 40px;
+    margin-right: 10px;
+    border-radius: 8px;
+    background: rgba(0,0,0,0.05);
+    display: none; /* JS ile açılacak */
+}
+.audio-canvas.active { display: block; }
+
+[data-theme="dark"] .audio-canvas { background: rgba(255,255,255,0.05); }
+
+/* Input kapsülünü biraz genişletelim ki canvas sığsın */
+.input-capsule { padding-left: 10px; }
+
+.console-output{background: var(--bg-app) !important; color:var(--text-main);border: 1px solid var(--border);}
+
+#ragInput { height: 500px;}

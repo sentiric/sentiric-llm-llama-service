@@ -6,15 +6,11 @@
     <title>Sentirik Omni-Studio</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💠</text></svg>">
     
-    <!-- Fonts & Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-    
-    <!-- Syntax Highlighting & Markdown -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <link rel="stylesheet" href="style.css">
 
-    <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
@@ -22,9 +18,9 @@
 <body data-theme="light">
 
 <div class="layout">
-    
-    <!-- SOL PANEL: AYARLAR -->
+    <!-- SOL PANEL (AYNI) -->
     <aside class="sidebar left" id="leftPanel">
+        <!-- ... (Mevcut İçerik Aynen Kalacak) ... -->
         <div class="header">
             <div class="brand"><i class="fas fa-cube"></i> Sentirik Studio</div>
             <button class="close-btn mobile-only" onclick="togglePanel('leftPanel')"><i class="fas fa-times"></i></button>
@@ -33,68 +29,64 @@
         <div class="scroll-content">
             <div class="section">
                 <div class="section-title">Persona & Sistem</div>
-                <textarea id="systemPrompt" class="input-area code-font" rows="6" placeholder="Sen yardımsever bir yapay zeka asistanısın..."></textarea>
-            </div>
+                <textarea id="systemPrompt" class="input-area code-font" rows="6"
+                    placeholder="Asistanın nasıl davranacağını belirleyen sistem mesajını buraya yazın.
 
+Örneğin:
+- 'Kısa ve net yanıt ver.'
+- 'Her zaman Türkçe konuş.'
+- 'Verileri tablo halinde açıkla.'
+- 'Resmi bir üslupla cevap ver.'"></textarea>
+            <!-- ... Parametreler vs Aynı ... -->
             <div class="section">
                 <div class="section-title">Parametreler</div>
-                
                 <div class="control">
-                    <div class="label-row">
-                        <label>Yaratıcılık (Temp)</label>
-                        <span id="tempVal" class="badge">0.8</span>
-                    </div>
+                    <div class="label-row"><label>Yaratıcılık (Temp)</label><span id="tempVal" class="badge">0.8</span></div>
                     <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.8">
                 </div>
-
                 <div class="control">
-                    <div class="label-row">
-                        <label>Hafıza (Son Mesaj)</label>
-                        <span id="historyVal" class="badge">10</span>
-                    </div>
+                    <div class="label-row"><label>Hafıza (Son Mesaj)</label><span id="historyVal" class="badge">10</span></div>
                     <input type="range" id="historyLimit" min="0" max="30" step="1" value="10">
                 </div>                
-
                 <div class="control">
-                    <div class="label-row">
-                        <label>Maks. Token</label>
-                        <span id="tokenLimitVal" class="badge">1024</span>
-                    </div>
+                    <div class="label-row"><label>Maks. Token</label><span id="tokenLimitVal" class="badge">1024</span></div>
                     <input type="range" id="tokenLimit" min="64" max="4096" step="64" value="1024">
                 </div>
             </div>
 
             <div class="section">
-                <div class="section-title">Dil Ayarları</div>
+                <div class="section-title">Ses Ayarları (YENİ)</div>
+                <div class="control" style="display: flex; align-items: center; justify-content: space-between;">
+                    <label>AI Sesli Okusun (TTS)</label>
+                    <label class="switch">
+                        <input type="checkbox" id="ttsToggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
                 <select id="langSelect" class="dropdown">
-                    <option value="tr-TR">🇹🇷 Türkçe (Turkish)</option>
-                    <option value="en-US">🇺🇸 English (US)</option>
+                    <option value="tr-TR">🇹🇷 Türkçe</option>
+                    <option value="en-US">🇺🇸 English</option>
                 </select>
             </div>
 
             <button class="theme-switch" onclick="toggleTheme()"><i class="fas fa-moon"></i></button>
         </div>
-
         <div class="footer">
-            <div class="status-pill" id="connStatus">
-                <span class="dot"></span> <span id="statusText">Bağlanıyor...</span>
-            </div>
+            <div class="status-pill" id="connStatus"><span class="dot"></span> <span id="statusText">Bağlanıyor...</span></div>
         </div>
     </aside>
 
-    <!-- ORTA PANEL: SOHBET -->
+    <!-- ORTA PANEL -->
     <main class="main-stage">
         <header class="top-bar">
             <button class="toggle-btn" onclick="togglePanel('leftPanel')"><i class="fas fa-sliders-h"></i></button>
-            
             <div class="model-info">
                 <span class="model-name">Sentiric 1B</span>
                 <span class="model-tag">Local GPU</span>
             </div>
-
             <div class="actions">
-                <button class="action-icon" onclick="downloadHistory()" title="Geçmişi İndir (.json)"><i class="fas fa-download"></i></button>
-                <button class="action-icon" onclick="clearChat()" title="Sohbeti Temizle"><i class="fas fa-trash-alt"></i></button>
+                <button class="action-icon" onclick="downloadHistory()" title="Geçmişi İndir"><i class="fas fa-download"></i></button>
+                <button class="action-icon" onclick="clearChat()" title="Temizle"><i class="fas fa-trash-alt"></i></button>
                 <button class="toggle-btn" onclick="togglePanel('rightPanel')"><i class="fas fa-database"></i></button>
             </div>
         </header>
@@ -103,36 +95,31 @@
             <div class="empty-state" id="emptyState">
                 <div class="logo-shine"><i class="fas fa-layer-group"></i></div>
                 <h2>Sentiric Engine Hazır</h2>
-                <p>Parametreleri ayarla, veri yükle ve sohbete başla.</p>
+                <p>Mikrofonu açın ve dalgaları izleyin.</p>
             </div>
         </div>
 
-        <!-- INPUT ALANI -->
         <div class="composer-area">
             <button class="scroll-bottom-btn hidden" id="scrollBtn" onclick="scrollToBottom()"><i class="fas fa-arrow-down"></i></button>
+            
             <div class="telemetry-bar">
                 <span id="voiceStatus" class="hidden">🔴 Dinleniyor...</span>
             </div>
             
             <div class="input-capsule">
-                <button class="tool-btn" onclick="$('fileInput').click()" title="RAG Dosyası Yükle">
-                    <i class="fas fa-paperclip"></i>
-                </button>
+                <!-- Ses Görselleştirici Canvas (YENİ) -->
+                <canvas id="audioVisualizer" width="100" height="40" class="audio-canvas hidden"></canvas>
+
+                <button class="tool-btn" onclick="$('fileInput').click()" title="RAG"><i class="fas fa-paperclip"></i></button>
                 <input type="file" id="fileInput" hidden>
                 
                 <div class="textarea-wrapper" style="flex:1; position:relative;">
-                    <textarea id="userInput" placeholder="Bir şeyler yazın..." rows="1"></textarea>
-                    <!-- Canlı Önizleme Katmanı -->
+                    <textarea id="userInput" placeholder="" rows="1"></textarea>
                     <div id="ghostText" class="ghost-overlay"></div>
                 </div>
 
-                <button class="tool-btn" id="micBtn" title="Yazıya Çevir">
-                    <i class="fas fa-microphone"></i>
-                </button>
-
-                <button class="tool-btn" id="liveBtn" title="Canlı Sohbet">
-                    <i class="fas fa-headset"></i>
-                </button>
+                <button class="tool-btn" id="micBtn" title="Dikte"><i class="fas fa-microphone"></i></button>
+                <button class="tool-btn" id="liveBtn" title="Hands-Free"><i class="fas fa-headset"></i></button>
 
                 <div class="right-tools">
                     <button class="send-btn" id="sendBtn"><i class="fas fa-paper-plane"></i></button>
@@ -142,59 +129,44 @@
         </div>
     </main>
 
-    <!-- SAĞ PANEL: RAG & LOG -->
+    <!-- SAĞ PANEL -->
     <aside class="sidebar right" id="rightPanel">
         <div class="header">
             <div class="tab-group">
                 <button class="tab active" onclick="switchTab('rag')">RAG / Veri</button>
-                <button class="tab" onclick="switchTab('logs')">Metrikler</button>
+                <button class="tab" onclick="switchTab('logs')">Debug</button>
             </div>
             <button class="close-btn mobile-only" onclick="togglePanel('rightPanel')"><i class="fas fa-times"></i></button>
         </div>
 
         <div class="scroll-content">
-            <!-- RAG TAB -->
             <div id="ragTab" class="tab-content active">
-                <div class="info-box">
-                    <i class="fas fa-info-circle"></i> Buraya eklenen metinler, modelin "Context Window"una enjekte edilir.
-                </div>
-                <textarea id="ragInput" class="full-code-area" placeholder="// Bağlam verisi veya doküman içeriği..."></textarea>
+                <div class="info-box"><i class="fas fa-info-circle"></i> Bağlam verisi.</div>
+                <textarea id="ragInput" class="input-area code-font"
+                placeholder="Asistanın yararlanmasını istediğiniz kaynak metinleri buraya yapıştırın.
+                
+Örneğin:
+- Bir makale veya araştırma özeti
+- Şirket içi dokümanlar
+- Ürün açıklamaları
+- Ders notları
+// Yapay zeka bu metne göre daha doğru yanıtlar üretir."></textarea>
                 <div class="rag-stats">Karakter: <span id="ragCharCount">0</span></div>
             </div>
 
-            <!-- LOGS TAB -->
             <div id="logsTab" class="tab-content" style="display: none;">
                 <div class="dashboard-grid">
-                    <div class="dash-card">
-                        <label>Anlık Hız (TPS)</label>
-                        <div class="value" id="tpsVal">--</div>
-                    </div>
-                    <div class="dash-card">
-                        <label>Son Gecikme</label>
-                        <div class="value" id="latencyVal">--</div>
-                    </div>
-                    
-                    <!-- YENİ: Oturum İstatistikleri -->
-                    <div class="dash-card full">
-                        <label>Oturum Toplamı (Token)</label>
-                        <div class="value" id="sessionTotalTokenVal">0</div>
-                    </div>
-                    <div class="dash-card full">
-                        <label>Ortalama Hız (Oturum)</label>
-                        <div class="value" id="sessionAvgTpsVal">--</div>
-                    </div>
+                    <div class="dash-card"><label>TPS</label><div class="value" id="tpsVal">--</div></div>
+                    <div class="dash-card"><label>Gecikme</label><div class="value" id="latencyVal">--</div></div>
+                    <div class="dash-card full"><label>Oturum Token</label><div class="value" id="sessionTotalTokenVal">0</div></div>
                 </div>
-                <div class="console-title">Sistem Logları</div>
-                <div class="console-output" id="consoleLog">
-                    <div class="log-line system">> Arayüz başlatıldı.</div>
-                </div>
+                <div class="console-title">Son İstek Payloadi (JSON)</div>
+                <pre class="console-output" id="payloadLog" style="font-size: 0.7rem; white-space: pre-wrap;">Waiting for request...</pre>
             </div>
         </div>
     </aside>
 
-    <!-- OVERLAY (Mobile Only) -->
     <div class="overlay" id="overlay" onclick="closeAllPanels()"></div>
-
 </div>
 
 <script src="app.js"></script>

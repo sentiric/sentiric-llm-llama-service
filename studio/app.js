@@ -1,28 +1,41 @@
+/**
+ * SENTIRIC OMNI-STUDIO v3.1 (Bugfix Release)
+ * Core Logic: UI, LLM Integration, Speech (STT/TTS), Visualization
+ */
+
 // ==========================================
 // 1. STATE & CONFIGURATION
 // ==========================================
 const $ = (id) => document.getElementById(id);
 
 const state = { 
-    generating: false,
-    controller: null,
-    history: [],
-    autoListen: false,
-    isRecording: false,
-    recognition: null,
-    startTime: 0,
-    tokenCount: 0,
-    autoScroll: true,
-    interrupted: false,
-    // YENİ: Oturum İstatistikleri
+    // Core Logic
+    generating: false,      // AI şu an üretiyor mu?
+    controller: null,       // Fetch abort controller
+    history: [],            // Konuşma geçmişi
+    tokenCount: 0,          // Son istekteki token sayısı
+    startTime: 0,           // Son isteğin başlama zamanı
+    interrupted: false,     // Söz kesildi mi bayrağı
+
+    // UI State
+    autoScroll: true,       // Otomatik aşağı kaydırma
+
+    // Speech & Audio
+    isRecording: false,     // Mikrofon açık mı?
+    autoListen: false,      // Hands-Free (Canlı) mod
+    recognition: null,      // WebkitSpeechRecognition
+    audioContext: null,     // Visualizer için Audio Context
+    analyser: null,         // Visualizer Analyser Node
+    microphone: null,       // MediaStream Source
+    visualizerFrame: null,  // Animation Frame ID
+
+    // Statistics
     sessionStats: {
         totalTokens: 0,
         totalTimeMs: 0,
         requestCount: 0
     }
 };
-
-// ... (Initialization ve Markdown ayarları AYNI) ...
 
 // ==========================================
 // 2. INITIALIZATION
@@ -36,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupSpeech();
     checkHealth();
     setInterval(checkHealth, 10000);
-    playWelcomeAnimation();
+    // playWelcomeAnimation();
 });
 
 function setupMarkdown() {
@@ -57,13 +70,14 @@ function setupMarkdown() {
 function setupEvents() {
     const input = $('userInput');
     
+    // Input Auto-Resize & Ghost Text Temizliği
     input.addEventListener('input', function() {
         this.style.height = 'auto';
         this.style.height = Math.min(this.scrollHeight, 200) + 'px';
-        // Yazı yazıldığında ghost text'i temizle
-        $('ghostText').innerText = '';
+        if($('ghostText')) $('ghostText').innerText = '';
     });
 
+    // Enter Tuşu
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -73,7 +87,7 @@ function setupEvents() {
         }
     });
 
-    // ... (Diğer event handler'lar AYNI) ...
+    // Butonlar
     $('sendBtn').onclick = () => {
         if(state.isRecording) stopMic(); 
         if (state.generating) interruptGeneration();
@@ -86,17 +100,20 @@ function setupEvents() {
         stopMic();
     };
     
+    // Sliderlar
     $('tempInput').oninput = (e) => $('tempVal').innerText = e.target.value;
     $('tokenLimit').oninput = (e) => $('tokenLimitVal').innerText = e.target.value;
     $('historyLimit').oninput = (e) => $('historyVal').innerText = e.target.value;
     $('ragInput').oninput = (e) => $('ragCharCount').innerText = e.target.value.length;
 
+    // Scroll
     $('chatContainer').addEventListener('scroll', function() {
         const isAtBottom = this.scrollHeight - this.scrollTop - this.clientHeight < 50;
         state.autoScroll = isAtBottom;
         $('scrollBtn').classList.toggle('hidden', isAtBottom);
     });
 
+    // RAG
     $('fileInput').onchange = async (e) => {
         const file = e.target.files[0];
         if(!file) return;
@@ -113,9 +130,8 @@ function setupEvents() {
     };
 }
 
-
 // ==========================================
-// 4. CORE LOGIC
+// 4. CORE LOGIC (MESSAGING)
 // ==========================================
 
 function interruptGeneration() {
@@ -125,6 +141,7 @@ function interruptGeneration() {
         try { state.controller.abort(); } catch(e) {}
         state.controller = null;
         setBusy(false);
+        window.speechSynthesis.cancel();
     }
 }
 
@@ -132,11 +149,11 @@ async function sendMessage() {
     const text = $('userInput').value.trim();
     if (!text) return;
 
-    // UI Temizlik
+    // UI Hazırlık
+    window.speechSynthesis.cancel();
     $('userInput').value = '';
     $('userInput').style.height = 'auto';
-    $('ghostText').innerText = ''; // Ghost text temizle
-    
+    if($('ghostText')) $('ghostText').innerText = '';
     state.autoScroll = true;
     state.interrupted = false;
     
@@ -153,10 +170,10 @@ async function sendMessage() {
 
     let fullText = ""; 
     const payload = buildPayload(text);
+    
+    if($('payloadLog')) $('payloadLog').innerText = JSON.stringify(payload, null, 2);
 
-    if (state.autoListen) {
-        tryStartMic();
-    }
+    if (state.autoListen) tryStartMic();
 
     try {
         const response = await fetch('/v1/chat/completions', {
@@ -192,30 +209,30 @@ async function sendMessage() {
                                 if(state.autoScroll) scrollToBottom();
                             }
                             state.tokenCount++;
-                            updateLiveStats(); // Anlık istatistik
+                            updateLiveStats();
                         }
                     } catch(e){}
                 }
             }
         }
 
-        // Başarılı Bitiş
         bubbleContent.innerHTML = marked.parse(fullText);
         enhanceCodeBlocks(aiBubble);
         addMessageActions(aiBubble, fullText);
         state.history.push({role: 'assistant', content: fullText});
         
-        // Oturum İstatistiklerini Güncelle
         updateSessionStats(state.tokenCount, Date.now() - state.startTime);
+
+        if ($('ttsToggle') && $('ttsToggle').checked && fullText) {
+            speakText(fullText);
+        }
 
     } catch(err) {
         if(err.name === 'AbortError' || state.interrupted) {
-            console.log("✋ İstek iptal edildi.");
             const safeText = typeof fullText !== 'undefined' ? fullText : "";
             bubbleContent.innerHTML = marked.parse(safeText) + ' <span style="color:var(--warning); font-weight:bold;">[Sözü Kesildi]</span>';
             if(safeText) state.history.push({role: 'assistant', content: safeText});
         } else {
-            console.error("Error:", err);
             bubbleContent.innerHTML += `<br><div style="color:var(--danger)">❌ Hata: ${err.message}</div>`;
             state.autoListen = false;
             stopMic();
@@ -223,26 +240,28 @@ async function sendMessage() {
     } finally {
         setBusy(false);
         if(state.autoListen && !state.interrupted) {
-             setTimeout(tryStartMic, 300);
+            setTimeout(tryStartMic, 300);
         }
         if(state.autoScroll) scrollToBottom();
     }
 }
 
 // ==========================================
-// 5. SPEECH RECOGNITION (ENHANCED)
+// 5. SPEECH & VISUALIZER
 // ==========================================
+
 function setupSpeech() {
     if(!('webkitSpeechRecognition' in window)) { 
-        $('micBtn').style.display='none'; 
-        $('liveBtn').style.display='none';
+        console.warn("Web Speech API not supported.");
+        if($('micBtn')) $('micBtn').style.display='none'; 
+        if($('liveBtn')) $('liveBtn').style.display='none';
         return; 
     }
     
     const rec = new webkitSpeechRecognition();
     rec.lang = $('langSelect').value;
-    rec.continuous = false; 
-    rec.interimResults = true; // YENİ: Ara sonuçları al
+    rec.continuous = false;     
+    rec.interimResults = true;  
 
     rec.onstart = () => { 
         state.isRecording = true;
@@ -256,14 +275,17 @@ function setupSpeech() {
                 : '🎧 <b>Canlı Mod:</b> Dinliyor...';
             statusEl.style.color = state.generating ? 'var(--warning)' : 'var(--success)';
         } else {
-            statusEl.innerText = 'Dikte ediliyor...';
+            statusEl.innerHTML = '🎙️ Dikte ediliyor...';
             statusEl.style.color = 'var(--text-sub)';
         }
+        startAudioVisualizer();
     };
 
     rec.onend = () => { 
         state.isRecording = false;
-        $('ghostText').innerText = ''; // Temizle
+        if($('ghostText')) $('ghostText').innerText = '';
+        stopAudioVisualizer();
+
         if(state.autoListen) {
              setTimeout(() => {
                  if (state.autoListen && !state.isRecording) tryStartMic();
@@ -279,34 +301,29 @@ function setupSpeech() {
         let interim = '';
 
         for (let i = e.resultIndex; i < e.results.length; ++i) {
-            if (e.results[i].isFinal) {
-                final += e.results[i][0].transcript;
-            } else {
-                interim += e.results[i][0].transcript;
-            }
+            if (e.results[i].isFinal) final += e.results[i][0].transcript;
+            else interim += e.results[i][0].transcript;
         }
 
-        // 1. Canlı Önizleme (Ghost Text)
-        // Mevcut input değerinin üzerine interim metni hayalet gibi göster
         const currentVal = $('userInput').value;
-        if (interim) {
+        if (interim && $('ghostText')) {
             $('ghostText').innerText = currentVal + " " + interim + "...";
-        } else {
+        } else if ($('ghostText')) {
             $('ghostText').innerText = '';
         }
         
-        // 2. Final Sonuç
         if(final) {
             const val = final.trim();
             if (val.length > 0) {
-                $('ghostText').innerText = ''; // Ghost'u sil
+                if($('ghostText')) $('ghostText').innerText = '';
+                
                 if (!state.autoListen) {
                     const current = $('userInput').value;
                     $('userInput').value = current ? current + " " + val : val;
                 } else {
-                    // Barge-in & Send
                     $('userInput').value = val;
                     if (state.generating) {
+                        console.log("⚡ Barge-in Triggered!");
                         interruptGeneration();
                         setTimeout(() => sendMessage(), 50);
                     } else {
@@ -317,11 +334,9 @@ function setupSpeech() {
         }
     };
 
-    // ... (Hata yönetimi ve butonlar AYNI) ...
     rec.onerror = (event) => {
         if(event.error === 'no-speech') return; 
         if(event.error !== 'aborted') {
-            console.error("Speech Error:", event.error);
             if (event.error === 'network') {
                 state.autoListen = false;
                 stopMic();
@@ -332,13 +347,8 @@ function setupSpeech() {
     state.recognition = rec;
 
     $('micBtn').onclick = () => {
-        if(state.autoListen) {
-            state.autoListen = false;
-            stopMic();
-            return;
-        }
-        if(state.isRecording) stopMic();
-        else tryStartMic();
+        if(state.autoListen) { state.autoListen = false; stopMic(); return; }
+        if(state.isRecording) stopMic(); else tryStartMic();
     };
 
     $('liveBtn').onclick = () => {
@@ -357,7 +367,6 @@ function setupSpeech() {
     };
 }
 
-// ... (Mic Helper fonksiyonları AYNI) ...
 function tryStartMic() { 
     if(state.recognition && !state.isRecording) {
         try { state.recognition.start(); } catch(e) {}
@@ -376,11 +385,14 @@ function stopMic() {
 function updateMicUI() {
     const micBtn = $('micBtn');
     const liveBtn = $('liveBtn');
+    if(!micBtn || !liveBtn) return;
+
     micBtn.style.color = '';
     micBtn.classList.remove('active-pulse');
     liveBtn.style.color = '';
     liveBtn.classList.remove('active-pulse');
     micBtn.style.opacity = '1';
+
     if (state.autoListen) {
         liveBtn.style.color = 'white';
         liveBtn.classList.add('active-pulse');
@@ -390,50 +402,133 @@ function updateMicUI() {
     }
 }
 
+// ==========================================
+// 6. AUDIO VISUALIZER & TTS
+// ==========================================
+
+async function startAudioVisualizer() {
+    const canvas = $('audioVisualizer');
+    if(!canvas) return;
+    canvas.classList.add('active');
+    
+    try {
+        if (!state.audioContext) {
+            state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (state.audioContext.state === 'suspended') await state.audioContext.resume();
+
+        // Daha önce oluşturduysak tekrar stream istemeyelim (tarayıcı izni için)
+        // Ancak webkitSpeechRecognition stream'i ile çakışabilir, test etmek gerek.
+        // En temizi yeni stream almak.
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // Eski kaynakları temizle
+        if (state.microphone) state.microphone.disconnect();
+        if (state.analyser) state.analyser.disconnect();
+
+        state.microphone = state.audioContext.createMediaStreamSource(stream);
+        state.analyser = state.audioContext.createAnalyser();
+        state.analyser.fftSize = 256;
+        state.microphone.connect(state.analyser);
+
+        drawVisualizer();
+    } catch (e) {
+        console.warn("Audio Visualizer başlatılamadı (İzin verilmemiş olabilir):", e);
+    }
+}
+
+function stopAudioVisualizer() {
+    const canvas = $('audioVisualizer');
+    if(canvas) canvas.classList.remove('active');
+    if(state.visualizerFrame) cancelAnimationFrame(state.visualizerFrame);
+}
+
+function drawVisualizer() {
+    const canvas = $('audioVisualizer');
+    if(!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const bufferLength = state.analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const draw = () => {
+        state.visualizerFrame = requestAnimationFrame(draw);
+        state.analyser.getByteFrequencyData(dataArray);
+
+        ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg-sidebar').trim();
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const barWidth = (canvas.width / bufferLength) * 2.5;
+        let barHeight;
+        let x = 0;
+        
+        const primaryColor = getComputedStyle(document.body).getPropertyValue('--primary').trim();
+        ctx.fillStyle = primaryColor;
+
+        for(let i = 0; i < bufferLength; i++) {
+            barHeight = dataArray[i] / 2;
+            ctx.fillRect(x, (canvas.height - barHeight) / 2, barWidth, barHeight);
+            x += barWidth + 1;
+        }
+    };
+    draw();
+}
+
+function speakText(text) {
+    if (!window.speechSynthesis) return;
+    const cleanText = text.replace(/[#*`_]/g, '');
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = $('langSelect').value;
+    utterance.rate = 1.0;
+    window.speechSynthesis.speak(utterance);
+}
 
 // ==========================================
-// 6. STATISTICS & DATA MANAGEMENT (NEW)
+// 7. STATISTICS (FIXED SAFE UPDATE)
 // ==========================================
 
 function updateLiveStats() {
     const dur = Date.now() - state.startTime;
-    $('latencyVal').innerText = `${dur}ms`;
+    if($('latencyVal')) $('latencyVal').innerText = `${dur}ms`;
     const tps = (state.tokenCount / (dur/1000)).toFixed(1);
-    $('tpsVal').innerText = tps;
+    if($('tpsVal')) $('tpsVal').innerText = tps;
 }
 
+// DÜZELTME BURADA: Element var mı kontrolü
 function updateSessionStats(tokens, durationMs) {
     state.sessionStats.totalTokens += tokens;
     state.sessionStats.totalTimeMs += durationMs;
     state.sessionStats.requestCount++;
     
-    $('sessionTotalTokenVal').innerText = state.sessionStats.totalTokens;
+    const tokenEl = $('sessionTotalTokenVal');
+    if(tokenEl) tokenEl.innerText = state.sessionStats.totalTokens;
     
     if (state.sessionStats.totalTimeMs > 0) {
         const avgTps = (state.sessionStats.totalTokens / (state.sessionStats.totalTimeMs / 1000)).toFixed(1);
-        $('sessionAvgTpsVal').innerText = avgTps;
+        const avgTpsEl = $('sessionAvgTpsVal');
+        if(avgTpsEl) avgTpsEl.innerText = avgTps;
     }
 }
 
-// YENİ: Geçmişi İndir
 window.downloadHistory = () => {
     if (state.history.length === 0) {
         alert("İndirilecek geçmiş yok.");
         return;
     }
-    
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state.history, null, 2));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", "sentiric_chat_history_" + new Date().toISOString() + ".json");
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
+    const node = document.createElement('a');
+    node.setAttribute("href", dataStr);
+    node.setAttribute("download", "sentiric_chat_" + new Date().toISOString() + ".json");
+    document.body.appendChild(node);
+    node.click();
+    node.remove();
 };
 
-// ... (Geri kalan UI Helper fonksiyonları: buildPayload, addMessage, setBusy vs. AYNI) ...
+// ==========================================
+// 8. UI HELPERS
+// ==========================================
 
-function buildPayload(lastMsg) {
+function buildPayload(text) {
     const msgs = [];
     const sys = $('systemPrompt').value;
     const rag = $('ragInput').value;
@@ -457,7 +552,12 @@ function addMessage(role, htmlContent) {
     const div = document.createElement('div');
     div.className = `message ${role}`;
     div.innerHTML = `
-        <div class="avatar"><i class="fas fa-${role==='user'?'user':'robot'}"></i></div>
+        <div class="avatar">
+            <i class="fas fa-${role==='user'?'user':'robot'}"></i>
+        </div>
+        <div class="${role}">
+            ${role}
+        </div>
         <div class="bubble">
             <div class="markdown-content">${htmlContent}</div>
         </div>
@@ -570,35 +670,29 @@ window.toggleTheme = () => {
 window.clearChat = () => {
     state.history = [];
     state.sessionStats = { totalTokens: 0, totalTimeMs: 0, requestCount: 0 };
-    $('sessionTotalTokenVal').innerText = '0';
-    $('sessionAvgTpsVal').innerText = '--';
+    if($('sessionTotalTokenVal')) $('sessionTotalTokenVal').innerText = '0';
+    if($('sessionAvgTpsVal')) $('sessionAvgTpsVal').innerText = '--';
     
     const container = $('chatContainer');
     container.innerHTML = `
         <div class="empty-state" id="emptyState" style="display: flex;">
             <div class="logo-shine"><i class="fas fa-layer-group"></i></div>
             <h2>Sentiric Engine Hazır</h2>
-            <p>Parametreleri ayarla, veri yükle ve sohbete başla.</p>
+            <p>Mikrofonu açın veya yazmaya başlayın.</p>
         </div>
     `;
 };
 
 async function playWelcomeAnimation() {
     $('chatContainer').innerHTML = '';
-    const welcomeText = `### 🚀 Sentiric Omni-Studio Hazır!
+    const welcomeText = `### 🚀 Sentiric Omni-Studio v3.1
+**Hazır Durumda:**
+*   🎤 **Canlı Mod:** Konuştuğunuz an "Ghost Text" olarak belirir.
+*   ⚡ **Barge-in:** AI konuşurken sözünü kesebilirsiniz.
+*   📊 **Görselleştirici:** Ses dalgalarını canlı izleyin.
+*   🔊 **TTS:** Cevapları sesli dinleyin.
 
-Ben sizin **Yerel, Özel ve Hızlı** yapay zeka motorunuzum.
-
-**🎛️ Nasıl Kullanılır?**
-*   🎤 **Dikte:** Mesajınızı yazdırmak için mikrofona bir kez basın.
-*   🎧 **Canlı Mod (Barge-in):** Kulaklık ikonuna basın. Ben konuşurken bile sözümü kesebilirsiniz, sizi sürekli dinlerim.
-*   📂 **RAG (Veri):** Dokümanlarınızı sürükleyip bırakarak veya ataş ikonuna basarak hafızama ekleyebilirsiniz.
-
-**⚡ Sistem Durumu:**
-*   **Motor:** Sentirik 1B (GPU Accelerated)
-*   **Hafıza:** Akıllı Context Yönetimi (8k)
-
-*Hadi başlayalım! Ne hakkında konuşmak istersiniz?*`;
+*Nasıl yardımcı olabilirim?*`;
 
     const div = document.createElement('div');
     div.className = 'message ai';
@@ -626,16 +720,14 @@ Ben sizin **Yerel, Özel ve Hızlı** yapay zeka motorunuzum.
         }
     }
     type();
-    state.history.push({role: 'assistant', content: welcomeText});
 }
 
 function addQuickReplies(bubbleDiv) {
     const chips = document.createElement('div');
     chips.className = 'quick-replies';
     chips.innerHTML = `
-        <button onclick="$('userInput').value='Bana bir şiir yaz'; sendMessage()">📝 Şiir Yaz</button>
-        <button onclick="$('userInput').value='Bu sistemi kim yaptı?'; sendMessage()">🤔 Kimsin?</button>
-        <button onclick="$('userInput').value='RAG sistemi nasıl çalışır?'; sendMessage()">📂 RAG Nedir?</button>
+        <button onclick="$('userInput').value='Merhaba, kendini tanıt'; sendMessage()">👋 Merhaba</button>
+        <button onclick="$('userInput').value='Şu anki sistem istatistiklerin nedir?'; sendMessage()">📊 İstatistikler</button>
     `;
     bubbleDiv.querySelector('.bubble').appendChild(chips);
 }
