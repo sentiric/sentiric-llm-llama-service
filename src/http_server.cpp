@@ -78,6 +78,23 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         res.status = model_ready ? 200 : 503;
     });
 
+    // --- YENİ: OpenAI Uyumlu Models Endpoint'i ---
+    svr_.Get("/v1/models", [this](const httplib::Request &, httplib::Response &res) {
+        const auto& settings = engine_->get_settings();
+        json model_card = {
+            {"id", settings.model_id.empty() ? "local-model" : settings.model_id},
+            {"object", "model"},
+            {"created", std::time(nullptr)},
+            {"owned_by", "sentiric-llm-service"}
+        };
+        json response_body = {
+            {"object", "list"},
+            {"data", {model_card}}
+        };
+        res.set_header("Access-Control-Allow-Origin", "*");
+        res.set_content(response_body.dump(), "application/json");
+    });
+
     svr_.Get("/contexts", [](const httplib::Request &, httplib::Response &res) {
         json context_list = json::array();
         try {
@@ -105,7 +122,7 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         } else { res.status = 404; }
     });
 
-    // --- CHAT COMPLETION ENDPOINT (PRODUCER-CONSUMER FIX + GRAMMAR SUPPORT) ---
+    // --- CHAT COMPLETION ENDPOINT ---
     svr_.Post("/v1/chat/completions", [this](const httplib::Request &req, httplib::Response &res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         
@@ -194,8 +211,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
 
                  json response_json;
                  response_json["choices"][0]["message"]["content"] = full_response;
-                 // Eğer JSON moduysa ve cevap JSON ise, bunu parse edip object olarak döndürmek de bir seçenek olabilir,
-                 // ama standart text olarak döndürmek daha güvenlidir.
                  res.set_content(response_json.dump(), "application/json");
             }
 
@@ -209,6 +224,14 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
     svr_.Options("/v1/chat/completions", [](const httplib::Request &, httplib::Response &res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         res.set_header("Access-Control-Allow-Methods", "POST, OPTIONS");
+        res.set_header("Access-Control-Allow-Headers", "Content-Type");
+        res.status = 204;
+    });
+    
+    // Model endpoint için OPTIONS
+    svr_.Options("/v1/models", [](const httplib::Request &, httplib::Response &res) {
+        res.set_header("Access-Control-Allow-Origin", "*");
+        res.set_header("Access-Control-Allow-Methods", "GET, OPTIONS");
         res.set_header("Access-Control-Allow-Headers", "Content-Type");
         res.status = 204;
     });

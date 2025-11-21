@@ -120,27 +120,39 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         }
         prompt_tokens.resize(n_tokens);
         
-        // --- DÜZELTİLEN TRUNCATION LOGIC ---
+        // --- DÜZELTİLEN TRUNCATION LOGIC (MİMARİ DÜZELTME) ---
         uint32_t max_context = settings_.context_size;
         
         // İsteğe özel max_tokens varsa onu kullan, yoksa varsayılanı al
         uint32_t req_max_gen = params.has_max_new_tokens() ? params.max_new_tokens() : settings_.default_max_tokens;
         
-        // Güvenlik: İstenen cevap uzunluğu context'i patlatmasın
-        if (req_max_gen > max_context / 2) {
-            req_max_gen = max_context / 2; // Context'in en fazla yarısını cevaba ayır
+        // ESKİ HATALI MANTIK: if (req_max_gen > max_context / 2) ...
+        // YENİ MANTIK: Prompt + ReqGen <= MaxContext olmalı.
+        // Prompt önceliği mi, Generation önceliği mi? 
+        // Genelde Generation'a saygı duyarız ama Context'i aşamaz.
+        
+        // Asla Context'in tamamını generation'a ayırma, en azından prompt için yer kalsın.
+        // Ancak prompt çok uzunsa ve RAG yapıyorsak, generation'dan kısmak yerine prompt'un başını keseriz.
+        
+        // Güvenlik buffer'ı
+        uint32_t buffer = 64;
+        if (req_max_gen > max_context - buffer) {
+            req_max_gen = max_context - buffer; 
         }
 
-        // Prompt için güvenli limit: Context - Cevap Payı - Buffer (64)
-        // Ama EN AZ context'in %10'u kadar yer kalsın (veya min 128 token)
-        uint32_t reserve_for_gen = req_max_gen + 64;
-        uint32_t min_prompt_space = std::max((uint32_t)128, max_context / 10);
+        uint32_t reserve_for_gen = req_max_gen + buffer;
+        uint32_t min_prompt_space = std::max((uint32_t)128, max_context / 10); // En az %10 prompt alanı
         
         uint32_t safe_prompt_limit;
         if (max_context > reserve_for_gen) {
             safe_prompt_limit = max_context - reserve_for_gen;
         } else {
-            safe_prompt_limit = min_prompt_space; // Acil durum alanı
+            // Generation isteği çok büyükse, prompt için minimum alanı zorla ayır
+            safe_prompt_limit = min_prompt_space;
+            // Generation'ı da mecburen küçült
+            if (max_context > safe_prompt_limit + buffer) {
+                 req_max_gen = max_context - safe_prompt_limit - buffer;
+            }
         }
 
         if (prompt_tokens.size() > safe_prompt_limit) {

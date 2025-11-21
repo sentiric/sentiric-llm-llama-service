@@ -27,6 +27,9 @@ public:
     bool is_batching_enabled() const { return batcher_ != nullptr; }
     bool is_model_loaded() const;
     LlamaContextPool& get_context_pool() { return *context_pool_; }
+    
+    // Gateway ve API Discovery için gerekli
+    const Settings& get_settings() const { return settings_; }
 
 private:
     void process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batch);
