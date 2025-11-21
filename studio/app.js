@@ -1,90 +1,109 @@
-// --- STATE ---
+// ==========================================
+// 1. STATE & CONFIGURATION
+// ==========================================
 const $ = (id) => document.getElementById(id);
+
 const state = { 
-    generating: false, 
-    controller: null, 
-    history: [], 
-    autoListen: false, // Canlı mod aktif mi?
-    isRecording: false, // Şu an mikrofon açık mı?
-    recognition: null, 
-    startTime: 0, 
-    tokenCount: 0,
-    autoScroll: true,
-    interrupted: false
+    generating: false,      // AI şu an cevap üretiyor mu?
+    controller: null,       // Fetch abort controller
+    history: [],            // Konuşma geçmişi
+    autoListen: false,      // Canlı Sohbet (Barge-in) modu açık mı?
+    isRecording: false,     // Mikrofon şu an aktif mi?
+    recognition: null,      // Speech API instance
+    startTime: 0,           // Performans ölçümü için
+    tokenCount: 0,          // Token sayacı
+    autoScroll: true,       // Otomatik kaydırma kilidi
+    interrupted: false      // Söz kesme bayrağı
 };
 
-// --- INIT ---
+// ==========================================
+// 2. INITIALIZATION
+// ==========================================
 document.addEventListener('DOMContentLoaded', () => {
+    // Tema Yükle
     const theme = localStorage.getItem('theme') || 'light';
     document.body.setAttribute('data-theme', theme);
     
+    // Kurulumlar
+    setupMarkdown();
     setupEvents();
     setupSpeech();
-    setupMarkdown();
+    
+    // Sağlık Kontrolü Başlat
     checkHealth();
     setInterval(checkHealth, 10000);
 
-
-    clearChat();
-    // SİMULASYON BAŞLATIÇI
+    // Karşılama Animasyonu
     playWelcomeAnimation();
 });
 
 function setupMarkdown() {
-    marked.setOptions({
-        highlight: function(code, lang) {
-            const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-            return hljs.highlight(code, { language }).value;
-        },
-        langPrefix: 'hljs language-'
-    });
+    if (typeof marked !== 'undefined') {
+        marked.setOptions({
+            highlight: function(code, lang) {
+                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                return hljs.highlight(code, { language }).value;
+            },
+            langPrefix: 'hljs language-'
+        });
+    }
 }
 
-// --- EVENTS ---
+// ==========================================
+// 3. EVENT HANDLERS
+// ==========================================
 function setupEvents() {
     const input = $('userInput');
     
+    // Auto-Resize Textarea
     input.addEventListener('input', function() {
         this.style.height = 'auto';
         this.style.height = Math.min(this.scrollHeight, 200) + 'px';
     });
 
+    // Enter Tuşu (Shift+Enter hariç)
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            if(window.innerWidth < 768) input.blur();
-            // Manuel girişte söz kesme mantığı
+            if(window.innerWidth < 768) input.blur(); // Mobilde klavyeyi kapat
+            
+            // Eğer AI konuşuyorsa sözünü kes
             if (state.generating) interruptGeneration();
             sendMessage();
         }
     });
 
+    // Gönder Butonu
     $('sendBtn').onclick = () => {
-        // Manuel gönderim yapılırsa, canlı modu kapatmıyoruz ama mikrafonu resetliyoruz
+        // Manuel gönderimde canlı mod devam etsin mi? 
+        // UX Kararı: Manuel müdahale varsa dikteyi durdur ama modu kapatma.
         if(state.isRecording) stopMic(); 
         if (state.generating) interruptGeneration();
         sendMessage();
     };
     
+    // Durdur Butonu (Acil Fren)
     $('stopBtn').onclick = () => {
-        // Stop butonu acil durum frenidir, her şeyi durdurur.
-        state.autoListen = false;
-        interruptGeneration();
-        stopMic();
-        updateMicUI();
+        state.autoListen = false; // Modu kapat
+        interruptGeneration();    // Üretimi durdur
+        stopMic();                // Mikrofonu kapat
     };
     
+    // Ayar Slider'ları
     $('tempInput').oninput = (e) => $('tempVal').innerText = e.target.value;
     $('tokenLimit').oninput = (e) => $('tokenLimitVal').innerText = e.target.value;
     $('historyLimit').oninput = (e) => $('historyVal').innerText = e.target.value;
     $('ragInput').oninput = (e) => $('ragCharCount').innerText = e.target.value.length;
 
+    // Scroll Dedektörü
     $('chatContainer').addEventListener('scroll', function() {
+        // Kullanıcı yukarı kaydırdıysa otomatik kaydırmayı durdur
         const isAtBottom = this.scrollHeight - this.scrollTop - this.clientHeight < 50;
         state.autoScroll = isAtBottom;
         $('scrollBtn').classList.toggle('hidden', isAtBottom);
     });
 
+    // Dosya Yükleme (RAG)
     $('fileInput').onchange = async (e) => {
         const file = e.target.files[0];
         if(!file) return;
@@ -101,110 +120,34 @@ function setupEvents() {
     };
 }
 
-// --- WELCOME ANIMATION (YENİ) ---
-async function playWelcomeAnimation() {
-    // UI temizle
-    $('chatContainer').innerHTML = '';
-    
-    // Tanıtım Metni (Markdown formatında)
-    const welcomeText = `### 🚀 Sentiric Omni-Studio Hazır!
+// ==========================================
+// 4. CORE LOGIC (LLM INTERACTION)
+// ==========================================
 
-Ben sizin **Yerel, Özel ve Hızlı** yapay zeka motorunuzum.
-
-**🎛️ Nasıl Kullanılır?**
-*   🎤 **Dikte:** Mesajınızı yazdırmak için mikrofona bir kez basın.
-*   🎧 **Canlı Mod (Barge-in):** Kulaklık ikonuna basın. Ben konuşurken bile sözümü kesebilirsiniz, sizi sürekli dinlerim.
-*   📂 **RAG (Veri):** Dokümanlarınızı sürükleyip bırakarak veya ataş ikonuna basarak hafızama ekleyebilirsiniz.
-
-**⚡ Sistem Durumu:**
-*   **Motor:** Sentirik 1B (GPU Accelerated)
-*   **Hafıza:** Akıllı Context Yönetimi (8k)
-
-*Hadi başlayalım! Ne hakkında konuşmak istersiniz?*`;
-
-    // AI Balonu Oluştur
-    const div = document.createElement('div');
-    div.className = 'message ai';
-    div.innerHTML = `
-        <div class="avatar"><i class="fas fa-cube"></i></div>
-        <div class="bubble">
-            <div class="markdown-content"></div>
-        </div>
-    `;
-    $('chatContainer').appendChild(div);
-    
-    const contentDiv = div.querySelector('.markdown-content');
-    
-    // Daktilo Efekti
-    let i = 0;
-    const speed = 10; // Yazma hızı (ms)
-    
-    function type() {
-        if (i < welcomeText.length) {
-            // Markdown render etmeden ham metni yazıyoruz (Streaming hissi için)
-            // Ancak HTML taglerini bozmamak için basit bir text node gibi davranıyoruz
-            // Sonra hepsini render edeceğiz.
-            // Daha akıcı bir görüntü için, her karakterde değil, kelime kelime de gidebiliriz
-            // Ama karakter karakter daha "AI" hissi verir.
-            
-            // Performans için: Anlık render yerine metni biriktirip basıyoruz
-            const currentText = welcomeText.substring(0, i + 1);
-            contentDiv.innerHTML = marked.parse(currentText) + '<span class="cursor"></span>';
-            i++;
-            scrollToBottom();
-            setTimeout(type, speed);
-        } else {
-            // Bittiğinde temiz render ve butonlar
-            contentDiv.innerHTML = marked.parse(welcomeText);
-            enhanceCodeBlocks(div);
-            // Opsiyonel: Başlangıç ipuçları (Chips) ekleyebiliriz
-            addQuickReplies(div);
-        }
-    }
-    
-    type();
-    
-    // History'e ekle (Böylece bağlamda kalır)
-    state.history.push({role: 'assistant', content: welcomeText});
-}
-
-// Hızlı Başlangıç Butonları (Opsiyonel Güzellik)
-function addQuickReplies(bubbleDiv) {
-    const chips = document.createElement('div');
-    chips.className = 'quick-replies';
-    chips.innerHTML = `
-        <button onclick="$('userInput').value='Bana bir şiir yaz'; sendMessage()">📝 Şiir Yaz</button>
-        <button onclick="$('userInput').value='Bu sistemi kim yaptı?'; sendMessage()">🤔 Kimsin?</button>
-        <button onclick="$('userInput').value='RAG sistemi nasıl çalışır?'; sendMessage()">📂 RAG Nedir?</button>
-    `;
-    bubbleDiv.querySelector('.bubble').appendChild(chips);
-}
-
-// --- INTERRUPT LOGIC (YENİ) ---
+// Araya Girme (Interrupt) Mantığı
 function interruptGeneration() {
     if (state.controller) {
         state.interrupted = true;
-        state.controller.abort(); // Backend'e "Dur" sinyali gönderir
+        state.controller.abort(); // Backend isteğini iptal et
         state.controller = null;
     }
 }
 
-// --- CORE LOGIC ---
 async function sendMessage() {
     const text = $('userInput').value.trim();
     if (!text) return;
 
-    // Eğer önceki işlem hala sürüyorsa ve buraya geldiysek, interrupt edilmiştir.
-    
+    // UI Hazırlık
     $('userInput').value = '';
     $('userInput').style.height = 'auto';
-    //$('emptyState').style.display = 'none';
     state.autoScroll = true;
     state.interrupted = false;
     
+    // Kullanıcı Mesajını Ekle
     addMessage('user', escapeHtml(text));
     state.history.push({role: 'user', content: text});
 
+    // AI Balonu (Placeholder)
     const aiBubble = addMessage('ai', '<span class="cursor"></span>');
     const bubbleContent = aiBubble.querySelector('.markdown-content');
     
@@ -215,8 +158,7 @@ async function sendMessage() {
 
     const payload = buildPayload(text);
 
-    // --- BARGE-IN MANTIĞI: HEMEN DİNLEMEYE BAŞLA ---
-    // İstek gönderilirken mikrofonu açık tutuyoruz ki kullanıcı araya girebilsin.
+    // Barge-in: İstek giderken mikrofonu aç (Kullanıcı araya girebilsin)
     if (state.autoListen) {
         tryStartMic();
     }
@@ -236,13 +178,14 @@ async function sendMessage() {
         let fullText = "";
         let buffer = "";
 
+        // Stream Okuma Döngüsü
         while(true) {
             const {done, value} = await reader.read();
             if(done) break;
             
             buffer += decoder.decode(value, {stream: true});
             const lines = buffer.split('\n');
-            buffer = lines.pop();
+            buffer = lines.pop(); // Tamamlanmamış satırı sakla
 
             for(const line of lines) {
                 if(line.startsWith('data: ') && line !== 'data: [DONE]') {
@@ -251,6 +194,7 @@ async function sendMessage() {
                         const content = json.choices[0]?.delta?.content;
                         if(content) {
                             fullText += content;
+                            // Canlı Render (Basit)
                             bubbleContent.innerHTML = marked.parse(fullText) + '<span class="cursor"></span>';
                             state.tokenCount++;
                             updateStats();
@@ -261,7 +205,7 @@ async function sendMessage() {
             }
         }
 
-        // Final Render (Başarılı Bitiş)
+        // Bitiş: Tam Render ve Butonlar
         bubbleContent.innerHTML = marked.parse(fullText);
         enhanceCodeBlocks(aiBubble);
         addMessageActions(aiBubble, fullText);
@@ -269,29 +213,30 @@ async function sendMessage() {
 
     } catch(err) {
         if(err.name === 'AbortError' || state.interrupted) {
-            // Kasıtlı Kesilme (Interruption)
-            bubbleContent.innerHTML = marked.parse(fullText) + ' <i class="fas fa-bolt" style="color:var(--warning)" title="Sözü kesildi"></i>';
-            // History'e yarım da olsa ekle ki bağlam kopmasın
+            // Kasıtlı Kesilme
+            bubbleContent.innerHTML = marked.parse(fullText) + ' <i class="fas fa-bolt" style="color:var(--warning); margin-left:5px;" title="Sözü kesildi"></i>';
+            // Yarım kalan cevabı da history'e ekle ki model ne dediğini bilsin
             if(fullText) state.history.push({role: 'assistant', content: fullText});
         } else {
-            // Gerçek Hata
+            // Hata
             bubbleContent.innerHTML += `<br><div style="color:var(--danger)">❌ Hata: ${err.message}</div>`;
+            // Hata durumunda döngüyü kır
             state.autoListen = false;
-            stopMicUI();
+            stopMic();
         }
     } finally {
         setBusy(false);
-        // Eğer eller serbestse ve kesilmediyse dinlemeye devam et
-        // Eğer kesildiyse zaten 'onresult' yeni bir sendMessage tetikleyecek.
+        // Döngü devam ediyorsa ve kesilmediyse mikrofonu tazeleyerek açık tut
         if(state.autoListen && !state.interrupted) {
-             // Küçük bir gecikme ile mikrofonun kararlı kalmasını sağla
              setTimeout(tryStartMic, 500);
         }
         if(state.autoScroll) scrollToBottom();
     }
 }
 
-// --- ROBUST SPEECH RECOGNITION (V3.0) ---
+// ==========================================
+// 5. SPEECH RECOGNITION (V3.1 Optimized)
+// ==========================================
 function setupSpeech() {
     if(!('webkitSpeechRecognition' in window)) { 
         $('micBtn').style.display='none'; 
@@ -301,26 +246,29 @@ function setupSpeech() {
     
     const rec = new webkitSpeechRecognition();
     rec.lang = 'tr-TR';
-    rec.continuous = false; 
+    rec.continuous = false; // Cümle bazlı çalışıyoruz
     rec.interimResults = true; 
 
-    // --- EVENT HANDLERS ---
+    // --- Speech Events ---
     rec.onstart = () => { 
         state.isRecording = true;
-        $('voiceStatus').classList.remove('hidden');
-        updateMicUI();
+        updateMicUI(); // Merkezi UI güncellemesi
+        
+        // Durum Çubuğu Metni
+        const statusEl = $('voiceStatus');
+        statusEl.classList.remove('hidden');
         
         if(state.autoListen) {
             if (state.generating) {
-                $('voiceStatus').innerHTML = '⚡ <b>Araya Girme Aktif:</b> Dinliyor...';
-                $('voiceStatus').style.color = 'var(--warning)';
+                statusEl.innerHTML = '⚡ <b>Araya Girme:</b> Dinliyor...';
+                statusEl.style.color = 'var(--warning)';
             } else {
-                $('voiceStatus').innerHTML = '🎧 <b>Canlı Mod:</b> Dinliyor...';
-                $('voiceStatus').style.color = 'var(--success)';
+                statusEl.innerHTML = '🎧 <b>Canlı Mod:</b> Dinliyor...';
+                statusEl.style.color = 'var(--success)';
             }
         } else {
-            $('voiceStatus').innerText = 'Dikte ediliyor...';
-            $('voiceStatus').style.color = 'var(--text-sub)';
+            statusEl.innerText = 'Dikte ediliyor...';
+            statusEl.style.color = 'var(--text-sub)';
         }
     };
 
@@ -328,12 +276,13 @@ function setupSpeech() {
         state.isRecording = false;
         
         if(state.autoListen) {
-            // Canlı moddaysa döngüyü sürdür
+            // Canlı moddaysa, eğer AI konuşuyorsa mikrofonu hemen geri aç
+            // (Sessizlik nedeniyle kapanmış olabilir)
             if (state.generating) {
-                // AI konuşurken mikrofon kapandıysa hemen geri aç
                 tryStartMic();
             }
         } else {
+            // Dikte modu bitti, UI temizle
             $('voiceStatus').classList.add('hidden');
             updateMicUI();
         }
@@ -350,12 +299,12 @@ function setupSpeech() {
         if(final) {
             const val = final.trim();
             if (val.length > 0) {
-                // Dikte modunda sadece yaz, gönderme
+                // Senaryo 1: Dikte Modu (Sadece Yaz)
                 if (!state.autoListen) {
                     const current = $('userInput').value;
                     $('userInput').value = current ? current + " " + val : val;
                 } 
-                // Canlı modda yaz ve GÖNDER
+                // Senaryo 2: Canlı Mod (Yaz ve Gönder)
                 else {
                     $('userInput').value = val;
                     if (state.generating) {
@@ -369,118 +318,108 @@ function setupSpeech() {
     };
 
     rec.onerror = (event) => {
-        if(event.error === 'no-speech') {
-            // Sessizlik hatası normaldir, canlı moddaysa yoksay ve devam et
-            return; 
-        }
+        // 'no-speech' hatası sessiz ortamda normaldir, yoksay
+        if(event.error === 'no-speech') return; 
+        
         if(event.error !== 'aborted') {
             console.error("Speech Error:", event.error);
-            // Kritik hata varsa canlı modu kapat
             state.autoListen = false;
-            state.isRecording = false;
-            updateMicUI();
+            stopMic();
         }
     };
 
     state.recognition = rec;
 
-    // --- BUTON MANTIKLARI ---
+    // --- Buton Tıklamaları ---
 
-    // 1. Dikte Butonu (Tek Tık: Aç/Kapa)
+    // 1. Dikte Butonu (Mikrofon)
     $('micBtn').onclick = () => {
-        // Eğer canlı mod açıksa, önce onu kapat
         if(state.autoListen) {
+            // Canlı mod açıksa kapat, dikteye geçme
             state.autoListen = false;
             stopMic();
-            updateMicUI();
             return;
         }
-
-        if(state.isRecording) {
-            stopMic();
-        } else {
-            tryStartMic();
-        }
+        // Toggle Dikte
+        if(state.isRecording) stopMic();
+        else tryStartMic();
     };
 
-    // 2. Canlı Mod Butonu (Tek Tık: Modu Toggle Et)
+    // 2. Canlı Mod Butonu (Kulaklık)
     $('liveBtn').onclick = () => {
-        state.autoListen = !state.autoListen;
+        state.autoListen = !state.autoListen; // Toggle
         
         if(state.autoListen) {
-            // Mod açıldı: Mikrofonu başlat
+            // Açıldı: Kayıt yoksa başlat
             if(!state.isRecording) tryStartMic();
         } else {
-            // Mod kapandı: Mikrofonu durdur
+            // Kapandı: Durdur
             stopMic();
         }
         updateMicUI();
     };
 }
 
-// Güvenli Başlatma (Hata vermeden)
+// --- Speech Helpers ---
+
 function tryStartMic() { 
     if(state.recognition && !state.isRecording) {
         try {
             state.recognition.start();
         } catch(e) {
-            console.warn("Mic start error (ignored):", e);
+            // Tarayıcı bazen "already started" diyebilir, yoksay.
         }
     }
 }
 
-function stopMicUI() {
-    $('micBtn').style.color = '';
-    $('micBtn').classList.remove('active-pulse');
-    $('voiceStatus').classList.add('hidden');
-}
-
-
-// Güvenli Durdurma
 function stopMic() {
     if(state.recognition) {
-        try {
-            state.recognition.stop();
-        } catch(e) {}
+        try { state.recognition.stop(); } catch(e) {}
     }
     state.isRecording = false;
     $('voiceStatus').classList.add('hidden');
+    updateMicUI();
 }
 
-// UI Güncelleme (Butonların renkleri)
+// Merkezi UI Güncelleyici (Tek Doğru Kaynak)
 function updateMicUI() {
     const micBtn = $('micBtn');
     const liveBtn = $('liveBtn');
 
-    // Reset
+    // Temizle
     micBtn.style.color = '';
     micBtn.classList.remove('active-pulse');
     liveBtn.style.color = '';
     liveBtn.classList.remove('active-pulse');
+    micBtn.style.opacity = '1';
 
     if (state.autoListen) {
-        // Canlı Mod Aktif
+        // Durum: Canlı Mod
         liveBtn.style.color = 'white';
-        liveBtn.classList.add('active-pulse'); // Kırmızı değil yeşil/mavi yapabiliriz CSS'te
-        micBtn.style.opacity = '0.5'; // Dikte pasif görünsün
+        liveBtn.classList.add('active-pulse');
+        micBtn.style.opacity = '0.4'; // Dikte pasif
     } else if (state.isRecording) {
-        // Sadece Dikte Aktif
+        // Durum: Sadece Dikte
         micBtn.style.color = 'var(--danger)';
-    } else {
-        micBtn.style.opacity = '1';
     }
 }
 
-// ... (buildPayload ve diğer UI fonksiyonları aynı kalır) ...
+// ==========================================
+// 6. UI HELPERS & BUILDERS
+// ==========================================
+
 function buildPayload(lastMsg) {
     const msgs = [];
     const sys = $('systemPrompt').value;
     const rag = $('ragInput').value;
+    
     let finalSystem = sys;
     if(rag) finalSystem += `\n\nBAĞLAM BİLGİSİ:\n${rag}\n\n`;
     if(finalSystem) msgs.push({role: 'system', content: finalSystem});
+
     const limit = parseInt($('historyLimit').value) || 10;
     state.history.slice(-limit).forEach(m => msgs.push(m));
+
     return {
         messages: msgs,
         temperature: parseFloat($('tempInput').value),
@@ -519,18 +458,23 @@ function enhanceCodeBlocks(element) {
         hljs.highlightElement(block);
         const pre = block.parentElement;
         const lang = block.className.replace('hljs language-', '') || 'Code';
-        const header = document.createElement('div');
-        header.className = 'code-header';
-        header.innerHTML = `
-            <span class="code-lang">${lang}</span>
-            <button class="copy-code-btn" onclick="copyCode(this)">
-                <i class="fas fa-copy"></i> Kopyala
-            </button>
-        `;
-        pre.insertBefore(header, block);
+        
+        // Header yoksa ekle
+        if (!pre.querySelector('.code-header')) {
+            const header = document.createElement('div');
+            header.className = 'code-header';
+            header.innerHTML = `
+                <span class="code-lang">${lang}</span>
+                <button class="copy-code-btn" onclick="copyCode(this)">
+                    <i class="fas fa-copy"></i> Kopyala
+                </button>
+            `;
+            pre.insertBefore(header, block);
+        }
     });
 }
 
+// --- UTILS ---
 window.copyText = (btn, text) => {
     navigator.clipboard.writeText(decodeURIComponent(text));
     const icon = btn.querySelector('i');
@@ -556,7 +500,7 @@ function setBusy(busy) {
     $('sendBtn').classList.toggle('hidden', busy);
     $('stopBtn').classList.toggle('hidden', !busy);
     
-    // Barge-in modunda input açık kalmalı ki kullanıcı görebilsin
+    // Barge-in modunda input aktif kalsın
     if(!state.autoListen) {
         if(busy) $('userInput').setAttribute('disabled', true);
         else {
@@ -578,14 +522,15 @@ function escapeHtml(text) {
     return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// --- NAVIGATION & THEME ---
 window.togglePanel = (id, open = null) => {
     const el = $(id);
     const overlay = $('overlay');
     if (open === true) el.classList.add('active');
     else if (open === false) el.classList.remove('active');
     else el.classList.toggle('active');
-    const isMobile = window.innerWidth < 768;
-    if(isMobile) {
+    
+    if(window.innerWidth < 768) {
         const anyActive = $('leftPanel').classList.contains('active') || $('rightPanel').classList.contains('active');
         overlay.classList.toggle('active', anyActive);
     }
@@ -610,6 +555,7 @@ window.toggleTheme = () => {
     document.body.setAttribute('data-theme', next);
     localStorage.setItem('theme', next);
 };
+
 window.clearChat = () => {
     state.history = [];
     const container = $('chatContainer');
@@ -621,6 +567,65 @@ window.clearChat = () => {
         </div>
     `;
 };
+
+// --- ONBOARDING ANIMATION ---
+async function playWelcomeAnimation() {
+    $('chatContainer').innerHTML = '';
+    
+    const welcomeText = `### 🚀 Sentiric Omni-Studio Hazır!
+
+Ben sizin **Yerel, Özel ve Hızlı** yapay zeka motorunuzum.
+
+**🎛️ Nasıl Kullanılır?**
+*   🎤 **Dikte:** Mesajınızı yazdırmak için mikrofona bir kez basın.
+*   🎧 **Canlı Mod (Barge-in):** Kulaklık ikonuna basın. Ben konuşurken bile sözümü kesebilirsiniz, sizi sürekli dinlerim.
+*   📂 **RAG (Veri):** Dokümanlarınızı sürükleyip bırakarak veya ataş ikonuna basarak hafızama ekleyebilirsiniz.
+
+**⚡ Sistem Durumu:**
+*   **Motor:** Sentirik 1B (GPU Accelerated)
+*   **Hafıza:** Akıllı Context Yönetimi (8k)
+
+*Hadi başlayalım! Ne hakkında konuşmak istersiniz?*`;
+
+    const div = document.createElement('div');
+    div.className = 'message ai';
+    div.innerHTML = `
+        <div class="avatar"><i class="fas fa-cube"></i></div>
+        <div class="bubble"><div class="markdown-content"></div></div>
+    `;
+    $('chatContainer').appendChild(div);
+    
+    const contentDiv = div.querySelector('.markdown-content');
+    let i = 0;
+    const speed = 10; 
+    
+    function type() {
+        if (i < welcomeText.length) {
+            const currentText = welcomeText.substring(0, i + 1);
+            contentDiv.innerHTML = marked.parse(currentText) + '<span class="cursor"></span>';
+            i++;
+            scrollToBottom();
+            setTimeout(type, speed);
+        } else {
+            contentDiv.innerHTML = marked.parse(welcomeText);
+            enhanceCodeBlocks(div);
+            addQuickReplies(div);
+        }
+    }
+    type();
+    state.history.push({role: 'assistant', content: welcomeText});
+}
+
+function addQuickReplies(bubbleDiv) {
+    const chips = document.createElement('div');
+    chips.className = 'quick-replies';
+    chips.innerHTML = `
+        <button onclick="$('userInput').value='Bana bir şiir yaz'; sendMessage()">📝 Şiir Yaz</button>
+        <button onclick="$('userInput').value='Bu sistemi kim yaptı?'; sendMessage()">🤔 Kimsin?</button>
+        <button onclick="$('userInput').value='RAG sistemi nasıl çalışır?'; sendMessage()">📂 RAG Nedir?</button>
+    `;
+    bubbleDiv.querySelector('.bubble').appendChild(chips);
+}
 
 async function checkHealth() {
     try {
