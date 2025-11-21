@@ -23,7 +23,7 @@
 
 <div class="layout">
     
-    <!-- SOL PANEL: AYARLAR (Mobile: Drawer) -->
+    <!-- SOL PANEL: AYARLAR -->
     <aside class="sidebar left" id="leftPanel">
         <div class="header">
             <div class="brand"><i class="fas fa-cube"></i> Sentirik Studio</div>
@@ -93,6 +93,7 @@
             </div>
 
             <div class="actions">
+                <button class="action-icon" onclick="downloadHistory()" title="Geçmişi İndir (.json)"><i class="fas fa-download"></i></button>
                 <button class="action-icon" onclick="clearChat()" title="Sohbeti Temizle"><i class="fas fa-trash-alt"></i></button>
                 <button class="toggle-btn" onclick="togglePanel('rightPanel')"><i class="fas fa-database"></i></button>
             </div>
@@ -104,7 +105,6 @@
                 <h2>Sentiric Engine Hazır</h2>
                 <p>Parametreleri ayarla, veri yükle ve sohbete başla.</p>
             </div>
-            <!-- Mesajlar Buraya Gelecek -->
         </div>
 
         <!-- INPUT ALANI -->
@@ -113,35 +113,36 @@
             <div class="telemetry-bar">
                 <span id="voiceStatus" class="hidden">🔴 Dinleniyor...</span>
             </div>
+            
             <div class="input-capsule">
                 <button class="tool-btn" onclick="$('fileInput').click()" title="RAG Dosyası Yükle">
                     <i class="fas fa-paperclip"></i>
                 </button>
                 <input type="file" id="fileInput" hidden>
                 
-                <textarea id="userInput" placeholder="Bir şeyler yazın..." rows="1"></textarea>
+                <div class="textarea-wrapper" style="flex:1; position:relative;">
+                    <textarea id="userInput" placeholder="Bir şeyler yazın..." rows="1"></textarea>
+                    <!-- Canlı Önizleme Katmanı -->
+                    <div id="ghostText" class="ghost-overlay"></div>
+                </div>
 
-                <!-- KLASİK: Dikte Butonu -->
                 <button class="tool-btn" id="micBtn" title="Yazıya Çevir">
                     <i class="fas fa-microphone"></i>
                 </button>
 
-                <!-- YENİ: Hands-Free / Live Mode Butonu -->
                 <button class="tool-btn" id="liveBtn" title="Canlı Sohbet">
                     <i class="fas fa-headset"></i>
                 </button>
 
                 <div class="right-tools">
-                    
                     <button class="send-btn" id="sendBtn"><i class="fas fa-paper-plane"></i></button>
                     <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-square"></i></button>
                 </div>
             </div>
-
         </div>
     </main>
 
-    <!-- SAĞ PANEL: RAG & LOG (Mobile: Drawer) -->
+    <!-- SAĞ PANEL: RAG & LOG -->
     <aside class="sidebar right" id="rightPanel">
         <div class="header">
             <div class="tab-group">
@@ -165,16 +166,22 @@
             <div id="logsTab" class="tab-content" style="display: none;">
                 <div class="dashboard-grid">
                     <div class="dash-card">
-                        <label>Hız (TPS)</label>
+                        <label>Anlık Hız (TPS)</label>
                         <div class="value" id="tpsVal">--</div>
                     </div>
                     <div class="dash-card">
-                        <label>Gecikme</label>
+                        <label>Son Gecikme</label>
                         <div class="value" id="latencyVal">--</div>
                     </div>
+                    
+                    <!-- YENİ: Oturum İstatistikleri -->
                     <div class="dash-card full">
-                        <label>Son Çıktı Token</label>
-                        <div class="value" id="tokenVal">0</div>
+                        <label>Oturum Toplamı (Token)</label>
+                        <div class="value" id="sessionTotalTokenVal">0</div>
+                    </div>
+                    <div class="dash-card full">
+                        <label>Ortalama Hız (Oturum)</label>
+                        <div class="value" id="sessionAvgTpsVal">--</div>
                     </div>
                 </div>
                 <div class="console-title">Sistem Logları</div>

@@ -370,3 +370,34 @@ textarea {
     transform: translateY(-2px);
     box-shadow: var(--shadow-sm);
 }
+
+
+/* Ghost Text Overlay (Canlı Önizleme) */
+.textarea-wrapper {
+    display: flex;
+    align-items: center;
+}
+
+.ghost-overlay {
+    position: absolute;
+    top: 8px; /* Textarea padding'i ile uyumlu olmalı */
+    left: 0;
+    pointer-events: none;
+    color: var(--text-sub);
+    opacity: 0.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: var(--font-ui);
+    font-size: 1rem;
+    line-height: 1.5;
+    padding-left: 2px; /* Textarea cursor ile hizalama */
+    width: 100%;
+    overflow: hidden;
+    height: 100%;
+}
+
+/* Textarea'nın arka planı zaten şeffaf olmalı ki ghost görünmesin? 
+   Hayır, ghost textarea'nın ÜZERİNDE değil, içinde gibi davranmalı ama textarea input alıyor.
+   Daha basit yöntem: Textarea value'sunu güncellemek ama gri göstermek.
+   Ancak 'interim' sonuçlar henüz input'a girmediği için ayrı katman mantıklı.
+*/
