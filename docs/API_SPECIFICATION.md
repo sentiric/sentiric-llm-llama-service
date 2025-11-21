@@ -1,6 +1,6 @@
-# 📡 API Spesifikasyonu (v2.0 - Diyalog Odaklı)
+# 📡 API Spesifikasyonu (v2.1 - OpenAI Uyumlu)
 
-Bu belge, `llm-llama-service`'in sunduğu gRPC ve HTTP arayüzlerini tanımlar.
+Bu belge, `llm-llama-service`'in sunduğu gRPC ve HTTP arayüzlerini tanımlar. Servis, endüstri standardı **OpenAI API** formatını destekler.
 
 ## 1. gRPC Servisi: `LLMLocalService`
 
@@ -45,9 +45,49 @@ message LLMLocalServiceGenerateStreamResponse {
 ```
 *Not: `ConversationTurn`, `GenerationParams` ve `FinishDetails` gibi yardımcı mesajların detayları için `sentiric-contracts` reposuna bakınız.*
 
-## 2. HTTP Endpoint'leri
+## 2. HTTP Endpoint'leri (OpenAI Uyumlu)
 
-### 2.1. Sağlık Kontrolü (`/health`)
+Servis, standart OpenAI istemcileri (WebUI, LangChain vb.) ile entegrasyon için aşağıdaki endpoint'leri sunar.
+
+### 2.1. Model Listesi (`GET /v1/models`)
+Mevcut aktif modeli döndürür. Gateway ve Client Discovery için kullanılır.
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "ggml-org/gemma-3-1b-it-qat-GGUF",
+      "object": "model",
+      "created": 1763763803,
+      "owned_by": "sentiric-llm-service"
+    }
+  ]
+}
+```
+
+### 2.2. Chat Completions (`POST /v1/chat/completions`)
+Metin üretimi için ana endpoint. Streaming (SSE) destekler.
+
+**İstek:**
+```json
+{
+  "model": "gemma-3",
+  "messages": [
+    {"role": "system", "content": "Sen yardımsever bir asistansın."},
+    {"role": "user", "content": "Merhaba!"}
+  ],
+  "stream": true,
+  "temperature": 0.8,
+  "max_tokens": 1024,
+  "response_format": { "type": "json_object" } // Opsiyonel: JSON Modu için
+}
+```
+
+**Grammar Desteği (Gelişmiş):**
+OpenAI standardına ek olarak, `grammar` alanı ile saf GBNF string'i gönderilebilir.
+
+### 2.3. Sağlık Kontrolü (`GET /health`)
 ```http
 GET /health
 
@@ -71,6 +111,6 @@ Status: 503 Service Unavailable
 ## 3. Hata Kodları
 
 *   **gRPC:** `UNAVAILABLE` (14) - Model hazır değil, `INVALID_ARGUMENT` (3) - Gerekli alanlar eksik, `INTERNAL` (13) - Beklenmedik motor hatası.
-*   **HTTP:** `200 OK` - Sağlıklı, `503 Service Unavailable` - Model hazır değil.
+*   **HTTP:** `200 OK` - Sağlıklı, `503 Service Unavailable` - Model hazır değil, `400 Bad Request` - Hatalı JSON veya parametre.
 
 ---
