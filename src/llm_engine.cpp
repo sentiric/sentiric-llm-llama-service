@@ -106,10 +106,12 @@ bool safe_kv_seq_rm(llama_context* ctx, llama_seq_id seq, llama_pos p0, llama_po
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
     try {
         auto& request = req_ptr->request;
+        const auto& params = request.params(); // Parametreleri erkenden al
+        
         const std::string formatted_prompt = formatter_->format(request);
         const auto* vocab = llama_model_get_vocab(model_);
         
-        // 1. Tokenizasyon (Aynı)
+        // 1. Tokenizasyon
         std::vector<llama_token> prompt_tokens(formatted_prompt.length() + 64); 
         int n_tokens = llama_tokenize(vocab, formatted_prompt.c_str(), formatted_prompt.length(), prompt_tokens.data(), prompt_tokens.size(), true, true);
         if (n_tokens < 0) {
@@ -118,13 +120,31 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         }
         prompt_tokens.resize(n_tokens);
         
-        // Truncation Logic (Aynı)
+        // --- DÜZELTİLEN TRUNCATION LOGIC ---
         uint32_t max_context = settings_.context_size;
-        uint32_t max_gen = settings_.default_max_tokens;
-        uint32_t safe_prompt_limit = (max_context > max_gen + 64) ? (max_context - max_gen - 64) : (max_context / 2);
         
+        // İsteğe özel max_tokens varsa onu kullan, yoksa varsayılanı al
+        uint32_t req_max_gen = params.has_max_new_tokens() ? params.max_new_tokens() : settings_.default_max_tokens;
+        
+        // Güvenlik: İstenen cevap uzunluğu context'i patlatmasın
+        if (req_max_gen > max_context / 2) {
+            req_max_gen = max_context / 2; // Context'in en fazla yarısını cevaba ayır
+        }
+
+        // Prompt için güvenli limit: Context - Cevap Payı - Buffer (64)
+        // Ama EN AZ context'in %10'u kadar yer kalsın (veya min 128 token)
+        uint32_t reserve_for_gen = req_max_gen + 64;
+        uint32_t min_prompt_space = std::max((uint32_t)128, max_context / 10);
+        
+        uint32_t safe_prompt_limit;
+        if (max_context > reserve_for_gen) {
+            safe_prompt_limit = max_context - reserve_for_gen;
+        } else {
+            safe_prompt_limit = min_prompt_space; // Acil durum alanı
+        }
+
         if (prompt_tokens.size() > safe_prompt_limit) {
-            spdlog::warn("⚠️ Input too large ({} tokens). Truncating to last {} tokens.", prompt_tokens.size(), safe_prompt_limit);
+            spdlog::warn("⚠️ Input too large ({} tokens). Truncating to last {} tokens to fit context.", prompt_tokens.size(), safe_prompt_limit);
             std::vector<llama_token> truncated;
             truncated.reserve(safe_prompt_limit);
             auto start_it = prompt_tokens.end() - safe_prompt_limit;
@@ -149,7 +169,7 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
             llama_memory_seq_rm(llama_get_memory(ctx), -1, matched_len, -1);
         }
 
-        // 4. Prompt Decode (DÜZELTİLDİ: Hata Yönetimi)
+        // 4. Prompt Decode (Aynı)
         size_t tokens_to_process = prompt_tokens.size() - matched_len;
         if (tokens_to_process > 0) {
             int32_t n_batch = llama_n_batch(ctx);
@@ -167,14 +187,13 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
                 
                 if (llama_decode(ctx, prompt_batch.batch) != 0) {
                     spdlog::error("Prompt decode failed. Context might be full.");
-                    req_ptr->finish_reason = "length"; // Hata yerine 'uzunluk sınırı' deyip çıkıyoruz
-                    return; // İşlemi burada kes, exception fırlatma
+                    req_ptr->finish_reason = "length";
+                    return;
                 }
             }
         }
 
         // 5. Sampler (Aynı)
-        const auto& params = request.params();
         LlamaSamplerGuard sampler_guard(llama_sampler_chain_default_params());
         llama_sampler* sampler_chain = sampler_guard.sampler;
         
@@ -189,12 +208,13 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
         
         auto stop_sequences = formatter_->get_stop_sequences();
 
-        // 6. Generation Döngüsü
+        // 6. Generation Döngüsü (DÜZELTİLDİ: req_max_gen kullanımı)
         int n_decoded = 0;
         std::vector<llama_token> final_tokens = prompt_tokens; 
         llama_pos n_past = prompt_tokens.size();
 
-        while (n_decoded < settings_.default_max_tokens) {
+        // Döngü limiti olarak dinamik hesaplanan req_max_gen kullanılıyor
+        while (n_decoded < (int)req_max_gen) {
             if (req_ptr->should_stop_callback && req_ptr->should_stop_callback()) {
                 req_ptr->finish_reason = "cancelled"; break;
             }
@@ -235,10 +255,8 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
             LlamaBatchGuard token_batch(1, 0, 1);
             common_batch_add(token_batch.batch, new_token_id, n_past, {0}, true);
             
-            // DÜZELTME: Generation sırasında decode hatası (context doldu)
             if (llama_decode(ctx, token_batch.batch) != 0) {
-                 spdlog::warn("Context full during generation. Stopping gracefully.");
-                 req_ptr->finish_reason = "length"; // Context doldu, bitir.
+                 req_ptr->finish_reason = "length";
                  break;
             }
             
