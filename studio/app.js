@@ -4,12 +4,13 @@ const state = {
     generating: false, 
     controller: null, 
     history: [], 
-    autoListen: false, 
+    autoListen: false, // Canlı mod aktif mi?
+    isRecording: false, // Şu an mikrofon açık mı?
     recognition: null, 
     startTime: 0, 
     tokenCount: 0,
     autoScroll: true,
-    interrupted: false // Yeni Flag: Söz kesildi mi?
+    interrupted: false
 };
 
 // --- INIT ---
@@ -22,8 +23,8 @@ document.addEventListener('DOMContentLoaded', () => {
     setupMarkdown();
     checkHealth();
     setInterval(checkHealth, 10000);
-
-    addMessage('ai', 'Merhaba! "Barge-in" modu aktif. Ben konuşurken sözümü kesebilirsiniz, sizi dinliyorum.');
+    // Bu kısım bir simulasyon gibi olabilir. Özelliklerini anlatan bir dilog yazabiliri
+    // addMessage('ai', 'Merhaba! "Barge-in" modu aktif. Ben konuşurken sözümü kesebilirsiniz, sizi dinliyorum.');
 });
 
 function setupMarkdown() {
@@ -56,16 +57,18 @@ function setupEvents() {
     });
 
     $('sendBtn').onclick = () => {
-        state.autoListen = false;
-        stopMicUI();
+        // Manuel gönderim yapılırsa, canlı modu kapatmıyoruz ama mikrafonu resetliyoruz
+        if(state.isRecording) stopMic(); 
         if (state.generating) interruptGeneration();
         sendMessage();
     };
     
     $('stopBtn').onclick = () => {
+        // Stop butonu acil durum frenidir, her şeyi durdurur.
         state.autoListen = false;
         interruptGeneration();
-        stopMicUI();
+        stopMic();
+        updateMicUI();
     };
     
     $('tempInput').oninput = (e) => $('tempVal').innerText = e.target.value;
@@ -206,10 +209,11 @@ async function sendMessage() {
     }
 }
 
-// --- SPEECH RECOGNITION (Barge-In Destekli) ---
+// --- ROBUST SPEECH RECOGNITION (V3.0) ---
 function setupSpeech() {
     if(!('webkitSpeechRecognition' in window)) { 
         $('micBtn').style.display='none'; 
+        $('liveBtn').style.display='none';
         return; 
     }
     
@@ -218,34 +222,38 @@ function setupSpeech() {
     rec.continuous = false; 
     rec.interimResults = true; 
 
+    // --- EVENT HANDLERS ---
     rec.onstart = () => { 
+        state.isRecording = true;
         $('voiceStatus').classList.remove('hidden');
+        updateMicUI();
+        
         if(state.autoListen) {
-            $('micBtn').classList.add('active-pulse');
-            // Duruma göre metni güncelle
             if (state.generating) {
                 $('voiceStatus').innerHTML = '⚡ <b>Araya Girme Aktif:</b> Dinliyor...';
                 $('voiceStatus').style.color = 'var(--warning)';
             } else {
-                $('voiceStatus').innerHTML = '🔴 <b>Eller Serbest:</b> Dinliyor...';
-                $('voiceStatus').style.color = 'var(--danger)';
+                $('voiceStatus').innerHTML = '🎧 <b>Canlı Mod:</b> Dinliyor...';
+                $('voiceStatus').style.color = 'var(--success)';
             }
         } else {
-            $('micBtn').style.color = 'var(--danger)';
-            $('voiceStatus').innerText = 'Dinliyor...';
+            $('voiceStatus').innerText = 'Dikte ediliyor...';
+            $('voiceStatus').style.color = 'var(--text-sub)';
         }
     };
 
     rec.onend = () => { 
-        // Eğer autoListen aktifse ve henüz bir şey gönderilmediyse tekrar dinle
+        state.isRecording = false;
+        
         if(state.autoListen) {
-             // Eğer generating devam ediyorsa mikrofonu hemen tekrar aç (Sürekli dinle)
-             // Eğer generating bittiyse sendMessage zaten tekrar açacak.
-             if (state.generating) {
-                 tryStartMic();
-             }
+            // Canlı moddaysa döngüyü sürdür
+            if (state.generating) {
+                // AI konuşurken mikrofon kapandıysa hemen geri aç
+                tryStartMic();
+            }
         } else {
-            stopMicUI();
+            $('voiceStatus').classList.add('hidden');
+            updateMicUI();
         }
     };
 
@@ -257,64 +265,128 @@ function setupSpeech() {
             }
         }
         
-        // ARA GİRME MANTIĞI (BARGE-IN)
         if(final) {
             const val = final.trim();
             if (val.length > 0) {
-                $('userInput').value = val;
-                
-                // Eğer AI şu an konuşuyorsa (generating), sustur!
-                if (state.generating) {
-                    console.log("⚡ Barge-in detected! Interrupting AI...");
-                    interruptGeneration(); // Backend'i durdur
+                // Dikte modunda sadece yaz, gönderme
+                if (!state.autoListen) {
+                    const current = $('userInput').value;
+                    $('userInput').value = current ? current + " " + val : val;
+                } 
+                // Canlı modda yaz ve GÖNDER
+                else {
+                    $('userInput').value = val;
+                    if (state.generating) {
+                        console.log("⚡ Barge-in! AI susturuluyor...");
+                        interruptGeneration();
+                    }
+                    sendMessage();
                 }
-                
-                // Yeni mesajı gönder
-                sendMessage();
             }
         }
     };
 
     rec.onerror = (event) => {
-        if(event.error === 'no-speech' && state.autoListen) return; 
-        // Aborted hatası normaldir (elle durdurunca gelir)
+        if(event.error === 'no-speech') {
+            // Sessizlik hatası normaldir, canlı moddaysa yoksay ve devam et
+            return; 
+        }
         if(event.error !== 'aborted') {
-            console.error("Speech Error", event.error);
+            console.error("Speech Error:", event.error);
+            // Kritik hata varsa canlı modu kapat
             state.autoListen = false;
-            stopMicUI();
+            state.isRecording = false;
+            updateMicUI();
         }
     };
 
     state.recognition = rec;
 
+    // --- BUTON MANTIKLARI ---
+
+    // 1. Dikte Butonu (Tek Tık: Aç/Kapa)
     $('micBtn').onclick = () => {
+        // Eğer canlı mod açıksa, önce onu kapat
         if(state.autoListen) {
             state.autoListen = false;
-            interruptGeneration();
-            rec.stop();
-            stopMicUI();
+            stopMic();
+            updateMicUI();
+            return;
+        }
+
+        if(state.isRecording) {
+            stopMic();
         } else {
-            rec.start();
+            tryStartMic();
         }
     };
 
-    $('micBtn').ondblclick = () => {
-        state.autoListen = true;
-        rec.start();
+    // 2. Canlı Mod Butonu (Tek Tık: Modu Toggle Et)
+    $('liveBtn').onclick = () => {
+        state.autoListen = !state.autoListen;
+        
+        if(state.autoListen) {
+            // Mod açıldı: Mikrofonu başlat
+            if(!state.isRecording) tryStartMic();
+        } else {
+            // Mod kapandı: Mikrofonu durdur
+            stopMic();
+        }
+        updateMicUI();
     };
 }
 
+// Güvenli Başlatma (Hata vermeden)
 function tryStartMic() { 
-    try {
-        // Zaten çalışıyorsa hata verir, yakala ve geç
-        if(state.recognition) state.recognition.start();
-    } catch(e) {} 
+    if(state.recognition && !state.isRecording) {
+        try {
+            state.recognition.start();
+        } catch(e) {
+            console.warn("Mic start error (ignored):", e);
+        }
+    }
 }
 
 function stopMicUI() {
     $('micBtn').style.color = '';
     $('micBtn').classList.remove('active-pulse');
     $('voiceStatus').classList.add('hidden');
+}
+
+
+// Güvenli Durdurma
+function stopMic() {
+    if(state.recognition) {
+        try {
+            state.recognition.stop();
+        } catch(e) {}
+    }
+    state.isRecording = false;
+    $('voiceStatus').classList.add('hidden');
+}
+
+// UI Güncelleme (Butonların renkleri)
+function updateMicUI() {
+    const micBtn = $('micBtn');
+    const liveBtn = $('liveBtn');
+
+    // Reset
+    micBtn.style.color = '';
+    micBtn.classList.remove('active-pulse');
+    liveBtn.style.color = '';
+    liveBtn.classList.remove('active-pulse');
+
+    if (state.autoListen) {
+        // Canlı Mod Aktif
+        liveBtn.style.color = 'white';
+        liveBtn.classList.add('active-pulse'); // Kırmızı değil yeşil/mavi yapabiliriz CSS'te
+        micBtn.style.opacity = '0.5'; // Dikte pasif görünsün
+    } else if (state.isRecording) {
+        // Sadece Dikte Aktif
+        micBtn.style.color = 'var(--danger)';
+    } else {
+        micBtn.style.opacity = '1';
+    }
 }
 
 // ... (buildPayload ve diğer UI fonksiyonları aynı kalır) ...

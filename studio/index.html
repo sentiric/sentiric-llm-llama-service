@@ -120,9 +120,19 @@
                 <input type="file" id="fileInput" hidden>
                 
                 <textarea id="userInput" placeholder="Bir şeyler yazın..." rows="1"></textarea>
-                 <button class="tool-btn" id="micBtn" title="Sesli Yazma"><i class="fas fa-microphone"></i></button>
+
+                <!-- KLASİK: Dikte Butonu -->
+                <button class="tool-btn" id="micBtn" title="Yazıya Çevir">
+                    <i class="fas fa-microphone"></i>
+                </button>
+
+                <!-- YENİ: Hands-Free / Live Mode Butonu -->
+                <button class="tool-btn" id="liveBtn" title="Canlı Sohbet">
+                    <i class="fas fa-headset"></i>
+                </button>
+
                 <div class="right-tools">
-                   
+                    
                     <button class="send-btn" id="sendBtn"><i class="fas fa-paper-plane"></i></button>
                     <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-square"></i></button>
                 </div>
