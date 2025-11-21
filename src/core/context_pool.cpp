@@ -40,13 +40,23 @@ ContextGuard& ContextGuard::operator=(ContextGuard&& other) noexcept {
 
 LlamaContextPool::LlamaContextPool(const Settings& settings, llama_model* model, prometheus::Gauge& active_contexts_gauge)
     : model_(model), settings_(settings), active_contexts_gauge_(active_contexts_gauge) {
-    max_size_ = settings.n_threads;
+    
+    // --- MİMARİ DÜZELTME: Hız vs Kapasite Ayrımı ---
+    // Eskiden: max_size_ = settings.n_threads; (Yanlış: 6 thread = 6 context)
+    // Yeni: Eğer batching kapalıysa (Yerel Mod) -> Sadece 1 Context.
+    //       Eğer batching açıksa -> Max Batch Size kadar Context.
+    if (settings.enable_dynamic_batching) {
+        max_size_ = settings.max_batch_size;
+    } else {
+        max_size_ = 1; // Yerel CPU/GPU kullanımı için en performanslısı budur.
+    }
+    
     if (max_size_ == 0) max_size_ = 1;
     
     contexts_.resize(max_size_);
     is_busy_.assign(max_size_, false);
 
-    spdlog::info("Context Pool: Initializing {} SMART contexts...", max_size_);
+    spdlog::info("Context Pool: Initializing {} SMART contexts (Threads per ctx: {})...", max_size_, settings.n_threads);
     initialize_contexts();
     active_contexts_gauge_.Set(0);
 }
@@ -63,14 +73,16 @@ void LlamaContextPool::initialize_contexts() {
     for (size_t i = 0; i < max_size_; ++i) {
         llama_context_params ctx_params = llama_context_default_params();
         
-        // DÜZELTME: Batch Size Koruması
-        // Context size çok büyük olsa bile, n_batch (bir seferde işlenen token)
-        // donanım sınırlarını zorlamamalıdır. 2048 makul bir üst sınırdır.
+        // --- OPTİMİZASYON: CPU İçin Batch Size Sınırı ---
+        // Büyük promt'larda arayüzün donmaması için batch'i 512'de tutuyoruz.
+        // Bu, CPU'nun nefes almasını sağlar.
         ctx_params.n_ctx = settings_.context_size;
-        ctx_params.n_batch = std::min((uint32_t)settings_.context_size, (uint32_t)2048);
+        ctx_params.n_batch = std::min((uint32_t)settings_.context_size, (uint32_t)512);
         
+        // İşlem gücü (Compute Power) buradan gelir
         ctx_params.n_threads = settings_.n_threads;
         ctx_params.n_threads_batch = settings_.n_threads_batch;
+        
         ctx_params.offload_kqv = settings_.kv_offload;
         
         llama_context* ctx = llama_init_from_model(model_, ctx_params);
