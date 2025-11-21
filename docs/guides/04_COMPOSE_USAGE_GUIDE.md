@@ -11,6 +11,7 @@ Bu proje, farklı kullanım senaryoları için optimize edilmiş multiple Docker
 - **`docker-compose.override.yml`** - Local development (CPU)
 - **`docker-compose.gpu.override.yml`** - Local development (GPU)
 - **`docker-compose.run.gpu.yml`** - CLI için GPU konteyneri
+- **`docker-compose.open-webui.yml`** - Open WebUI Arayüzü
 
 ---
 
@@ -112,7 +113,30 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose
 
 ---
 
-### 5. 🛠️ CLI ARAÇLARI - GPU Ortamında
+### 5. 🌐 OPEN WEBUI ENTEGRASYONU (YENİ)
+
+**Amaç:** Servisi test etmek veya kullanmak için modern, ChatGPT benzeri bir arayüz başlatmak.
+
+```bash
+# WebUI'yi Başlat (Port: 3000)
+make up-ui
+
+# Veya Manuel Olarak:
+docker compose -f docker-compose.open-webui.yml up -d
+```
+
+**Erişim:**
+- Tarayıcı: `http://localhost:3000`
+- İlk açılışta bir yönetici hesabı oluşturmanız istenecektir.
+
+**Özellikler:**
+- ✅ `sentiric-net` ağına otomatik bağlanır.
+- ✅ Modelleri otomatik tanır (`/v1/models` üzerinden).
+- ✅ Veriler `open-webui` volume'ünde kalıcı saklanır.
+
+---
+
+### 6. 🛠️ CLI ARAÇLARI - GPU Ortamında
 
 **Amaç:** GPU destekli CLI komutlarını çalıştırma
 
@@ -132,44 +156,6 @@ docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli generate "
 - ✅ GPU erişimi
 - ✅ mTLS sertifikaları
 - ✅ Servis ağına bağlı
-
----
-
-### 6. 🧪 TEST VE DEBUG SENARYOLARI
-
-#### A. Hızlı Test
-```bash
-# Servis sağlıklı mı?
-curl http://localhost:16070/health
-
-# Metrikleri kontrol et
-curl http://localhost:16072/metrics
-
-# Web UI'yi aç
-http://localhost:16070
-```
-
-#### B. Gelişmiş Test
-```bash
-# Paralel istek testi
-./run_request.sh examples/health_service_context.txt "Test 1" &
-./run_request.sh examples/legal_service_context.txt "Test 2" &
-
-# Warm-up kontrolü
-docker compose logs llm-llama-service | grep -E "(Warming up|warm-up completed)"
-
-# Batching kontrolü
-docker compose logs llm-llama-service | grep -E "(DynamicBatcher|Processing batch)"
-```
-
-#### C. Performans Testi
-```bash
-# Benchmark çalıştır
-docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli benchmark --iterations 5
-
-# Detaylı sistem durumu
-docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli health
-```
 
 ---
 
@@ -229,34 +215,9 @@ LLM_LLAMA_SERVICE_THREADS=1
 ls -la ../sentiric-certificates/certs/
 ```
 
-### 4. Model İndirme Hatası
-```bash
-# Çözüm: Modeli manuel indir
-wget -O models/gemma-3-1b-it-qat-Q4_0.gguf \
-  "https://huggingface.co/ggml-org/gemma-3-1b-it-qat-GGUF/resolve/main/gemma-3-1b-it-qat-Q4_0.gguf"
-```
-
----
-
-## 📊 PERFORMANS OPTİMİZASYONLARI
-
-### 6GB GPU için Optimal Ayarlar
-```yaml
-LLM_LLAMA_SERVICE_GPU_LAYERS: 28
-LLM_LLAMA_SERVICE_CONTEXT_SIZE: 1024  
-LLM_LLAMA_SERVICE_THREADS: 1
-LLM_LLAMA_SERVICE_ENABLE_WARM_UP: true
-LLM_LLAMA_SERVICE_ENABLE_BATCHING: false
-```
-
-### 8GB+ GPU için Gelişmiş Ayarlar
-```yaml
-LLM_LLAMA_SERVICE_GPU_LAYERS: 32
-LLM_LLAMA_SERVICE_CONTEXT_SIZE: 2048
-LLM_LLAMA_SERVICE_THREADS: 2
-LLM_LLAMA_SERVICE_ENABLE_BATCHING: true
-LLM_LLAMA_SERVICE_MAX_BATCH_SIZE: 2
-```
+### 4. Open WebUI "Network Problem" Hatası
+**Neden:** WebUI konteyneri LLM servisine ulaşamıyor.
+**Çözüm:** `make up-ui` kullanın veya her iki konteynerin de `sentiric-net` ağında olduğundan emin olun. URL olarak `http://llm-llama-service:16070` kullanın.
 
 ---
 
@@ -268,16 +229,7 @@ LLM_LLAMA_SERVICE_MAX_BATCH_SIZE: 2
 | Production GPU | `-f docker-compose.yml -f docker-compose.gpu.yml` | ❌ | ✅ | Production |
 | Dev CPU | `docker compose up --build -d` | ✅ | ❌ | Geliştirme |
 | Dev GPU | `-f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml` | ✅ | ✅ | Geliştirme |
+| Open WebUI | `make up-ui` | ❌ | ❌ | UI / Chat |
 | CLI GPU | `-f docker-compose.run.gpu.yml run --rm llm-cli` | ❌ | ✅ | Test |
-
----
-
-## 🎯 EN İYİ UYGULAMALAR
-
-1. **Development'da** her zaman `--build` kullan
-2. **Production'da** pre-built imajları kullan  
-3. **GPU için** memory limit'leri kontrol et
-4. **Değişiklik sonrası** her zaman `docker compose down` ve yeniden başlat
-5. **Logları** her zaman monitor et: `docker compose logs -f`
 
 ---
