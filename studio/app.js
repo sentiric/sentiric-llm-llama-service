@@ -23,8 +23,11 @@ document.addEventListener('DOMContentLoaded', () => {
     setupMarkdown();
     checkHealth();
     setInterval(checkHealth, 10000);
-    // Bu kısım bir simulasyon gibi olabilir. Özelliklerini anlatan bir dilog yazabiliri
-    // addMessage('ai', 'Merhaba! "Barge-in" modu aktif. Ben konuşurken sözümü kesebilirsiniz, sizi dinliyorum.');
+
+
+    clearChat();
+    // SİMULASYON BAŞLATIÇI
+    playWelcomeAnimation();
 });
 
 function setupMarkdown() {
@@ -98,6 +101,85 @@ function setupEvents() {
     };
 }
 
+// --- WELCOME ANIMATION (YENİ) ---
+async function playWelcomeAnimation() {
+    // UI temizle
+    $('chatContainer').innerHTML = '';
+    
+    // Tanıtım Metni (Markdown formatında)
+    const welcomeText = `### 🚀 Sentiric Omni-Studio Hazır!
+
+Ben sizin **Yerel, Özel ve Hızlı** yapay zeka motorunuzum.
+
+**🎛️ Nasıl Kullanılır?**
+*   🎤 **Dikte:** Mesajınızı yazdırmak için mikrofona bir kez basın.
+*   🎧 **Canlı Mod (Barge-in):** Kulaklık ikonuna basın. Ben konuşurken bile sözümü kesebilirsiniz, sizi sürekli dinlerim.
+*   📂 **RAG (Veri):** Dokümanlarınızı sürükleyip bırakarak veya ataş ikonuna basarak hafızama ekleyebilirsiniz.
+
+**⚡ Sistem Durumu:**
+*   **Motor:** Sentirik 1B (GPU Accelerated)
+*   **Hafıza:** Akıllı Context Yönetimi (8k)
+
+*Hadi başlayalım! Ne hakkında konuşmak istersiniz?*`;
+
+    // AI Balonu Oluştur
+    const div = document.createElement('div');
+    div.className = 'message ai';
+    div.innerHTML = `
+        <div class="avatar"><i class="fas fa-cube"></i></div>
+        <div class="bubble">
+            <div class="markdown-content"></div>
+        </div>
+    `;
+    $('chatContainer').appendChild(div);
+    
+    const contentDiv = div.querySelector('.markdown-content');
+    
+    // Daktilo Efekti
+    let i = 0;
+    const speed = 10; // Yazma hızı (ms)
+    
+    function type() {
+        if (i < welcomeText.length) {
+            // Markdown render etmeden ham metni yazıyoruz (Streaming hissi için)
+            // Ancak HTML taglerini bozmamak için basit bir text node gibi davranıyoruz
+            // Sonra hepsini render edeceğiz.
+            // Daha akıcı bir görüntü için, her karakterde değil, kelime kelime de gidebiliriz
+            // Ama karakter karakter daha "AI" hissi verir.
+            
+            // Performans için: Anlık render yerine metni biriktirip basıyoruz
+            const currentText = welcomeText.substring(0, i + 1);
+            contentDiv.innerHTML = marked.parse(currentText) + '<span class="cursor"></span>';
+            i++;
+            scrollToBottom();
+            setTimeout(type, speed);
+        } else {
+            // Bittiğinde temiz render ve butonlar
+            contentDiv.innerHTML = marked.parse(welcomeText);
+            enhanceCodeBlocks(div);
+            // Opsiyonel: Başlangıç ipuçları (Chips) ekleyebiliriz
+            addQuickReplies(div);
+        }
+    }
+    
+    type();
+    
+    // History'e ekle (Böylece bağlamda kalır)
+    state.history.push({role: 'assistant', content: welcomeText});
+}
+
+// Hızlı Başlangıç Butonları (Opsiyonel Güzellik)
+function addQuickReplies(bubbleDiv) {
+    const chips = document.createElement('div');
+    chips.className = 'quick-replies';
+    chips.innerHTML = `
+        <button onclick="$('userInput').value='Bana bir şiir yaz'; sendMessage()">📝 Şiir Yaz</button>
+        <button onclick="$('userInput').value='Bu sistemi kim yaptı?'; sendMessage()">🤔 Kimsin?</button>
+        <button onclick="$('userInput').value='RAG sistemi nasıl çalışır?'; sendMessage()">📂 RAG Nedir?</button>
+    `;
+    bubbleDiv.querySelector('.bubble').appendChild(chips);
+}
+
 // --- INTERRUPT LOGIC (YENİ) ---
 function interruptGeneration() {
     if (state.controller) {
@@ -116,7 +198,7 @@ async function sendMessage() {
     
     $('userInput').value = '';
     $('userInput').style.height = 'auto';
-    $('emptyState').style.display = 'none';
+    //$('emptyState').style.display = 'none';
     state.autoScroll = true;
     state.interrupted = false;
     
