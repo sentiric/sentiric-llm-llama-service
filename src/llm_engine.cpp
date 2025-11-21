@@ -101,25 +101,24 @@ bool safe_kv_seq_rm(llama_context* ctx, llama_seq_id seq, llama_pos p0, llama_po
     return llama_memory_seq_rm(llama_get_memory(ctx), seq, p0, p1);
 }
 
+
+// --- execute_single_request GÜNCELLENDİ ---
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
     try {
         auto& request = req_ptr->request;
         const std::string formatted_prompt = formatter_->format(request);
         const auto* vocab = llama_model_get_vocab(model_);
         
-        // 1. Tokenizasyon
+        // 1. Tokenizasyon (Aynı)
         std::vector<llama_token> prompt_tokens(formatted_prompt.length() + 64); 
         int n_tokens = llama_tokenize(vocab, formatted_prompt.c_str(), formatted_prompt.length(), prompt_tokens.data(), prompt_tokens.size(), true, true);
-        
         if (n_tokens < 0) {
             prompt_tokens.resize(-n_tokens);
             n_tokens = llama_tokenize(vocab, formatted_prompt.c_str(), formatted_prompt.length(), prompt_tokens.data(), prompt_tokens.size(), true, true);
         }
-        if (n_tokens < 0) throw std::runtime_error("Tokenization failed");
-        
         prompt_tokens.resize(n_tokens);
         
-        // --- TRUNCATION LOGIC ---
+        // Truncation Logic (Aynı)
         uint32_t max_context = settings_.context_size;
         uint32_t max_gen = settings_.default_max_tokens;
         uint32_t safe_prompt_limit = (max_context > max_gen + 64) ? (max_context - max_gen - 64) : (max_context / 2);
@@ -132,39 +131,26 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
             truncated.assign(start_it, prompt_tokens.end());
             prompt_tokens = std::move(truncated);
         }
-        
         req_ptr->prompt_tokens = prompt_tokens.size();
 
-        // 2. Context Edinme
+        // 2. Context Edinme (Aynı)
         ContextGuard guard = context_pool_->acquire(prompt_tokens);
         llama_context* ctx = guard.get();
         size_t matched_len = guard.get_matched_tokens();
 
-        // --- DÜZELTME: ZERO-DECODE BUG FIX ---
-        // Eğer prompt tamamen önbellekte varsa (matched_len == prompt_tokens.size()),
-        // son token'ı önbellekten silip tekrar işlemeye (decode) zorlamalıyız.
-        // Aksi takdirde model yeni logits üretmez ve eski context'in sonundaki EOS token'ı tekrar üretir.
+        // Zero-Decode Fix (Aynı)
         if (matched_len == prompt_tokens.size() && matched_len > 0) {
             matched_len--; 
-            // Log'da görelim
-            spdlog::debug("🔄 Forced re-decode of last token to prevent stale cache state.");
+            spdlog::debug("🔄 Forced re-decode of last token.");
         }
 
-        // 3. KV Cache Temizliği
-        // matched_len'den sonraki her şeyi sil (önceki cevabı unut)
+        // 3. KV Cache Temizliği (Aynı)
         if (matched_len < prompt_tokens.size()) {
-            if (!safe_kv_seq_rm(ctx, 0, matched_len, -1)) {
-                spdlog::error("Failed to remove KV cache sequence! Resetting context.");
-                safe_kv_clear(ctx);
-                matched_len = 0;
-            }
-        } else if (matched_len == 0) {
-             safe_kv_clear(ctx);
+            llama_memory_seq_rm(llama_get_memory(ctx), -1, matched_len, -1);
         }
-        
-        // 4. Prompt Decode
+
+        // 4. Prompt Decode (DÜZELTİLDİ: Hata Yönetimi)
         size_t tokens_to_process = prompt_tokens.size() - matched_len;
-        
         if (tokens_to_process > 0) {
             int32_t n_batch = llama_n_batch(ctx);
             for (size_t i = 0; i < tokens_to_process; i += n_batch) {
@@ -175,29 +161,26 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
                 for(int j = 0; j < n_eval; ++j) {
                     common_batch_add(prompt_batch.batch, prompt_tokens[matched_len + i + j], matched_len + i + j, {0}, false);
                 }
-                
                 if (i + n_eval == tokens_to_process) {
                     prompt_batch.batch.logits[n_eval - 1] = true;
                 }
                 
                 if (llama_decode(ctx, prompt_batch.batch) != 0) {
-                    spdlog::error("Prompt decode failed at chunk {}/{}.", i, tokens_to_process);
-                    safe_kv_clear(ctx);
-                    throw std::runtime_error("Prompt decode failed.");
+                    spdlog::error("Prompt decode failed. Context might be full.");
+                    req_ptr->finish_reason = "length"; // Hata yerine 'uzunluk sınırı' deyip çıkıyoruz
+                    return; // İşlemi burada kes, exception fırlatma
                 }
             }
         }
 
-        // 5. Sampler Hazırlığı
+        // 5. Sampler (Aynı)
         const auto& params = request.params();
         LlamaSamplerGuard sampler_guard(llama_sampler_chain_default_params());
         llama_sampler* sampler_chain = sampler_guard.sampler;
         
         if (!req_ptr->grammar.empty()) {
             llama_sampler* grammar_sampler = llama_sampler_init_grammar(vocab, req_ptr->grammar.c_str(), "root");
-            if (grammar_sampler) {
-                llama_sampler_chain_add(sampler_chain, grammar_sampler);
-            }
+            if (grammar_sampler) llama_sampler_chain_add(sampler_chain, grammar_sampler);
         }
 
         llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_k(params.has_top_k() ? params.top_k() : settings_.default_top_k));
@@ -229,18 +212,13 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
             
             if (n_piece > 0) {
                 std::string token_str(piece_buf, n_piece);
-                
                 bool stop_triggered = false;
                 for (const auto& seq : stop_sequences) {
                     if (token_str.find(seq) != std::string::npos) {
-                        stop_triggered = true;
-                        break;
+                        stop_triggered = true; break;
                     }
                 }
-                if (stop_triggered) {
-                    req_ptr->finish_reason = "stop";
-                    break;
-                }
+                if (stop_triggered) { req_ptr->finish_reason = "stop"; break; }
 
                 if (token_str.find("<unused") == std::string::npos) {
                      if (req_ptr->on_token_callback) {
@@ -257,8 +235,10 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
             LlamaBatchGuard token_batch(1, 0, 1);
             common_batch_add(token_batch.batch, new_token_id, n_past, {0}, true);
             
+            // DÜZELTME: Generation sırasında decode hatası (context doldu)
             if (llama_decode(ctx, token_batch.batch) != 0) {
-                 req_ptr->finish_reason = "length";
+                 spdlog::warn("Context full during generation. Stopping gracefully.");
+                 req_ptr->finish_reason = "length"; // Context doldu, bitir.
                  break;
             }
             

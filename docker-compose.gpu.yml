@@ -1,6 +1,6 @@
 # docker-compose.gpu.yml
 # Üretim ortamında GPU imajını çekmek ve GPU kaynaklarını ayırmak için kullanılır.
-
+# Kullanım: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 x-gpu-resources: &gpu-resources
   deploy:
     resources:
