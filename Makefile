@@ -1,12 +1,13 @@
 # Sentiric LLM Service - Makefile
 
-.PHONY: help up-cpu up-gpu down logs clean cli-gpu
+.PHONY: help up-cpu up-gpu down logs clean cli-gpu up-ui
 
 help:
 	@echo "🧠 Sentiric LLM Service Yönetim Komutları"
 	@echo "------------------------------------------"
 	@echo "make up-cpu   : Servisi CPU modunda başlatır"
 	@echo "make up-gpu   : Servisi GPU modunda başlatır (NVIDIA)"
+	@echo "make up-ui    : Open WebUI arayüzünü başlatır (Port: 3000)"
 	@echo "make down     : Servisi durdurur"
 	@echo "make logs     : Logları izler"
 	@echo "make clean    : Derleme artıklarını temizler"
@@ -18,8 +19,11 @@ up-cpu:
 up-gpu:
 	docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml up --build -d
 
+up-ui:
+	docker compose -f docker-compose.open-webui.yml up -d
+
 down:
-	docker compose down --remove-orphans
+	docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml -f docker-compose.open-webui.yml down --remove-orphans
 
 logs:
 	docker compose logs -f llm-llama-service

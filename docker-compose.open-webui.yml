@@ -1,0 +1,24 @@
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: sentiric-open-webui
+    volumes:
+      - open-webui:/app/backend/data
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://llm-llama-service:16070
+      - OPENAI_API_BASE_URL=http://llm-llama-service:16070/v1
+      - OPENAI_API_KEY=sk-sentiric-local-key
+      - WEBUI_NAME=Sentiric Studio
+    networks:
+      - sentiric-net
+    restart: unless-stopped
+
+volumes:
+  open-webui:
+
+networks:
+  sentiric-net:
+    external: true
+    name: "${NETWORK_NAME:-sentiric-net}"
