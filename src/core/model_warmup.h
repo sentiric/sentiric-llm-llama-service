@@ -10,6 +10,7 @@
 
 class ModelWarmup {
 public:
+    // GÜVENLİ WARM-UP (Artık kullanılmıyor ama tutuyoruz)
     static void warmup_contexts(LlamaContextPool& pool, size_t num_contexts) {
         spdlog::info("🔥 Warming up {} llama contexts with REAL inference...", num_contexts);
         
@@ -81,7 +82,8 @@ public:
                     completed.load(), num_contexts);
     }
 
-    // HIZLI WARM-UP - sadece kritik bileşenleri ısıt
+    // --- DÜZELTİLEN FONKSİYON ---
+    // HIZLI WARM-UP - KV Cache temizliği eklendi
     static void fast_warmup(LlamaContextPool& pool, size_t num_contexts) {
         spdlog::info("⚡ Fast warm-up for {} contexts...", num_contexts);
         
@@ -90,6 +92,11 @@ public:
                 ContextGuard guard = pool.acquire();
                 llama_context* ctx = guard.get();
                 
+                // ADIM 1: ÖNCE HAFIZAYI SİL (Kritik Düzeltme)
+                // Bu satır "inconsistent sequence positions" hatasını önler.
+                // safe_kv_clear
+                llama_memory_seq_rm(llama_get_memory(ctx), -1, 0, -1);
+
                 // Sadece küçük bir decode işlemi - SAMPLING YOK
                 const char* quick_prompt = "Hi";
                 auto* vocab = llama_model_get_vocab(pool.get_model());
@@ -105,12 +112,21 @@ public:
                     for (int j = 0; j < n_tokens; ++j) {
                         common_batch_add(batch, tokens[j], j, {0}, false);
                     }
-                    batch.logits[batch.n_tokens - 1] = true;
                     
-                    // Tek decode ile hızlı warm-up - SAMPLING YOK
-                    llama_decode(ctx, batch);
+                    // Logit üretimine gerek yok, sadece hesaplama yapsın yeter
+                    // batch.logits[batch.n_tokens - 1] = true; 
+                    
+                    // Tek decode ile hızlı warm-up (CUDA Kernel'ları derlenir)
+                    if (llama_decode(ctx, batch) != 0) {
+                        spdlog::warn("Warmup decode returned non-zero for context {}", i);
+                    }
                     llama_batch_free(batch);
                 }
+                
+                // ADIM 2: İŞ BİTİNCE TEKRAR SİL
+                // Context havuza tertemiz dönsün.
+                // safe_kv_clear
+                llama_memory_seq_rm(llama_get_memory(ctx), -1, 0, -1);
                 
                 spdlog::debug("⚡ Context {} fast warm-up done", i);
                 
@@ -122,7 +138,7 @@ public:
         spdlog::info("✅ Fast warm-up completed");
     }
 
-    // EN GÜVENLİ WARM-UP - sadece model yükleme
+    // EN GÜVENLİ WARM-UP (Yedek)
     static void safe_warmup(LlamaContextPool& pool, size_t num_contexts) {
         spdlog::info("🛡️ Safe warm-up for {} contexts...", num_contexts);
         
