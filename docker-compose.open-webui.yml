@@ -3,7 +3,7 @@ services:
     image: ghcr.io/open-webui/open-webui:main
     container_name: sentiric-open-webui
     volumes:
-      - open-webui:/app/backend/data
+      - tools-open-webui-data:/app/backend/data
     ports:
       - "3000:8080"
     environment:
@@ -16,7 +16,8 @@ services:
     restart: unless-stopped
 
 volumes:
-  open-webui:
+  # tools
+  tools-open-webui-data:
 
 networks:
   sentiric-net:

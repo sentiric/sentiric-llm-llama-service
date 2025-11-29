@@ -3,7 +3,7 @@
 # CPU veya GPU profili ile birleştirilmelidir.
 networks:
   sentiric-net:
-    name: "${NETWORK_NAME:-sentiric-net}"
+    name: "${NETWORK_NAME:-sentiric.cloud}"
     driver: bridge
     ipam:
       config:
@@ -11,7 +11,16 @@ networks:
           gateway: ${NETWORK_GATEWAY:-10.88.0.1}
 
 volumes:
-  llm_models:
+  
+  # =============================================================
+  # KATMAN 1: TEMEL ALTYAPI (INFRASTRUCTURE)
+  # Platformun temel yapı taşları.
+  # =============================================================
+
+  #  [capability-llm]: Büyük Dil Modeli Yetenekleri (LLM Capabilities)
+  # --------------------------------------------------    
+  llm-llama-models:
+  llm-llama-cache:  
 
 services:
   llm-llama-service:
@@ -71,7 +80,7 @@ services:
 
     volumes:
       - ../sentiric-certificates:/sentiric-certificates:ro
-      - llm_models:/models
+      - llm-llama-models:/models
     ports:
       - "${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}:${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}"
       - "${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}:${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}"
