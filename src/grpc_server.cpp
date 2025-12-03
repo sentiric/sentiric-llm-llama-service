@@ -14,10 +14,24 @@ grpc::Status GrpcServer::GenerateStream(
     metrics_.requests_total.Increment();
     auto start_time = std::chrono::steady_clock::now();
 
+    // --- TRACE ID YÖNETİMİ ---
+    // Gateway'den gelen x-trace-id'yi alıp log bağlamına ekleyebiliriz
+    std::string trace_id = "unknown";
+    const auto& client_metadata = context->client_metadata();
+    auto it = client_metadata.find("x-trace-id");
+    if (it != client_metadata.end()) {
+        trace_id = std::string(it->second.begin(), it->second.end());
+    }
+    
+    // Loglarda bu ID'yi kullanacağız
+    spdlog::info("[gRPC][TraceID:{}] New GenerateStream request received.", trace_id);
+
     if (!engine_->is_model_loaded()) {
+        spdlog::warn("[gRPC][TraceID:{}] Request rejected: Model not ready.", trace_id);
         return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Model is not ready yet.");
     }
     if (request->user_prompt().empty()) {
+         spdlog::warn("[gRPC][TraceID:{}] Request rejected: Empty prompt.", trace_id);
         return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "User prompt cannot be empty.");
     }
     
@@ -42,12 +56,12 @@ grpc::Status GrpcServer::GenerateStream(
             engine_->process_single_request(batched_request);
         }
     } catch (const std::exception& e) {
-        spdlog::error("[gRPC] Unhandled exception during stream processing: {}", e.what());
+        spdlog::error("[gRPC][TraceID:{}] Unhandled exception during stream processing: {}", trace_id, e.what());
         batched_request->finish_reason = "error";
     }
 
     if (context->IsCancelled() && batched_request->finish_reason != "error") {
-        spdlog::warn("[gRPC] Stream cancelled by client.");
+        spdlog::warn("[gRPC][TraceID:{}] Stream cancelled by client.", trace_id);
         batched_request->finish_reason = "cancelled";
     }
 
@@ -64,8 +78,10 @@ grpc::Status GrpcServer::GenerateStream(
     std::chrono::duration<double> latency = end_time - start_time;
     metrics_.request_latency.Observe(latency.count());
 
-    spdlog::info("[gRPC] Stream finished. Reason: '{}'. Tokens (Prompt/Completion): {}/{}", 
-                 batched_request->finish_reason, batched_request->prompt_tokens, batched_request->completion_tokens);
+    spdlog::info("[gRPC][TraceID:{}] Stream finished. Reason: '{}'. Tokens (P/C): {}/{}. Latency: {:.3f}s", 
+                 trace_id, batched_request->finish_reason, 
+                 batched_request->prompt_tokens, batched_request->completion_tokens,
+                 latency.count());
                  
     return grpc::Status::OK;
 }

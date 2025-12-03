@@ -70,15 +70,42 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         spdlog::debug("HTTP {} {} - Status: {}", req.method, req.path, res.status);
     });
 
+    // --- GÜNCELLENMİŞ DEEP HEALTH CHECK ---
     svr_.Get("/health", [this](const httplib::Request &, httplib::Response &res) {
         bool model_ready = engine_->is_model_loaded();
-        json response_body = {{"status", model_ready ? "healthy" : "unhealthy"}, {"model_ready", model_ready}};
+        
+        // Context Pool durumunu kontrol et
+        size_t active_ctx = engine_->get_context_pool().get_active_count();
+        size_t total_ctx = engine_->get_context_pool().get_total_count();
+        bool has_capacity = active_ctx < total_ctx;
+
+        json response_body = {
+            {"status", model_ready ? "healthy" : "unhealthy"},
+            {"model_ready", model_ready},
+            {"capacity", {
+                {"active", active_ctx},
+                {"total", total_ctx},
+                {"available", total_ctx - active_ctx}
+            }},
+            {"service", "sentiric-llm-llama-service"},
+            {"timestamp", std::time(nullptr)}
+        };
+
+        // Model yüklü değilse 503, Kapasite doluysa 429 (Too Many Requests) veya load balancer ayarına göre 200
+        // Genellikle Health check 200 dönmeli ama status bilgisini içermeli.
+        // Kubernetes liveness probe için 200 dönüyoruz ama readiness için detaylara bakılabilir.
+        
         res.set_header("Access-Control-Allow-Origin", "*");
         res.set_content(response_body.dump(), "application/json");
-        res.status = model_ready ? 200 : 503;
+        
+        if (!model_ready) {
+            res.status = 503;
+        } else {
+            res.status = 200;
+        }
     });
 
-    // --- YENİ: OpenAI Uyumlu Models Endpoint'i ---
+    // --- OpenAI Uyumlu Models Endpoint'i ---
     svr_.Get("/v1/models", [this](const httplib::Request &, httplib::Response &res) {
         const auto& settings = engine_->get_settings();
         json model_card = {
@@ -154,17 +181,14 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             batched_request->request = grpc_request;
 
             // --- GRAMMAR ENTEGRASYONU ---
-            // 1. OpenAI tarzı "json_object" isteği
             if (body.contains("response_format") && 
                 body["response_format"].value("type", "") == "json_object") {
                 batched_request->grammar = GENERIC_JSON_GBNF;
             } 
-            // 2. Doğrudan "grammar" alanı (Raw GBNF)
             else if (body.contains("grammar")) {
                 batched_request->grammar = body["grammar"].get<std::string>();
             }
 
-            // 1. İsteği Engine/Batcher thread'ine gönder (Producer)
             if (engine_->is_batching_enabled()) {
                 engine_->get_batcher()->add_request(batched_request);
             } else {
@@ -175,10 +199,8 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             }
 
             if (stream) {
-                // 2. Tüketici Döngüsü (Consumer)
                 res.set_chunked_content_provider("text/event-stream",
                     [batched_request](size_t, httplib::DataSink &sink) {
-                        
                         batched_request->should_stop_callback = [&sink]() { return !sink.is_writable(); };
 
                         while (!batched_request->is_finished || !batched_request->token_queue.empty()) {
@@ -196,19 +218,16 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                                 if (!sink.write(data.c_str(), data.length())) return false;
                             }
                         }
-                        
                         sink.write("data: [DONE]\n\n", 12);
                         sink.done();
                         return true;
                     });
             } else {
-                 // Non-streaming: Bekle ve topla
                  std::string full_response;
                  while (!batched_request->is_finished || !batched_request->token_queue.empty()) {
                      std::string t;
                      if(batched_request->token_queue.wait_and_pop(t, 50)) full_response += t;
                  }
-
                  json response_json;
                  response_json["choices"][0]["message"]["content"] = full_response;
                  res.set_content(response_json.dump(), "application/json");
@@ -228,7 +247,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         res.status = 204;
     });
     
-    // Model endpoint için OPTIONS
     svr_.Options("/v1/models", [](const httplib::Request &, httplib::Response &res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         res.set_header("Access-Control-Allow-Methods", "GET, OPTIONS");

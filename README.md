@@ -1,21 +1,18 @@
 # 🧠 Sentiric LLM Llama Service
 
-**Production-ready**, high-performance C++ local LLM inference engine. Powered by `llama.cpp`, optimized for NVIDIA GPUs, and featuring the new **Sentiric Omni-Studio** interface.
+**Production-Ready**, high-performance C++ local LLM inference engine. Powered by `llama.cpp`, optimized for NVIDIA GPUs, and featuring the new **Sentiric Omni-Studio** interface.
 
 [![CI - Build and Push Docker Image](https://github.com/sentiric/sentiric-llm-llama-service/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/sentiric/sentiric-llm-llama-service/actions/workflows/build-and-push.yml)
 
-## 🚀 Key Features
+## 🚀 Status: PRODUCTION READY
 
--   ✅ **True Concurrency**: Handles multiple requests simultaneously via a thread-safe `LlamaContextPool`.
--   ✅ **Sentiric Omni-Studio**: A professional, mobile-first web UI with **Hands-Free Voice Mode**, RAG injection, and live telemetry.
--   ✅ **Smart Caching**: Eliminates redundant processing with intelligent KV cache management (Zero-Decode logic implemented).
--   ✅ **Robust RAG Support**: Supports huge context injection with auto-truncation protection to prevent OOM crashes.
--   ✅ **Performance Optimized**: 
-    -   **GPU Offloading**: Full VRAM utilization for both weights and KV cache.
-    -   **Fast Warm-up**: CUDA JIT pre-heating for instant first response.
-    -   **No-MMAP**: Option to force full RAM loading for stability.
--   ✅ **Structured Output**: Supports GBNF grammar constraints (JSON mode etc.).
--   ✅ **gRPC & HTTP**: Dual-stack API for high-performance internal comms and easy web integration.
+This service has passed rigorous testing for concurrency, memory stability, and API compliance. It is ready for deployment in core ecosystem environments.
+
+-   ✅ **True Concurrency**: Handles multiple requests simultaneously via `LlamaContextPool`.
+-   ✅ **Deep Health Checks**: Exposes capacity and model status for load balancers.
+-   ✅ **Observability**: Structured JSON logs (prod) and Prometheus metrics.
+-   ✅ **Security**: Full mTLS support for gRPC communication.
+-   ✅ **Standalone Mode**: Can be developed and tested independently using the embedded Studio.
 
 ---
 
@@ -23,49 +20,55 @@
 
 The service includes a built-in development studio available at `http://localhost:16070`.
 
--   **Hands-Free Mode:** Double-click the mic button to start a continuous voice conversation loop.
--   **RAG Drag & Drop:** Upload files to instantly inject them into the context window.
--   **Mobile Optimized:** Responsive design that works perfectly on phones and tablets.
+-   **Hands-Free Mode:** Continuous voice conversation loop.
+-   **RAG Drag & Drop:** Instant context injection.
+-   **Mobile Optimized:** Responsive design.
 
 ---
 
-## 🛠️ Quick Start
+## 🛠️ Quick Start (Standalone)
 
 ### Prerequisites
-
 -   Docker & Docker Compose
--   NVIDIA GPU (Recommended) or High-Performance CPU
+-   NVIDIA GPU (Recommended)
 
-### Running with GPU (Recommended)
+### Running in Isolation
 
 ```bash
-# Clone the repository
+# 1. Clone
 git clone https://github.com/sentiric/sentiric-llm-llama-service.git
 cd sentiric-llm-llama-service
 
-# Start the service (Downloads model automatically)
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml up -d
+# 2. Start (Auto-downloads model & certificates for dev)
+make up-gpu
+# OR for CPU:
+# make up-cpu
 ```
 
-### Running with CPU
-
-```bash
-docker compose up -d
-```
+**Access Points:**
+-   **Studio UI:** `http://localhost:16070`
+-   **Metrics:** `http://localhost:16072/metrics`
+-   **gRPC:** `localhost:16071`
 
 ---
 
-## 📊 Monitoring
+## 📊 Monitoring & Metrics
 
--   **Health Check:** `http://localhost:16070/health`
--   **Prometheus Metrics:** `http://localhost:16072/metrics`
+Key Prometheus metrics exposed at `:16072/metrics`:
 
-Key metrics include `llm_active_contexts`, `llm_tokens_generated_total`, and `llm_request_latency_seconds`.
+| Metric | Description |
+| :--- | :--- |
+| `llm_active_contexts` | Number of currently busy contexts in the pool. |
+| `llm_requests_total` | Total number of gRPC requests processed. |
+| `llm_tokens_generated_total` | Total tokens generated across all requests. |
+| `llm_request_latency_seconds` | Histogram of request processing times. |
+
+---
 
 ## 📚 Documentation
 
+-   **[Critical API Bindings](./docs/KB/04_LLAMA_CPP_API_BINDING.md)**
 -   **[Deployment Guide](./docs/guides/02_DEPLOYMENT.md)**
 -   **[Configuration Reference](./docs/guides/03_CONFIGURATION.md)**
 -   **[Architecture Details](./docs/architecture/SYSTEM_ARCHITECTURE.md)**
 
----
