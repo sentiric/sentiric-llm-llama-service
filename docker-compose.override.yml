@@ -3,26 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: sentiric/llm-llama-service:local-cpu 
+    image: sentiric/llm-llama-service:local-cpu
+    env_file: [".env.cpu"]    
     networks:
       - sentiric-net
-    environment:
-
-      # --- CPU TEMEL AYARLARI ---
-      - LLM_LLAMA_SERVICE_GPU_LAYERS=0
-      - LLM_LLAMA_SERVICE_KV_OFFLOAD=false
-      
-      # --- PERFORMANS AYARLARI (RAM OPTİMİZASYONU) ---
-      # 16GB RAM var, Gemma 1B için 1024 çok az. 8192 yapıyoruz.
-      - LLM_LLAMA_SERVICE_CONTEXT_SIZE=8192
-      
-      # i7 İşlemci için fiziksel çekirdek sayısı (genelde 6 veya 8) 6 yapınca uzun dialoglarda takıldı
-      - LLM_LLAMA_SERVICE_THREADS=1
-      - LLM_LLAMA_SERVICE_THREADS_BATCH=1
-      
-      - LLM_LLAMA_SERVICE_ENABLE_BATCHING=false
-      
-      # KRİTİK DÜZELTME: mmap KAPATILIYOR.
-      # Model küçük (1GB), RAM büyük (16GB). 
-      # Açılışta hepsini RAM'e yükle ki ilk istekte disk okuması yapıp takılmasın.
-      - LLM_LLAMA_SERVICE_USE_MMAP=false

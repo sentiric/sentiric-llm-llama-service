@@ -24,59 +24,6 @@ volumes:
 
 services:
   llm-llama-service:
-    environment:
-      # --- Sistem Ayarları ---
-      - ENV=${ENV:-development}
-      - LLM_LLAMA_SERVICE_LOG_LEVEL=${LLM_LLAMA_SERVICE_LOG_LEVEL:-info}
-
-      # --- Network Ayarları ---
-      - LLM_LLAMA_SERVICE_LISTEN_ADDRESS=0.0.0.0
-      - LLM_LLAMA_SERVICE_HTTP_PORT=${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}
-      - LLM_LLAMA_SERVICE_GRPC_PORT=${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}
-      - LLM_LLAMA_SERVICE_METRICS_PORT=${LLM_LLAMA_SERVICE_METRICS_PORT:-16072}
-
-      # --- Model Yönetimi ---
-      - LLM_LLAMA_SERVICE_MODEL_DIR=/models
-
-      # --- Gemma-3 1B Q4_0 --- 3,5gb usage ( 4 thread ) - ( 2 thread - 2,36gb) [ Hala en iyi ]
-      - LLM_LLAMA_SERVICE_MODEL_ID=ggml-org/gemma-3-1b-it-qat-GGUF
-      - LLM_LLAMA_SERVICE_MODEL_FILENAME=gemma-3-1b-it-qat-Q4_0.gguf          
-
-      # # --- Qwen2.5 Coder 1.5B Q8_0 --- 4,3 gb usage ( 4 thread)
-      # - LLM_LLAMA_SERVICE_MODEL_ID=ggml-org/Qwen2.5-Coder-1.5B-Instruct-Q8_0-GGUF
-      # - LLM_LLAMA_SERVICE_MODEL_FILENAME=qwen2.5-coder-1.5b-instruct-q8_0.gguf  
-
-      # # --- Gemma-3 4B Q4_0 --- 3,86gb usage ( 1 thread ) (4,86 2 thread) max
-      # - LLM_LLAMA_SERVICE_MODEL_ID=${LLM_LLAMA_SERVICE_MODEL_ID:-ggml-org/gemma-3-4b-it-GGUF}
-      # - LLM_LLAMA_SERVICE_MODEL_FILENAME=${LLM_LLAMA_SERVICE_MODEL_FILENAME:-gemma-3-4b-it-Q4_K_M.gguf}
-
-
-      # --- Motor ve Performans Ayarları ---
-      - LLM_LLAMA_SERVICE_GPU_LAYERS=${LLM_LLAMA_SERVICE_GPU_LAYERS:-0}
-      - LLM_LLAMA_SERVICE_CONTEXT_SIZE=${LLM_LLAMA_SERVICE_CONTEXT_SIZE:-1024}
-      - LLM_LLAMA_SERVICE_THREADS=${LLM_LLAMA_SERVICE_THREADS:-1}
-      - LLM_LLAMA_SERVICE_THREADS_BATCH=${LLM_LLAMA_SERVICE_THREADS_BATCH:-1}
-      - LLM_LLAMA_SERVICE_USE_MMAP=${LLM_LLAMA_SERVICE_USE_MMAP:-false}
-      - LLM_LLAMA_SERVICE_KV_OFFLOAD=${LLM_LLAMA_SERVICE_KV_OFFLOAD:-true}
-      - LLM_LLAMA_SERVICE_NUMA=${LLM_LLAMA_SERVICE_NUMA:-disabled}
-
-      # --- YENİ: Advanced Özellikler ---
-      - LLM_LLAMA_SERVICE_ENABLE_BATCHING=${LLM_LLAMA_SERVICE_ENABLE_BATCHING:-false}
-      - LLM_LLAMA_SERVICE_MAX_BATCH_SIZE=${LLM_LLAMA_SERVICE_MAX_BATCH_SIZE:-1}
-      - LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS=${LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS:-10}
-      - LLM_LLAMA_SERVICE_ENABLE_WARM_UP=${LLM_LLAMA_SERVICE_ENABLE_WARM_UP:-true}
-
-      # --- Varsayılan Sampling Parametreleri ---
-      - LLM_LLAMA_SERVICE_DEFAULT_MAX_TOKENS=${LLM_LLAMA_SERVICE_DEFAULT_MAX_TOKENS:-4096}
-      - LLM_LLAMA_SERVICE_DEFAULT_TEMPERATURE=${LLM_LLAMA_SERVICE_DEFAULT_TEMPERATURE:-0.8}
-      - LLM_LLAMA_SERVICE_DEFAULT_TOP_K=${LLM_LLAMA_SERVICE_DEFAULT_TOP_K:-40}
-      - LLM_LLAMA_SERVICE_DEFAULT_TOP_P=${LLM_LLAMA_SERVICE_DEFAULT_TOP_P:-0.95}
-      - LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY=${LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY:-1.1}
-
-      # --- Güvenlik Ayarları (mTLS için) ---
-      - GRPC_TLS_CA_PATH=/sentiric-certificates/certs/ca.crt
-      - LLM_LLAMA_SERVICE_CERT_PATH=/sentiric-certificates/certs/llm-llama-service-chain.crt
-      - LLM_LLAMA_SERVICE_KEY_PATH=/sentiric-certificates/certs/llm-llama-service.key
 
     volumes:
       - ../sentiric-certificates:/sentiric-certificates:ro

@@ -4,26 +4,6 @@ services:
       context: .
       dockerfile: Dockerfile.gpu
     image: sentiric/llm-llama-service:local-gpu
+    env_file: [".env.gpu"]
     networks:
-      - sentiric-net    
-    environment:
-      
-      # --- GPU TEMEL AYARLARI ---
-      - LLM_LLAMA_SERVICE_GPU_LAYERS=28      # Modeli VRAM'e yükle
-      - LLM_LLAMA_SERVICE_KV_OFFLOAD=true     # Cache'i de VRAM'e yükle!
-      
-      # --- PERFORMANS VE HAFIZA ---
-      # Gemma 1B GPU'da 8192 Context ile rahat çalışır.
-      - LLM_LLAMA_SERVICE_CONTEXT_SIZE=8192
-      
-      # GPU modunda Thread sayısı 1 olmalıdır. 
-      # Hesaplamayı CUDA yapar, CPU sadece bekler. Çok thread CPU'yu yorar, GPU'yu hızlandırmaz.      
-      - LLM_LLAMA_SERVICE_THREADS=1
-      - LLM_LLAMA_SERVICE_THREADS_BATCH=1
-      
-      - LLM_LLAMA_SERVICE_ENABLE_BATCHING=false
-      - LLM_LLAMA_SERVICE_ENABLE_WARM_UP=true
-      
-      # --- DÜZELTME: GPU İÇİN DE MMAP KAPATILIYOR ---
-      # Böylece model VRAM'e tamamen ve kesin olarak yüklenir.
-      - LLM_LLAMA_SERVICE_USE_MMAP=false
+      - sentiric-net
