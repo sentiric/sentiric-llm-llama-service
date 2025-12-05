@@ -34,7 +34,9 @@ COPY CMakeLists.txt .
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
-    -DLLAMA_CURL=OFF
+    -DLLAMA_CURL=OFF \
+    -DGGML_NATIVE=OFF
+    
 RUN cmake --build build --target all -j $(nproc)
 
 # --- Çalışma Aşaması ---

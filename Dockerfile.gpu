@@ -37,7 +37,8 @@ RUN cmake -B build \
     -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -DGGML_CUDA=ON \
     -DLLAMA_CURL=OFF \
-    -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wpedantic -Wno-unused-parameter"
+    -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wpedantic -Wno-unused-parameter" \
+    -DGGML_NATIVE=OFF
     
 RUN cmake --build build --target all -j $(nproc)
 

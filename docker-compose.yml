@@ -40,5 +40,5 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}/health"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 15m
+      retries: 10
+      start_period: 60m
