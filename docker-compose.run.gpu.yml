@@ -2,7 +2,8 @@
 # GPU ortamında CLI çalıştırmak için
 networks:
   sentiric-net:
-    name: "${NETWORK_NAME:-sentiric-net}"
+    # DÜZELTME: .env'den al yoksa 'sentiric.cloud' kullan
+    name: "${NETWORK_NAME:-sentiric.cloud}" 
     external: true
 
 services:
