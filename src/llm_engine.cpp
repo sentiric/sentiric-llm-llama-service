@@ -35,6 +35,9 @@ LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gaug
     model_params.n_gpu_layers = settings_.n_gpu_layers;
     model_params.use_mmap = settings_.use_mmap;
 
+    // --- DEBUG LOG EKLENDİ ---
+    spdlog::info("⚙️ Model Params: GPU Layers={}, MMAP={}", model_params.n_gpu_layers, model_params.use_mmap);
+
     model_ = llama_model_load_from_file(settings_.model_path.c_str(), model_params);
     if (!model_) throw std::runtime_error("Model load failed.");
 

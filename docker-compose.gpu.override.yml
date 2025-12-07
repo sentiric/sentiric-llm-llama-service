@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile.gpu
     image: sentiric/llm-llama-service:local-gpu
-    env_file: [".env.gpu"]
+    # BURASI ÖNEMLİ: Hangi env dosyasını okuduğuna dikkat edin.
+    # Eğer .env.gpu ise, o dosyadaki ayarlar geçerli olur.
+    env_file: [".env.gpu"] 
     networks:
       - sentiric-net
