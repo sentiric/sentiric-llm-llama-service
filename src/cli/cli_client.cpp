@@ -20,8 +20,8 @@ CLIClient::~CLIClient() = default;
 bool CLIClient::generate_stream(const std::string& prompt, 
                                const std::function<void(const std::string&)>& on_token) {
     
-    // Basit bir request oluştur - benchmark için
-    sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest request;
+    // DÜZELTME: GenerateStreamRequest
+    sentiric::llm::v1::GenerateStreamRequest request;
     request.set_system_prompt("You are a helpful assistant.");
     request.set_user_prompt(prompt);
     

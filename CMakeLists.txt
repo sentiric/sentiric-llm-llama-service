@@ -33,27 +33,29 @@ include(FetchContent)
 FetchContent_Declare(
   sentiric_contracts
   GIT_REPOSITORY https://github.com/sentiric/sentiric-contracts.git
-  GIT_TAG v1.11.1
+  GIT_TAG v1.12.0
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
+# --- DEĞİŞİKLİK BURADA: local.proto -> llama.proto ---
 set(PROTO_FILES
-    "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/local.proto"
+    "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/llama.proto"
     "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/gateway.proto"
 )
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(PROTO_GENERATED_SRCS
-    "${GENERATED_DIR}/sentiric/llm/v1/local.pb.cc"
-    "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.cc"
+    "${GENERATED_DIR}/sentiric/llm/v1/llama.pb.cc"
+    "${GENERATED_DIR}/sentiric/llm/v1/llama.grpc.pb.cc"
     "${GENERATED_DIR}/sentiric/llm/v1/gateway.pb.cc"
     "${GENERATED_DIR}/sentiric/llm/v1/gateway.grpc.pb.cc"
 )
 set(PROTO_GENERATED_HDRS
-    "${GENERATED_DIR}/sentiric/llm/v1/local.pb.h"
-    "${GENERATED_DIR}/sentiric/llm/v1/local.grpc.pb.h"
+    "${GENERATED_DIR}/sentiric/llm/v1/llama.pb.h"
+    "${GENERATED_DIR}/sentiric/llm/v1/llama.grpc.pb.h"
     "${GENERATED_DIR}/sentiric/llm/v1/gateway.pb.h"
     "${GENERATED_DIR}/sentiric/llm/v1/gateway.grpc.pb.h"
 )
+# -----------------------------------------------------
 
 add_custom_command(
     OUTPUT ${PROTO_GENERATED_SRCS} ${PROTO_GENERATED_HDRS}

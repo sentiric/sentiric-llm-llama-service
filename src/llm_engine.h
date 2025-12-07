@@ -1,4 +1,3 @@
-// src/llm_engine.h
 #pragma once
 
 #include "config.h"
@@ -11,7 +10,8 @@
 #include <functional>
 #include <atomic>
 #include <memory>
-#include "sentiric/llm/v1/local.pb.h"
+// DÜZELTME: Header değişti
+#include "sentiric/llm/v1/llama.pb.h"
 #include <prometheus/gauge.h>
 
 class LLMEngine {
@@ -28,13 +28,10 @@ public:
     bool is_model_loaded() const;
     LlamaContextPool& get_context_pool() { return *context_pool_; }
     
-    // Gateway ve API Discovery için gerekli
     const Settings& get_settings() const { return settings_; }
 
 private:
     void process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batch);
-    
-    // --- YENİ: Tekil işlem mantığını buraya taşıyoruz ---
     void execute_single_request(std::shared_ptr<BatchedRequest> req_ptr);
 
     Settings& settings_;

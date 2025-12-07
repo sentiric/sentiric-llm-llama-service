@@ -3,10 +3,10 @@
 #include "spdlog/spdlog.h"
 #include <algorithm>
 
-// ==========================================
-// 1. GEMMA FORMATTER
-// ==========================================
-std::string GemmaFormatter::format(const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request) const {
+// DÜZELTME: GenerateStreamRequest (Tüm sınıflar için)
+
+// 1. GEMMA
+std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request) const {
     std::ostringstream oss;
     
     std::string combined_system;
@@ -23,8 +23,7 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::LLMLocalServiceGener
             oss << "<start_of_turn>user\n";
             if (is_first_turn && !combined_system.empty()) {
                 oss << combined_system;
-                combined_system.clear(); 
-                is_first_turn = false;
+                combined_system.clear(); is_first_turn = false;
             }
             oss << turn.content() << "<end_of_turn>\n";
         } 
@@ -35,9 +34,7 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::LLMLocalServiceGener
     }
 
     oss << "<start_of_turn>user\n";
-    if (!combined_system.empty()) {
-        oss << combined_system;
-    }
+    if (!combined_system.empty()) { oss << combined_system; }
     oss << request.user_prompt() << "<end_of_turn>\n";
     oss << "<start_of_turn>model\n";
     
@@ -48,10 +45,8 @@ std::vector<std::string> GemmaFormatter::get_stop_sequences() const {
     return { "<end_of_turn>", "<eos>", "user:", "model:" };
 }
 
-// ==========================================
-// 2. LLAMA 3 FORMATTER
-// ==========================================
-std::string Llama3Formatter::format(const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request) const {
+// 2. LLAMA 3
+std::string Llama3Formatter::format(const sentiric::llm::v1::GenerateStreamRequest& request) const {
     std::ostringstream oss;
     oss << "<|begin_of_text|>";
 
@@ -80,18 +75,10 @@ std::vector<std::string> Llama3Formatter::get_stop_sequences() const {
     return { "<|eot_id|>", "<|end_of_text|>", "assistant:", "user:" };
 }
 
-// ==========================================
-// 3. QWEN 2.5 FORMATTER (ChatML) - YENİ
-// ==========================================
-std::string QwenFormatter::format(const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request) const {
+// 3. QWEN 2.5
+std::string QwenFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request) const {
     std::ostringstream oss;
     
-    // Qwen ChatML Format:
-    // <|im_start|>system\n...<|im_end|>\n
-    // <|im_start|>user\n...<|im_end|>\n
-    // <|im_start|>assistant\n...<|im_end|>\n
-
-    // A. System & RAG
     std::string system_content = request.system_prompt();
     if (request.has_rag_context() && !request.rag_context().empty()) {
         if(!system_content.empty()) system_content += "\n\n";
@@ -102,32 +89,21 @@ std::string QwenFormatter::format(const sentiric::llm::v1::LLMLocalServiceGenera
         oss << "<|im_start|>system\n" << system_content << "<|im_end|>\n";
     }
 
-    // B. History
     for (const auto& turn : request.history()) {
         std::string role = (turn.role() == "user") ? "user" : "assistant";
         oss << "<|im_start|>" << role << "\n" << turn.content() << "<|im_end|>\n";
     }
 
-    // C. Current User
     oss << "<|im_start|>user\n" << request.user_prompt() << "<|im_end|>\n";
-
-    // D. Assistant Trigger
     oss << "<|im_start|>assistant\n";
 
     return oss.str();
 }
 
 std::vector<std::string> QwenFormatter::get_stop_sequences() const {
-    return { 
-        "<|im_end|>", 
-        "<|endoftext|>", 
-        "<|im_start|>" // Halüsinasyonla yeni turn başlatırsa kes
-    };
+    return { "<|im_end|>", "<|endoftext|>", "<|im_start|>" };
 }
 
-// ==========================================
-// 4. FACTORY
-// ==========================================
 std::unique_ptr<PromptFormatter> create_formatter_for_model(const std::string& model_architecture) {
     std::string arch = model_architecture;
     std::transform(arch.begin(), arch.end(), arch.begin(), ::tolower);
@@ -141,6 +117,5 @@ std::unique_ptr<PromptFormatter> create_formatter_for_model(const std::string& m
         return std::make_unique<QwenFormatter>();
     }
     
-    // Varsayılan (Gemma)
     return std::make_unique<GemmaFormatter>();
 }

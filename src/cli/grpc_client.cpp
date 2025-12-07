@@ -101,7 +101,8 @@ void GRPCClient::ensure_channel_is_ready() {
     }
     
     channel_ = grpc::CreateChannel(endpoint_, creds);
-    stub_ = sentiric::llm::v1::LLMLocalService::NewStub(channel_);
+    // DÜZELTME: LlamaService
+    stub_ = sentiric::llm::v1::LlamaService::NewStub(channel_);
 }
 
 bool GRPCClient::is_connected() {
@@ -112,8 +113,9 @@ bool GRPCClient::is_connected() {
     );
 }
 
+// DÜZELTME: Parametre tipi GenerateStreamRequest
 bool GRPCClient::generate_stream(
-    const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest& request,
+    const sentiric::llm::v1::GenerateStreamRequest& request,
     std::function<void(const std::string&)> on_token) {
     
     ensure_channel_is_ready();
@@ -128,7 +130,9 @@ bool GRPCClient::generate_stream(
         context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(timeout_seconds_));
         
         auto reader = stub_->GenerateStream(&context, request);
-        sentiric::llm::v1::LLMLocalServiceGenerateStreamResponse response;
+        
+        // DÜZELTME: Yanıt tipi GenerateStreamResponse
+        sentiric::llm::v1::GenerateStreamResponse response;
         
         while (reader->Read(&response)) {
             if (response.has_token()) {

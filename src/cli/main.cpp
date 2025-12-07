@@ -84,9 +84,10 @@ int main(int argc, char** argv) {
             for (const auto& arg : command_args) { user_prompt += arg + " "; }
             user_prompt.pop_back();
 
-            sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest request;
+            // DÜZELTME: GenerateStreamRequest
+            sentiric::llm::v1::GenerateStreamRequest request;
             request.set_user_prompt(user_prompt);
-
+            
             if (options.count("system-prompt")) request.set_system_prompt(options["system-prompt"]);
             if (options.count("rag-context")) request.set_rag_context(options["rag-context"]);
             if (options.count("history")) {

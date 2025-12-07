@@ -3,7 +3,8 @@
 #include <string>
 #include <memory>
 #include <functional>
-#include "sentiric/llm/v1/local.pb.h"
+// DÜZELTME: Doğru header dosyası
+#include "sentiric/llm/v1/llama.pb.h"
 
 namespace sentiric_llm_cli {
 

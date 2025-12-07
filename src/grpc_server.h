@@ -1,20 +1,21 @@
 #pragma once
 
 #include "llm_engine.h"
-#include "http_server.h" // AppMetrics için eklendi
+#include "http_server.h" 
 #include <memory>
 #include <grpcpp/grpcpp.h>
-#include "sentiric/llm/v1/local.grpc.pb.h"
+#include "sentiric/llm/v1/llama.grpc.pb.h"
 
-class GrpcServer final : public sentiric::llm::v1::LLMLocalService::Service {
+class GrpcServer final : public sentiric::llm::v1::LlamaService::Service {
 public:
     explicit GrpcServer(std::shared_ptr<LLMEngine> engine, AppMetrics& metrics);
 
-    // KONTROL EDİN: Bu metodun adının "GenerateStream" olduğundan emin olun.
     grpc::Status GenerateStream(
         grpc::ServerContext* context,
-        const sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest* request,
-        grpc::ServerWriter<sentiric::llm::v1::LLMLocalServiceGenerateStreamResponse>* writer
+        // DÜZELTME: GenerateStreamRequest
+        const sentiric::llm::v1::GenerateStreamRequest* request,
+        // DÜZELTME: GenerateStreamResponse
+        grpc::ServerWriter<sentiric::llm::v1::GenerateStreamResponse>* writer
     ) override;
 
 private:

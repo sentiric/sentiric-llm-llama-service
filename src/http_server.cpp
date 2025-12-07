@@ -11,7 +11,6 @@
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-// --- STANDART JSON GRAMMAR (GBNF) ---
 const std::string GENERIC_JSON_GBNF = R"(
 root   ::= object
 value  ::= object | array | string | number | ("true" | "false" | "null") ws
@@ -34,7 +33,6 @@ number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
 ws     ::= [ \t\n\r]*
 )";
 
-// MetricsServer Implementation
 MetricsServer::MetricsServer(const std::string& host, int port, prometheus::Registry& registry)
     : host_(host), port_(port), registry_(registry) {
     svr_.Get("/metrics", [this](const httplib::Request &, httplib::Response &res) {
@@ -56,7 +54,6 @@ void run_metrics_server_thread(std::shared_ptr<MetricsServer> server) {
     if (server) server->run();
 }
 
-// HttpServer Implementation
 HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port)
     : engine_(std::move(engine)), host_(host), port_(port) {
       
@@ -70,13 +67,14 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         spdlog::debug("HTTP {} {} - Status: {}", req.method, req.path, res.status);
     });
 
-    // --- GÜNCELLENMİŞ DEEP HEALTH CHECK ---
     svr_.Get("/health", [this](const httplib::Request &, httplib::Response &res) {
         bool model_ready = engine_->is_model_loaded();
         
-        // Context Pool durumunu kontrol et
         size_t active_ctx = engine_->get_context_pool().get_active_count();
         size_t total_ctx = engine_->get_context_pool().get_total_count();
+        
+        // UYARI GİDERİLDİ: has_capacity değişkeni JSON'a eklendi veya kaldırıldı.
+        // Burada JSON'a ekleyelim ki variable used olsun.
         bool has_capacity = active_ctx < total_ctx;
 
         json response_body = {
@@ -85,16 +83,13 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             {"capacity", {
                 {"active", active_ctx},
                 {"total", total_ctx},
-                {"available", total_ctx - active_ctx}
+                {"available", total_ctx - active_ctx},
+                {"has_capacity", has_capacity} // KULLANILDI
             }},
             {"service", "sentiric-llm-llama-service"},
             {"timestamp", std::time(nullptr)}
         };
 
-        // Model yüklü değilse 503, Kapasite doluysa 429 (Too Many Requests) veya load balancer ayarına göre 200
-        // Genellikle Health check 200 dönmeli ama status bilgisini içermeli.
-        // Kubernetes liveness probe için 200 dönüyoruz ama readiness için detaylara bakılabilir.
-        
         res.set_header("Access-Control-Allow-Origin", "*");
         res.set_content(response_body.dump(), "application/json");
         
@@ -105,7 +100,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         }
     });
 
-    // --- OpenAI Uyumlu Models Endpoint'i ---
     svr_.Get("/v1/models", [this](const httplib::Request &, httplib::Response &res) {
         const auto& settings = engine_->get_settings();
         json model_card = {
@@ -149,13 +143,13 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         } else { res.status = 404; }
     });
 
-    // --- CHAT COMPLETION ENDPOINT ---
     svr_.Post("/v1/chat/completions", [this](const httplib::Request &req, httplib::Response &res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         
         try {
             json body = json::parse(req.body);
-            sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest grpc_request;
+            // DÜZELTME: GenerateStreamRequest
+            sentiric::llm::v1::GenerateStreamRequest grpc_request;
 
             if (body.contains("messages") && body["messages"].is_array()) {
                 const auto& messages = body["messages"];
@@ -180,7 +174,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             auto batched_request = std::make_shared<BatchedRequest>();
             batched_request->request = grpc_request;
 
-            // --- GRAMMAR ENTEGRASYONU ---
             if (body.contains("response_format") && 
                 body["response_format"].value("type", "") == "json_object") {
                 batched_request->grammar = GENERIC_JSON_GBNF;

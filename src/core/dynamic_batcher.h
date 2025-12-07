@@ -2,7 +2,8 @@
 
 #include "config.h"
 #include "llama.h"
-#include "sentiric/llm/v1/local.pb.h"
+// DÜZELTME: Header dosya adı
+#include "sentiric/llm/v1/llama.pb.h"
 #include "spdlog/spdlog.h"
 #include <vector>
 #include <queue>
@@ -14,7 +15,6 @@
 #include <future>
 #include <memory>
 
-// Thread-Safe Kuyruk: Motor ve HTTP sunucusu arasında köprü
 template<typename T>
 class ThreadSafeQueue {
 public:
@@ -24,7 +24,6 @@ public:
         cond_.notify_one();
     }
 
-    // Belirli bir süre (timeout) veri bekler
     bool wait_and_pop(T& value, int timeout_ms = 100) {
         std::unique_lock<std::mutex> lock(mutex_);
         if (!cond_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this]{ return !queue_.empty(); })) {
@@ -47,23 +46,21 @@ private:
 };
 
 struct BatchedRequest {
-    sentiric::llm::v1::LLMLocalServiceGenerateStreamRequest request;
+    // DÜZELTME: GenerateStreamRequest
+    sentiric::llm::v1::GenerateStreamRequest request;
     
-    // gRPC için callback (Eski yöntem, hala destekleniyor)
     std::function<bool(const std::string&)> on_token_callback;
     std::function<bool()> should_stop_callback;
     
-    // HTTP için Kuyruk (YENİ YÖNTEM - Çökme Önleyici)
     ThreadSafeQueue<std::string> token_queue;
-    std::atomic<bool> is_finished{false}; // İşlem bitti mi?
+    std::atomic<bool> is_finished{false};
     
     std::promise<void> completion_promise;
     int32_t prompt_tokens = 0;
     int32_t completion_tokens = 0;
     std::string finish_reason = "stop";
 
-    // --- YENİ: Grammar Support ---
-    std::string grammar; // GBNF formatında grammar string'i
+    std::string grammar;
 };
 
 class DynamicBatcher {
@@ -119,10 +116,7 @@ private:
             
             if (!batch.empty() && batch_processing_callback) {
                 try {
-                    // İşlemi başlat
                     batch_processing_callback(batch);
-                    
-                    // İşlem bittiğinde tüm isteklere "bitti" işaretini koy
                     for (auto& req : batch) {
                         req->is_finished = true;
                         try { req->completion_promise.set_value(); } catch (...) {}
