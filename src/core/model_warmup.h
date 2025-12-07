@@ -82,60 +82,53 @@ public:
                     completed.load(), num_contexts);
     }
 
-    // --- DÜZELTİLEN FONKSİYON ---
     // HIZLI WARM-UP - KV Cache temizliği eklendi
     static void fast_warmup(LlamaContextPool& pool, size_t num_contexts) {
-        spdlog::info("⚡ Fast warm-up for {} contexts...", num_contexts);
+        spdlog::info("🔥 Aggressive warm-up for {} contexts (Waking up GPU)...", num_contexts);
         
         for (size_t i = 0; i < num_contexts; ++i) {
             try {
                 ContextGuard guard = pool.acquire();
                 llama_context* ctx = guard.get();
                 
-                // ADIM 1: ÖNCE HAFIZAYI SİL (Kritik Düzeltme)
-                // Bu satır "inconsistent sequence positions" hatasını önler.
-                // safe_kv_clear
                 llama_memory_seq_rm(llama_get_memory(ctx), -1, 0, -1);
 
-                // Sadece küçük bir decode işlemi - SAMPLING YOK
-                const char* quick_prompt = "Hi";
+                // DÜZELTME: Biraz daha uzun bir prompt
+                const char* quick_prompt = "System initialization sequence: Active.";
                 auto* vocab = llama_model_get_vocab(pool.get_model());
                 
                 std::vector<llama_token> tokens;
-                tokens.resize(16);
+                tokens.resize(64); // Buffer artırıldı
                 int n_tokens = llama_tokenize(vocab, quick_prompt, strlen(quick_prompt), 
                                             tokens.data(), tokens.size(), false, true);
                 
                 if (n_tokens > 0) {
                     tokens.resize(n_tokens);
+                    // Batch boyutu artırıldı
                     llama_batch batch = llama_batch_init(n_tokens, 0, 1);
                     for (int j = 0; j < n_tokens; ++j) {
                         common_batch_add(batch, tokens[j], j, {0}, false);
                     }
                     
-                    // Logit üretimine gerek yok, sadece hesaplama yapsın yeter
-                    // batch.logits[batch.n_tokens - 1] = true; 
+                    // Logit hesaplamasını zorla (GPU hesaplama yapsın)
+                    batch.logits[batch.n_tokens - 1] = true; 
                     
-                    // Tek decode ile hızlı warm-up (CUDA Kernel'ları derlenir)
                     if (llama_decode(ctx, batch) != 0) {
                         spdlog::warn("Warmup decode returned non-zero for context {}", i);
                     }
                     llama_batch_free(batch);
                 }
                 
-                // ADIM 2: İŞ BİTİNCE TEKRAR SİL
-                // Context havuza tertemiz dönsün.
-                // safe_kv_clear
                 llama_memory_seq_rm(llama_get_memory(ctx), -1, 0, -1);
                 
-                spdlog::debug("⚡ Context {} fast warm-up done", i);
+                spdlog::debug("⚡ Context {} warm-up done", i);
                 
             } catch (const std::exception& e) {
-                spdlog::warn("Context {} fast warm-up skipped: {}", i, e.what());
+                spdlog::warn("Context {} warm-up skipped: {}", i, e.what());
             }
         }
         
-        spdlog::info("✅ Fast warm-up completed");
+        spdlog::info("✅ Aggressive warm-up completed");
     }
 
     // EN GÜVENLİ WARM-UP (Yedek)

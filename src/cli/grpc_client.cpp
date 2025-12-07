@@ -129,6 +129,9 @@ bool GRPCClient::generate_stream(
         grpc::ClientContext context;
         context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(timeout_seconds_));
         
+        // YENİ: Trace ID Ekleme
+        context.AddMetadata("x-trace-id", "cli-manual-test-" + std::to_string(std::time(nullptr)));
+                
         auto reader = stub_->GenerateStream(&context, request);
         
         // DÜZELTME: Yanıt tipi GenerateStreamResponse
