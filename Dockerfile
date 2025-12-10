@@ -53,12 +53,10 @@ COPY --from=builder /app/vcpkg_installed/x64-linux/lib/*.so* /usr/local/lib/
 COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 RUN ldconfig
 
-COPY studio /app/studio
+# --- DEĞİŞİKLİK BURADA: studio -> studio-v2 ---
+COPY studio-v2 /app/studio
 COPY examples /app/examples
 
-# --- DEĞİŞİKLİK BURADA: ---
-# profiles.json'ı /models yerine /app kök dizinine (WORKDIR) kopyalıyoruz.
-# Bu sayede volume mount edilse bile bu dosya ezilmez/kaybolmaz.
 COPY models/profiles.json /app/profiles.json
 
 WORKDIR /app

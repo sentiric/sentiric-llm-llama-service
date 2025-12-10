@@ -43,6 +43,37 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         spdlog::debug("HTTP {} {} - Status: {}", req.method, req.path, res.status);
     });
 
+    // --- YENİ ENDPOINT: Dinamik UI Layout ---
+    svr_.Get("/v1/ui/layout", [this](const httplib::Request &, httplib::Response &res) {
+        json layout_schema = {
+            {"widgets", {
+                {
+                    {"type", "textarea"},
+                    {"id", "ragInput"},
+                    {"label", "RAG BAĞLAMI"},
+                    {"properties", {
+                        {"placeholder", "Dinamik olarak oluşturulmuş RAG alanı..."},
+                        {"rows", 5}
+                    }}
+                },
+                {
+                    {"type", "slider"},
+                    {"id", "tempInput"},
+                    {"label", "Sıcaklık"},
+                    {"display_id", "tempVal"},
+                    {"properties", {
+                        {"min", 0.0},
+                        {"max", 2.0},
+                        {"step", 0.1},
+                        {"value", 0.7}
+                    }}
+                }
+            }}
+        };
+        res.set_header("Access-Control-Allow-Origin", "*");
+        res.set_content(layout_schema.dump(), "application/json");
+    });
+
     // --- Endpoint: Model Profillerini Listele ---
     svr_.Get("/v1/models", [this](const httplib::Request &, httplib::Response &res) {
         const auto& current_settings = engine_->get_settings();
@@ -121,7 +152,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         size_t active_ctx = 0;
         size_t total_ctx = 0;
         
-        // Engine pointer kontrolü (Crash prevention)
         if (model_ready) {
             active_ctx = engine_->get_context_pool().get_active_count();
             total_ctx = engine_->get_context_pool().get_total_count();
@@ -157,7 +187,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             json body = json::parse(req.body);
             sentiric::llm::v1::GenerateStreamRequest grpc_request;
 
-            // OpenAI Message Format -> gRPC Request Parsing
             if (body.contains("messages") && body["messages"].is_array()) {
                 const auto& messages = body["messages"];
                 for (size_t i = 0; i < messages.size(); ++i) {
@@ -181,22 +210,17 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             auto batched_request = std::make_shared<BatchedRequest>();
             batched_request->request = grpc_request;
 
-            // Grammar / JSON Mode Support
             if (body.contains("response_format") && body["response_format"].value("type", "") == "json_object") {
-                 // Basit JSON grammar
                  batched_request->grammar = R"(root ::= object; value ::= object | array | string | number | ("true" | "false" | "null") ws; object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws; array ::= "[" ws (value ("," ws value)*)? "]" ws; string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws; number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws; ws ::= [ \t\n\r]*)";
             } else if (body.contains("grammar")) {
                 batched_request->grammar = body["grammar"].get<std::string>();
             }
 
-            // GÜVENLİK: Asla detach kullanma. Batcher queue'ya ekle.
             auto completion_future = engine_->get_batcher()->add_request(batched_request);
 
             if (stream) {
-                // Streaming Response
                 res.set_chunked_content_provider("text/event-stream",
                     [batched_request](size_t, httplib::DataSink &sink) {
-                        // İstemci bağlantıyı kopardıysa dur
                         batched_request->should_stop_callback = [&sink]() { return !sink.is_writable(); };
 
                         while (!batched_request->is_finished || !batched_request->token_queue.empty()) {
@@ -219,8 +243,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                         return true;
                     });
             } else {
-                 // Non-Streaming Response (Blocking wait)
-                 // Batcher thread'i işi bitirene kadar bekle. 
                  completion_future.wait();
                  
                  std::string full_response;
@@ -252,7 +274,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         }
     });
     
-    // --- Context Dosyaları Listeleme (Aynı) ---
     svr_.Get("/contexts", [](const httplib::Request &, httplib::Response &res) {
         json context_list = json::array();
         try {
@@ -280,7 +301,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         } else { res.status = 404; }
     });
 
-    // --- CORS Preflight Options ---
     auto set_cors = [](const httplib::Request &, httplib::Response &res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");

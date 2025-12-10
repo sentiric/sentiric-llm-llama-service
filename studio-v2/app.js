@@ -1,5 +1,5 @@
 /**
- * SENTIRIC AGENT OS v6.2 (STABLE)
+ * SENTIRIC AGENT OS v6.2 (STABLE) - Dynamic UI PoC
  */
 
 const $ = (id) => document.getElementById(id);
@@ -31,9 +31,10 @@ const PERSONAS = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("🌌 Sentiric OS v6.2 Booting...");
+    console.log("🌌 Sentiric OS v6.2 Booting (Dynamic UI PoC)...");
     
     renderModelList();
+    renderDynamicControls(); // YENİ FONKSİYON
     setupEvents();
     setupCharts();
     setPersona('default');
@@ -41,7 +42,71 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(checkHealth, 5000);
 });
 
-// --- CHARTS (CRITICAL FIX) ---
+// --- YENİ BÖLÜM: DINAMIK UI OLUŞTURMA ---
+
+async function renderDynamicControls() {
+    try {
+        const res = await fetch('/v1/ui/layout');
+        if (!res.ok) throw new Error('Layout schema could not be fetched.');
+        const schema = await res.json();
+
+        const settingsContainer = $('dynamic-controls');
+        const telemetryContainer = $('dynamic-telemetry-controls');
+        if (!settingsContainer || !telemetryContainer) return;
+        
+        let settingsHTML = '';
+        let telemetryHTML = '';
+
+        schema.widgets.forEach(widget => {
+            let html = '';
+            switch(widget.type) {
+                case 'textarea':
+                    html = `
+                        <div class="setting-group">
+                            <label>${widget.label}</label>
+                            <textarea id="${widget.id}" class="code-area" placeholder="${widget.properties.placeholder || ''}" rows="${widget.properties.rows || 3}"></textarea>
+                        </div>`;
+                    // RAG context'i Telemetry paneline de koyalım
+                    telemetryHTML += html;
+                    break;
+                case 'slider':
+                    html = `
+                        <div class="setting-group">
+                            <label>${widget.label.toUpperCase()}</label>
+                            <div class="range-wrap">
+                                <div class="range-head"><span>${widget.label}</span><span id="${widget.display_id}">${widget.properties.value}</span></div>
+                                <input type="range" id="${widget.id}" min="${widget.properties.min}" max="${widget.properties.max}" step="${widget.properties.step}" value="${widget.properties.value}">
+                            </div>
+                        </div>`;
+                    settingsHTML += html;
+                    break;
+            }
+        });
+        
+        settingsContainer.innerHTML = settingsHTML;
+        telemetryContainer.innerHTML = telemetryHTML;
+        
+        // Dinamik olarak oluşturulan elemanlar için olay dinleyicilerini yeniden bağla
+        setupDynamicEvents(schema.widgets);
+
+    } catch (error) {
+        console.error("Dynamic UI Render Failed:", error);
+    }
+}
+
+function setupDynamicEvents(widgets) {
+     widgets.forEach(widget => {
+        if (widget.type === 'slider') {
+            const input = $(widget.id);
+            const display = $(widget.display_id);
+            if(input && display) {
+                input.oninput = (e) => display.innerText = e.target.value;
+            }
+        }
+     });
+}
+
+// --- CHARTS ---
 function setupCharts() {
     const ctx = $('tpsChart');
     if(!ctx) return;
@@ -62,7 +127,7 @@ function setupCharts() {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: false, // PARENT BOYUTUNA UY
+            maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: { x: { display: false }, y: { display: false, min: 0 } },
             animation: false
@@ -221,20 +286,19 @@ async function sendMessage() {
 
 function buildPayload(text) {
     const sys = $('systemPrompt') ? $('systemPrompt').value : "";
-    const rag = $('ragInput') ? $('ragInput').value : "";
+    const rag = $('ragInput') ? $('ragInput').value : ""; // Dinamik olarak oluşturulmuş elemandan oku
     
     const msgs = [];
     if (rag) msgs.push({ role: 'system', content: `CONTEXT:\n${rag}` });
     if (sys) msgs.push({ role: 'system', content: sys });
     
-    const limitEl = $('historyLimit');
-    const limit = limitEl ? parseInt(limitEl.value) : 10;
-    Store.history.slice(-limit).forEach(m => msgs.push(m));
+    // Geçmiş limiti artık HTML'de değil, sabit varsayalım
+    Store.history.slice(-10).forEach(m => msgs.push(m));
     
     msgs.push({ role: 'user', content: text });
 
-    const tempEl = $('tempInput');
-    const tokEl = $('tokenLimit');
+    const tempEl = $('tempInput'); // Dinamik
+    const tokEl = $('tokenLimit'); // Statik
 
     return {
         messages: msgs,
@@ -266,18 +330,12 @@ function setupEvents() {
     const stop = $('stopBtn');
     if(stop) stop.onclick = () => { if(Store.controller) Store.controller.abort(); };
 
-    // Sliders
-    ['temp', 'history', 'token'].forEach(prefix => {
-        const input = $(prefix + 'Input') || $(prefix + 'Limit');
-        const display = $(prefix + 'Val');
-        if(input && display) {
-            input.oninput = (e) => display.innerText = e.target.value;
-        }
-    });
-    
-    // Rag Counter
-    const rag = $('ragInput');
-    if(rag) rag.oninput = (e) => $('ragCount').innerText = e.target.value.length;
+    // Sadece statik kalan slider için
+    const tokEl = $('tokenLimit');
+    const tokVal = $('tokenVal');
+    if(tokEl && tokVal) {
+        tokEl.oninput = (e) => tokVal.innerText = e.target.value;
+    }
 }
 
 function setPersona(key) {
