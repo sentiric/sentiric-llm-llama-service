@@ -1,214 +1,225 @@
 {
   "active_profile": "sentiric_6gb_qwen25_3b",
-
   "profiles": {
-
-    /* ---------------------------- */
-    /*       6 GB VRAM MODELLERİ   */
-    /* ---------------------------- */
-
     "sentiric_6gb_qwen25_3b": {
-      "description": "🔥 [6GB] En kaliteli genel LLM (Qwen2.5 3B)",
+      "display_name": "🔥 Qwen 2.5 3B (Kalite)",
+      "description": "6GB VRAM için en kaliteli genel amaçlı model.",
+      "category": "6 GB VRAM Modelleri",
       "model_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
-      "filename": "qwen2.5-3b-instruct-Q5_K_M.gguf",
+      "filename": "qwen2.5-3b-instruct-q5_k_m.gguf",
       "context_size": 4096,
       "gpu_layers": 85,
       "temperature": 0.45,
       "system_prompt": "Yüksek doğrulukta, hızlı ve net cevaplar üret."
     },
-
     "sentiric_6gb_llama33_3b": {
-      "description": "⚡ [6GB] Stabil + güvenilir (Llama 3.3 3B)",
-      "model_id": "bartowski/Llama-3.3-3B-Instruct-GGUF",
-      "filename": "Llama-3.3-3B-Instruct-Q5_K_M.gguf",
+      "display_name": "⚡ Llama 3.3 3B (Stabil)",
+      "description": "Meta'nın güvenilir, hızlı ve tutarlı modeli.",
+      "category": "6 GB VRAM Modelleri",
+      "model_id": "MaziyarPanahi/calme-3.3-llamaloi-3b-GGUF",
+      "filename": "calme-3.3-llamaloi-3b.Q5_K_M.gguf",
       "context_size": 4096,
       "gpu_layers": 90,
       "temperature": 0.45,
       "system_prompt": "Kararlı ve tutarlı yanıtlar ver."
     },
-
-    "sentiric_6gb_phi35": {
-      "description": "📚 [6GB] Uzun metin + tutarlılık (Phi-3.5 Mini)",
-      "model_id": "microsoft/Phi-3.5-mini-gguf",
-      "filename": "phi-3.5-mini-Q5_K_M.gguf",
+    "sentiric_6gb_phi35_mini": {
+      "display_name": "📚 Phi-3.5 Mini 3.1B (Uzun Metin)",
+      "description": "Küçük boyutuna rağmen uzun metinlerde çok tutarlı.",
+      "category": "6 GB VRAM Modelleri",
+      "model_id": "bartowski/Phi-3.5-mini-instruct-GGUF",
+      "filename": "Phi-3.5-mini-instruct-Q5_K_M.gguf",
       "context_size": 4096,
       "gpu_layers": 60,
-      "temperature": 0.4,
-      "system_prompt": "Tutarlı, uzun metinlerde güçlü cevaplar üret."
+      "temperature": 0.40,
+      "system_prompt": "Uzun metinlerde tutarlı ve mantıklı yanıtlar üret."
     },
-
-    "sentiric_6gb_code_light": {
-      "description": "💻 [6GB] Hafif kodlama modeli (Qwen2.5 Coder 1.5B)",
-      "model_id": "Qwen/Qwen2.5-Coder-1.5B-GGUF",
-      "filename": "qwen2.5-coder-1.5b-Q8_0.gguf",
-      "context_size": 4096,
-      "gpu_layers": 80,
-      "temperature": 0.1,
-      "system_prompt": "Step-by-step analiz ile temiz kod üret."
-    },
-
-    "sentiric_6gb_gemma2_2b": {
-      "description": "🪶 [6GB] Ultra hafif + stabil (Gemma 2 2B)",
-      "model_id": "google/gemma-2-2b-it-GGUF",
-      "filename": "gemma-2-2b-Q6_K.gguf",
-      "context_size": 3072,
-      "gpu_layers": 100,
-      "temperature": 0.5,
-      "system_prompt": "Hızlı ve ekonomik görevler için optimize edilmiş."
-    },
-
     "sentiric_6gb_phi3_mini": {
-      "description": "🤖 [6GB] Küçük ama akıllı (Phi-3 Mini 3.1B)",
-      "model_id": "microsoft/Phi-3-mini-gguf",
-      "filename": "phi-3-mini-Q6_K.gguf",
+      "display_name": "🤖 Phi-3 Mini 3.1B (Akıllı)",
+      "description": "Genel kullanımda hafif ama beklenenden akıllı.",
+      "category": "6 GB VRAM Modelleri",
+      "model_id": "microsoft/Phi-3-mini-4k-instruct-gguf",
+      "filename": "Phi-3-mini-4k-instruct-q4.gguf",
       "context_size": 3072,
       "gpu_layers": 75,
       "temperature": 0.45,
       "system_prompt": "Genel işlerde hafif ama akıllı bir yardımcı."
     },
-
+    "sentiric_6gb_gemma2_2b": {
+      "display_name": "🪶 Gemma 2 2B (Ultra Hafif)",
+      "description": "En hafif ama stabil modellerden biri.",
+      "category": "6 GB VRAM Modelleri",
+      "model_id": "bartowski/gemma-2-2b-it-GGUF",
+      "filename": "gemma-2-2b-it-Q6_K.gguf",
+      "context_size": 3072,
+      "gpu_layers": 100,
+      "temperature": 0.50,
+      "system_prompt": "Hafif görevler için optimize edilmiş hızlı model."
+    },
     "sentiric_6gb_mistral_nemo_2b": {
-      "description": "🌬️ [6GB] Temiz + hafif reasoning (Mistral Nemo 2B)",
-      "model_id": "mistral/Mistral-Nemo-2B-GGUF",
-      "filename": "mistral-nemo-2b-Q6_K.gguf",
+      "display_name": "🌬️ Mistral Nemo 2B (Dengeli)",
+      "description": "2B boyutunda şaşırtıcı derecede dengeli performans.",
+      "category": "6 GB VRAM Modelleri",
+      "model_id": "mistralai/Ministral-3-3B-Instruct-2512-GGUF",
+      "filename": "Ministral-3-3B-Instruct-2512-Q5_K_M.gguf",
       "context_size": 4096,
       "gpu_layers": 85,
       "temperature": 0.5,
-      "system_prompt": "Dengeli ve hızlı yanıtlar ver."
+      "system_prompt": "Dengeli, hafif ve hızlı sonuçlar üret."
     },
-
-    "sentiric_6gb_llama31_1b": {
-      "description": "🧩 [6GB] Basit görevlerde ultra düşük VRAM (Llama 3.1 1B)",
-      "model_id": "bartowski/Llama-3.1-1B-Instruct-GGUF",
-      "filename": "Llama-3.1-1B-Instruct-Q8_0.gguf",
-      "context_size": 2048,
-      "gpu_layers": 100,
-      "temperature": 0.6,
-      "system_prompt": "Basit sorular için minimal model."
-    },
-
     "sentiric_6gb_qwen25_0.5b": {
-      "description": "🔍 [6GB] RAG + bilgi tabanı yardımcı (Qwen2.5 0.5B)",
-      "model_id": "Qwen/Qwen2.5-0.5B-GGUF",
-      "filename": "qwen2.5-0.5b-Q8_0.gguf",
+      "display_name": "🔍 Qwen 2.5 0.5B (RAG Yardımcı)",
+      "description": "RAG/embedding tabanlı hafif görevler için ideal.",
+      "category": "6 GB VRAM Modelleri",
+      "model_id": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+      "filename": "qwen2.5-0.5b-instruct-q8_0.gguf",
       "context_size": 2048,
       "gpu_layers": 100,
       "temperature": 0.6,
-      "system_prompt": "Bilgi tabanı çağırma gibi hafif işler için."
+      "system_prompt": "Bilgi tabanı ve hafif görevlerde kullanılacak mini model."
     },
-
+    "sentiric_6gb_code_light": {
+      "display_name": "💻 Qwen 2.5 Coder 1.5B (Hafif Kodlama)",
+      "description": "Kodlama için küçük ama etkili bir model.",
+      "category": "6 GB VRAM Modelleri",
+      "model_id": "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
+      "filename": "qwen2.5-coder-1.5b-instruct-q8_0.gguf",
+      "context_size": 4096,
+      "gpu_layers": 80,
+      "temperature": 0.1,
+      "system_prompt": "Step-by-step analizle temiz ve optimal kodlar üret."
+    },
     "sentiric_6gb_deepseek_coder_1.3b": {
-      "description": "🧠 [6GB] Alternatif hafif kodlama modeli",
-      "model_id": "deepseek-ai/deepseek-coder-1.3b-GGUF",
-      "filename": "deepseek-coder-1.3b-Q8_0.gguf",
+      "display_name": "🧠 DeepSeek Coder 1.3B (Kod Alternatifi)",
+      "description": "Kodlama için hafif, hızlı ve mantıklı.",
+      "category": "6 GB VRAM Modelleri",
+      "model_id": "TheBloke/deepseek-coder-1.3b-instruct-GGUF",
+      "filename": "deepseek-coder-1.3b-instruct.Q8_0.gguf",
       "context_size": 4096,
       "gpu_layers": 95,
       "temperature": 0.2,
-      "system_prompt": "Kodlama ve analiz için uygun."
+      "system_prompt": "Hızlı ve hafif kodlama görevleri için ideal."
     },
-
-    /* ---------------------------- */
-    /*       12 GB VRAM MODELLERİ  */
-    /* ---------------------------- */
-
+    "sentiric_6gb_llama31_1b": {
+      "display_name": "🧩 Llama 3.1 1B (Mini Stabil)",
+      "description": "Basit işlemler ve sistem task'leri için çok düşük VRAM.",
+      "category": "6 GB VRAM Modelleri",
+      "model_id": "bartowski/Llama-3.2-1B-Instruct-GGUF",
+      "filename": "Llama-3.2-1B-Instruct-Q8_0.gguf",
+      "context_size": 2048,
+      "gpu_layers": 100,
+      "temperature": 0.6,
+      "system_prompt": "Basit komutlarda hızlı yanıt veren mini model."
+    },
     "sentiric_12gb_deepseek_v3": {
-      "description": "🚀 [12GB] Üretim için en güçlü açık kaynak (DeepSeek V3 8B)",
-      "model_id": "deepseek-ai/DeepSeek-V3-MoE-8B-GGUF",
-      "filename": "deepseek-v3-moe-8b-Q5_K_M.gguf",
+      "display_name": "🚀 DeepSeek V3 8B (En Güçlü)",
+      "description": "12GB için en güçlü mantık ve analiz modeli.",
+      "category": "12 GB VRAM Modelleri",
+      "model_id": "unsloth/DeepSeek-V3-GGUF",
+      "filename": "DeepSeek-V3-Q5_K_M/DeepSeek-V3-Q5_K_M-00001-of-00010.gguf",
       "context_size": 16384,
       "gpu_layers": 40,
       "temperature": 0.55,
-      "system_prompt": "Üst seviye reasoning ve detaylı analiz ver."
+      "system_prompt": "Üst seviye reasoning, analiz ve bağlam işleme."
     },
-
     "sentiric_12gb_qwen25_7b": {
-      "description": "⚖️ [12GB] En iyi Türkçe + mantık (Qwen2.5 7B)",
+      "display_name": "🇹🇷 Qwen 2.5 7B (Türkçe Lideri)",
+      "description": "Türkçe anlama + mantık açısından en iyi model.",
+      "category": "12 GB VRAM Modelleri",
       "model_id": "Qwen/Qwen2.5-7B-Instruct-GGUF",
-      "filename": "qwen2.5-7b-instruct-Q5_K_M.gguf",
+      "filename": "qwen2.5-7b-instruct-q5_k_m-00001-of-00002.gguf",
       "context_size": 16384,
       "gpu_layers": 32,
       "temperature": 0.55,
-      "system_prompt": "Üst düzey mantık ve bağlam analizi yap."
+      "system_prompt": "Türkçe'de güçlü mantık ve bağlam analizi yap."
     },
-
     "sentiric_12gb_coder_pro": {
-      "description": "💻 [12GB] Kodlama için en iyi model (Qwen2.5 Coder 7B)",
+      "display_name": "💻 Qwen 2.5 Coder 7B (Pro Kodlama)",
+      "description": "Profesyonel yazılım görevleri için en iyi açık kaynak model.",
+      "category": "12 GB VRAM Modelleri",
       "model_id": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
       "filename": "qwen2.5-coder-7b-instruct-Q5_K_M.gguf",
       "context_size": 16384,
       "gpu_layers": 35,
       "temperature": 0.15,
-      "system_prompt": "Profesyonel düzeyde kod ve açıklama üret."
+      "system_prompt": "Karmaşık yazılım görevlerinde adım adım düşün ve optimal kod üret."
     },
-
     "sentiric_12gb_mistral_nemo_7b": {
-      "description": "🌬️ [12GB] Dengeli + kaliteli (Mistral Nemo 7B)",
+      "display_name": "🌬️ Mistral Nemo 7B (Dengeli)",
+      "description": "Genel kullanımda kaliteli + stabil performans.",
+      "category": "12 GB VRAM Modelleri",
       "model_id": "mistral/Mistral-Nemo-7B-GGUF",
       "filename": "mistral-nemo-7b-Q5_K_M.gguf",
       "context_size": 16384,
       "gpu_layers": 35,
       "temperature": 0.55,
-      "system_prompt": "Denge, stabilite ve kalite sağlar."
+      "system_prompt": "Denge, kalite ve hız sağlayan 7B model."
     },
-
     "sentiric_12gb_llama33_8b": {
-      "description": "🔷 [12GB] Meta tabanlı stabil model (Llama 3.3 8B)",
-      "model_id": "bartowski/Llama-3.3-8B-Instruct-GGUF",
-      "filename": "Llama-3.3-8B-Instruct-Q5_K_M.gguf",
+      "display_name": "🔷 Llama 3.3 8B (Meta Stabil)",
+      "description": "Meta'nın güvenilir, kararlı ve kaliteli modeli.",
+      "category": "12 GB VRAM Modelleri",
+      "model_id": "bartowski/Meta-Llama-3-8B-Instruct-GGUF",
+      "filename": "Meta-Llama-3-8B-Instruct-Q5_K_M.gguf",
       "context_size": 16384,
       "gpu_layers": 33,
       "temperature": 0.6,
       "system_prompt": "Kararlı ve güvenli yanıtlar ver."
     },
-
     "sentiric_12gb_qwen25_14b_q4": {
-      "description": "📚 [12GB] Uzun context (32k) RAG için (Qwen2.5 14B)",
+      "display_name": "📚 Qwen 2.5 14B (Uzun Context 32k)",
+      "description": "32k context ile RAG ve belge analizi için mükemmel.",
+      "category": "12 GB VRAM Modelleri",
       "model_id": "Qwen/Qwen2.5-14B-Instruct-GGUF",
-      "filename": "qwen2.5-14b-instruct-Q4_K_M.gguf",
+      "filename": "qwen2.5-14b-instruct-q4_k_m-00001-of-00003.gguf",
       "context_size": 32768,
       "gpu_layers": 17,
       "temperature": 0.55,
-      "system_prompt": "Uzun belgelerde en yüksek tutarlılık."
+      "system_prompt": "Uzun belgelerde yüksek tutarlılık sağla."
     },
-
     "sentiric_12gb_mixtral_8x7b_q4": {
-      "description": "🧠 [12GB] MoE reasoning (Mixtral 8x7B Q4)",
-      "model_id": "mistral/Mixtral-8x7B-GGUF",
-      "filename": "mixtral-8x7b-Q4_K_M.gguf",
+      "display_name": "🧠 Mixtral 8x7B MoE (Reasoning)",
+      "description": "MoE yapısıyla daha güçlü mantık yürütme kabiliyeti.",
+      "category": "12 GB VRAM Modelleri",
+      "model_id": "mradermacher/Mistral-8-from-Mixtral-8x7B-v0.1-GGUF",
+      "filename": "Mistral-8-from-Mixtral-8x7B-v0.1.Q4_K_M.gguf",
       "context_size": 16384,
       "gpu_layers": 16,
       "temperature": 0.55,
-      "system_prompt": "MoE yapısıyla güçlü mantık yürüt."
+      "system_prompt": "Karmaşık görevlerde güçlü reasoning üret."
     },
-
     "sentiric_12gb_llama31_8b": {
-      "description": "🔹 [12GB] Hafif ama kaliteli 8B alternatif (Llama 3.1 8B)",
-      "model_id": "bartowski/Llama-3.1-8B-Instruct-GGUF",
-      "filename": "Llama-3.1-8B-Instruct-Q5_K_M.gguf",
+      "display_name": "🔹 Llama 3.1 8B (Dengeli Alternatif)",
+      "description": "8B sınıfında hafif ama kaliteli bir seçenek.",
+      "category": "12 GB VRAM Modelleri",
+      "model_id": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+      "filename": "Meta-Llama-3.1-8B-Instruct-Q5_K_M.gguf",
       "context_size": 16384,
       "gpu_layers": 33,
       "temperature": 0.55,
-      "system_prompt": "Güçlü ve dengeli bir genel model."
+      "system_prompt": "Hafif ve dengeli bir 8B model."
     },
-
     "sentiric_12gb_deepseek_coder_v2_7b": {
-      "description": "💻 [12GB] Alternatif profesyonel kodlama modeli (DeepSeek Coder V2 7B)",
+      "display_name": "💻 DeepSeek Coder V2 7B (Alternatif Kodlama)",
+      "description": "Kodlama ve hata çözümünde güçlü ikinci seçenek.",
+      "category": "12 GB VRAM Modelleri",
       "model_id": "deepseek-ai/deepseek-coder-v2-7b-GGUF",
       "filename": "deepseek-coder-v2-7b-Q5_K_M.gguf",
       "context_size": 16384,
       "gpu_layers": 33,
       "temperature": 0.2,
-      "system_prompt": "Karmaşık yazılım görevlerinde etkili."
+      "system_prompt": "Karmaşık yazılım görevlerini analiz et ve çöz."
     },
-
     "sentiric_12gb_neuralbeagle_7b_tr": {
-      "description": "🇹🇷 [12GB] Türkçe ağırlıklı yerel model",
-      "model_id": "NeuralBeagle/NeuralBeagle-7B-Turkish-GGUF",
-      "filename": "neuralbeagle-7b-tr-Q5_K_M.gguf",
+      "display_name": "🇹🇷 NeuralBeagle 7B (Türkçe)",
+      "description": "Türkçe için optimize edilmiş yerel model.",
+      "category": "12 GB VRAM Modelleri",
+      "model_id": "TheBloke/NeuralBeagle14-7B-GGUF",
+      "filename": "neuralbeagle14-7b.Q5_K_M.gguf",
       "context_size": 8192,
       "gpu_layers": 24,
       "temperature": 0.55,
-      "system_prompt": "Türkçe diyaloglarda güçlü performans."
+      "system_prompt": "Türkçe odaklı diyalog ve analizlerde güçlü performans."
     }
   }
 }

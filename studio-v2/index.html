@@ -3,13 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sentiric Agent OS v6.2</title>
+    <title>Sentiric Agent OS v8.0</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💠</text></svg>">
     
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/tokyo-night-dark.min.css">
-    <link rel="stylesheet" href="style.css">
+
+    <!-- Modüler CSS Dosyaları -->
+    <link rel="stylesheet" href="main.css">
+    <link rel="stylesheet" href="components.css">
+    <link rel="stylesheet" href="animations.css">
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -33,18 +37,14 @@
             <span>SENTIRIC OS</span>
         </div>
 
-        <div class="model-dock">
-            <button class="dock-trigger" id="modelTrigger" onclick="toggleModelMatrix()">
-                <div class="status-dot online"></div>
-                <span id="activeModelName">Bağlanıyor...</span>
-                <i class="fas fa-chevron-down"></i>
-            </button>
-            <div class="model-matrix hidden" id="modelMatrix"></div>
+        <div class="model-selector-wrapper">
+            <div id="modelStatusIndicator" class="status-dot"></div>
+            <select id="modelSelector" class="model-select"></select>
         </div>
 
         <div class="header-actions">
-            <button class="icon-btn" onclick="togglePanel('statsPanel')"><i class="fas fa-chart-line"></i></button>
-            <button class="icon-btn" onclick="togglePanel('settingsPanel')"><i class="fas fa-cog"></i></button>
+            <button class="icon-btn" id="toggle-stats-panel"><i class="fas fa-chart-line"></i></button>
+            <button class="icon-btn" id="toggle-settings-panel"><i class="fas fa-cog"></i></button>
         </div>
     </header>
 
@@ -59,7 +59,7 @@
 
         <div class="omni-wrapper">
             <div class="omni-bar">
-                <button class="tool-btn" onclick="$('fileInput').click()"><i class="fas fa-paperclip"></i></button>
+                <button class="tool-btn" id="file-upload-btn"><i class="fas fa-paperclip"></i></button>
                 <input type="file" id="fileInput" hidden>
                 
                 <textarea id="omniInput" placeholder="Yapay zekaya bir görev verin..." rows="1"></textarea>
@@ -78,32 +78,25 @@
     <aside class="slide-panel" id="settingsPanel">
         <div class="panel-header">
             <h3>Ayarlar</h3>
-            <button class="close-btn" onclick="togglePanel('settingsPanel')"><i class="fas fa-times"></i></button>
+            <button class="close-btn" id="close-settings-panel"><i class="fas fa-times"></i></button>
         </div>
-        <div class="panel-content" id="dynamic-controls">
-            <!-- Bu bölüm backend tarafından doldurulacak -->
-        </div>
+        <div class="panel-content" id="dynamic-controls"></div>
     </aside>
 
     <aside class="slide-panel" id="statsPanel">
         <div class="panel-header">
             <h3>Telemetri</h3>
-            <button class="close-btn" onclick="togglePanel('statsPanel')"><i class="fas fa-times"></i></button>
+            <button class="close-btn" id="close-stats-panel"><i class="fas fa-times"></i></button>
         </div>
         <div class="panel-content">
             <div class="metric-card">
                 <div class="metric-label">HIZ (TPS)</div>
                 <div class="metric-val" id="tpsBig">0.0</div>
-                
                 <div class="chart-container">
                     <canvas id="tpsChart"></canvas>
                 </div>
             </div>
-            
-            <div id="dynamic-telemetry-controls">
-                <!-- Bu bölüm backend tarafından doldurulacak -->
-            </div>
-
+            <div id="dynamic-telemetry-controls"></div>
             <div class="setting-group mt-4">
                 <label>DEBUG</label>
                 <pre id="debugLog" class="log-box">Ready</pre>
@@ -113,6 +106,7 @@
 
 </div>
 
-<script src="app.js"></script>
+<!-- Modüler JavaScript -->
+<script src="main.js" type="module"></script>
 </body>
 </html>
