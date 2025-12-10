@@ -1,5 +1,5 @@
 /**
- * SENTIRIC AGENT OS v7.3 (LLM-DRIVEN UI - ANIMATED)
+ * SENTIRIC AGENT OS v7.4 (LLM-DRIVEN UI - STABLE FIX)
  *
  * Bu dosya, arayüzün tüm mantığını içerir.
  * UI elemanları, sayfa yüklendiğinde /v1/ui/layout endpoint'inden alınan
@@ -23,7 +23,7 @@ const Store = {
 
 // --- UYGULAMA BAŞLANGICI ---
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log("🌌 Sentiric OS v7.3 Booting (Animated UI)...");
+    console.log("🌌 Sentiric OS v7.4 Booting (Stable Fix)...");
     
     await renderModelListFromAPI();
     await renderDynamicLayout();
@@ -62,6 +62,37 @@ async function renderDynamicLayout() {
     } catch (error) {
         console.error("Dynamic UI Render Failed:", error);
         $('dynamic-controls').innerHTML = `<div class="error-msg">UI yüklenemedi.</div>`;
+    }
+}
+
+// --- KRİTİK DÜZELTME: EKSİK FONKSİYON BURAYA EKLENDİ ---
+function renderWidget(widget) {
+    switch(widget.type) {
+        case 'chip-group':
+            return `
+                <div class="setting-group">
+                    <label>${widget.label}</label>
+                    <div class="chip-grid" id="${widget.id}">
+                        ${widget.options.map(opt => `
+                            <button class="chip ${opt.active ? 'active' : ''}" data-persona-key="${opt.value}">${opt.label}</button>
+                        `).join('')}
+                    </div>
+                </div>`;
+        case 'textarea':
+            return `
+                <div class="setting-group">
+                    <label>${widget.label}</label>
+                    <textarea id="${widget.id}" class="code-area" placeholder="${widget.properties.placeholder || ''}" rows="${widget.properties.rows || 3}"></textarea>
+                </div>`;
+        case 'slider':
+            return `
+                <div class="setting-group">
+                    <div class="range-wrap">
+                        <div class="range-head"><span>${widget.label}</span><span id="${widget.display_id}">${widget.properties.value}</span></div>
+                        <input type="range" id="${widget.id}" min="${widget.properties.min}" max="${widget.properties.max}" step="${widget.properties.step}" value="${widget.properties.value}">
+                    </div>
+                </div>`;
+        default: return '';
     }
 }
 
@@ -152,7 +183,7 @@ async function sendMessage() {
     addMessage('user', escapeHtml(text));
     Store.history.push({role: 'user', content: text});
     
-    const bubble = addMessage('ai', ''); // İçerik boş olarak başlar
+    const bubble = addMessage('ai', '');
     Store.startTime = Date.now();
     Store.tokenCount = 0;
     Store.controller = new AbortController();
@@ -188,12 +219,12 @@ async function sendMessage() {
                         const content = json.choices[0]?.delta?.content;
                         if (content) {
                             if (!thinkingIndicatorRemoved) {
-                                bubble.innerHTML = ''; // Düşünme animasyonunu temizle
+                                bubble.innerHTML = '';
                                 thinkingIndicatorRemoved = true;
                             }
                             fullText += content;
                             Store.tokenCount++;
-                            bubble.innerHTML = marked.parse(fullText + '▋'); // Yanıp sönen imleç ekle
+                            bubble.innerHTML = marked.parse(fullText + '▋');
                             updateStats();
                             scrollToBottom();
                         }
@@ -201,7 +232,7 @@ async function sendMessage() {
                 }
             }
         }
-        bubble.innerHTML = marked.parse(fullText); // Son imleci kaldır
+        bubble.innerHTML = marked.parse(fullText);
         enhanceCode(bubble);
         Store.history.push({role: 'assistant', content: fullText});
 
@@ -222,16 +253,13 @@ function buildPayload(text) {
     const rag = $('ragInput')?.value || "";
     const msgs = [];
     
-    // Sadece ilk turda sistem ve rag context'ini gönder
     if (Store.history.length <= 1) { 
         if (rag) msgs.push({ role: 'system', content: `CONTEXT:\n${rag}` });
         if (sys) msgs.push({ role: 'system', content: sys });
     }
     
-    // Konuşma geçmişinin son 10 mesajını ekle
     const historySlice = Store.history.slice(-10);
     historySlice.forEach(m => {
-        // Zaten eklenmiş olabilecek user mesajını tekrar ekleme
         if (m.role === 'user' && m.content === text && historySlice.indexOf(m) === historySlice.length-1) return;
         msgs.push(m);
     });
@@ -278,6 +306,13 @@ function addMessage(role, content) {
 function setupStaticEvents() {
     const inp = $('omniInput'); if(inp) { inp.addEventListener('input', (e) => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px'; }); inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }); }
     const send = $('sendBtn'); if(send) send.onclick = sendMessage; const stop = $('stopBtn'); if(stop) stop.onclick = () => { if(Store.controller) Store.controller.abort(); };
+}
+
+function setupDynamicEvents(schema) {
+    Object.values(schema.panels).flat().forEach(widget => {
+        if (widget.type === 'slider') { const input = $(widget.id); const display = $(widget.display_id); if(input && display) { input.oninput = (e) => display.innerText = e.target.value; } }
+        if (widget.type === 'chip-group') { const container = $(widget.id); if (container) { container.querySelectorAll('.chip').forEach(chip => { chip.onclick = () => setPersona(chip.dataset.personaKey); }); } }
+    });
 }
 
 function setPersona(key) {

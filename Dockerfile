@@ -54,7 +54,7 @@ COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 RUN ldconfig
 
 # --- DEĞİŞİKLİK BURADA: studio -> studio-v2 ---
-COPY studio-v2 /app/studio
+COPY studio-v2 /app/studio-v2
 COPY examples /app/examples
 
 COPY models/profiles.json /app/profiles.json
