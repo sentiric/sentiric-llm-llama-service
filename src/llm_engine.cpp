@@ -50,19 +50,16 @@ LLMEngine::~LLMEngine() {
     }
 }
 
-// --- HOT RELOAD MANTIK (NON-BLOCKING DOWNLOAD) ---
+// --- HOT RELOAD MANTIK ---
 bool LLMEngine::reload_model(const std::string& profile_name) {
     spdlog::info("🔄 Profile switch requested: {}", profile_name);
 
-    // ADIM 1: Profili geçici bir ayar nesnesine uygula (Mevcut ayarları bozmadan)
     Settings temp_settings = settings_; 
     if (!apply_profile(temp_settings, profile_name)) {
         spdlog::error("❌ Reload aborted: Profile '{}' invalid.", profile_name);
         return false;
     }
 
-    // ADIM 2: Modeli İndir/Doğrula (KİLİT YOK - Uzun sürebilir)
-    // Bu sırada mevcut model hizmet vermeye devam eder.
     try {
         spdlog::info("⬇️ checking/downloading model in background...");
         temp_settings.model_path = ModelManager::ensure_model_is_ready(temp_settings);
@@ -71,22 +68,19 @@ bool LLMEngine::reload_model(const std::string& profile_name) {
         return false;
     }
 
-    // ADIM 3: WRITE LOCK AL (Sadece yükleme anında kilitle)
     std::unique_lock<std::shared_mutex> lock(model_mutex_);
     spdlog::info("🔒 System locked for model swap...");
     
     model_loaded_ = false;
-    settings_ = temp_settings; // Yeni ayarları uygula
+    settings_ = temp_settings;
 
     try {
-        // Eski Kaynakları Temizle
         context_pool_.reset(); 
         if (model_) {
             llama_model_free(model_);
             model_ = nullptr;
         }
 
-        // Backend Init
         static bool backend_initialized = false;
         if(!backend_initialized) {
             llama_backend_init();
@@ -94,7 +88,6 @@ bool LLMEngine::reload_model(const std::string& profile_name) {
             backend_initialized = true;
         }
 
-        // Yeni Modeli Yükle
         llama_model_params model_params = llama_model_default_params();
         model_params.n_gpu_layers = settings_.n_gpu_layers;
         model_params.use_mmap = settings_.use_mmap;
@@ -103,14 +96,12 @@ bool LLMEngine::reload_model(const std::string& profile_name) {
         model_ = llama_model_load_from_file(settings_.model_path.c_str(), model_params);
         if (!model_) throw std::runtime_error("Failed to load model file.");
 
-        // Mimariyi Algıla
         char arch_buffer[64] = {0};
         llama_model_meta_val_str(model_, "general.architecture", arch_buffer, sizeof(arch_buffer));
         std::string arch = arch_buffer[0] ? arch_buffer : "unknown";
         spdlog::info("🔍 Architecture: {}", arch);
         formatter_ = create_formatter_for_model(arch);
 
-        // Havuzu Oluştur
         context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_, active_contexts_gauge_);
         
         model_loaded_ = true;
@@ -140,7 +131,6 @@ void LLMEngine::process_single_request(std::shared_ptr<BatchedRequest> batched_r
 void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batch) {
     if (batch.empty()) return;
     
-    // READ LOCK: İşlem sırasında modelin altından çekilmemesi için
     std::shared_lock<std::shared_mutex> lock(model_mutex_);
     if (!model_loaded_) return;
 
@@ -158,13 +148,10 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
     }
 }
 
-// --- REFACTORED LOGIC ---
+// --- LOGIC ---
 
 std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<BatchedRequest> req_ptr, const std::string& formatted_prompt) {
     const auto* vocab = llama_model_get_vocab(model_);
-    
-    // DÜZELTME: Double BOS Hatası İçin add_special = false
-    // PromptFormatter zaten gerekli BOS tokenlarını ekliyor.
     bool add_special = false; 
 
     std::vector<llama_token> tokens(formatted_prompt.length() + 64);
@@ -175,7 +162,6 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
     }
     tokens.resize(n_tokens);
 
-    // Truncate Logic
     const auto& params = req_ptr->request.params();
     uint32_t req_max_gen = params.has_max_new_tokens() ? params.max_new_tokens() : settings_.default_max_tokens;
     uint32_t max_context = settings_.context_size;
@@ -246,6 +232,17 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
         if (g) llama_sampler_chain_add(chain, g);
     }
     
+    // --- DÜZELTME BURADA ---
+    // repeat_penalty -> repetition_penalty
+    float repeat_penalty = params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty;
+    
+    llama_sampler_chain_add(chain, llama_sampler_init_penalties(
+        llama_n_ctx(ctx), // last_n
+        repeat_penalty,   // repeat penalty
+        0.0f,             // frequency penalty
+        0.0f              // presence penalty
+    ));
+
     llama_sampler_chain_add(chain, llama_sampler_init_top_k(params.has_top_k() ? params.top_k() : settings_.default_top_k));
     llama_sampler_chain_add(chain, llama_sampler_init_temp(params.has_temperature() ? params.temperature() : settings_.default_temperature));
     llama_sampler_chain_add(chain, llama_sampler_init_dist(time(NULL)));
@@ -256,7 +253,6 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     int n_decoded = 0;
     llama_pos n_past = prompt_tokens.size();
     
-    // Eğer generation limit context'i aşacak gibiyse koru
     uint32_t ctx_limit = settings_.context_size;
     if (n_past + req_max_gen > ctx_limit) {
         req_max_gen = ctx_limit - n_past - 1;

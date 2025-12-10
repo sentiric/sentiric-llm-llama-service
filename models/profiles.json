@@ -2,22 +2,22 @@
   "active_profile": "default",
   "profiles": {
     "default": {
-      "description": "Dengeli Türkçe Performans (Önerilen - Llama 3.2 3B)",
-      "model_id": "bartowski/Llama-3.2-3B-Instruct-GGUF",
-      "filename": "Llama-3.2-3B-Instruct-Q6_K.gguf",
-      "context_size": 8192,
-      "gpu_layers": 100,
-      "temperature": 0.7,
-      "system_prompt": "Sen yardımsever bir Türk asistanısın."
-    },
-    "tr_performance": {
-      "description": "Yüksek zeka, 12GB+ VRAM gerektirir (Llama 3.1 8B)",
+      "description": "Optimize Edilmiş Türkçe Sohbet (Llama-3.1 8B)",
       "model_id": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
       "filename": "Meta-Llama-3.1-8B-Instruct-Q5_K_M.gguf",
       "context_size": 8192,
       "gpu_layers": 33,
       "temperature": 0.6,
-      "system_prompt": "Sen detaylı düşünen bir uzmansın."
+      "system_prompt": "Sen yardımsever, nazik ve zeki bir Türk asistanısın. Sorulara her zaman Türkçe cevap ver."
+    },
+    "speed_optimized": {
+      "description": "Hız Odaklı / Düşük Bellek (Llama-3.2 3B)",
+      "model_id": "bartowski/Llama-3.2-3B-Instruct-GGUF",
+      "filename": "Llama-3.2-3B-Instruct-Q6_K.gguf",
+      "context_size": 8192,
+      "gpu_layers": 100,
+      "temperature": 0.7,
+      "system_prompt": "Sen yardımsever bir asistansın."
     },
     "coding_assistant": {
       "description": "Yazılım geliştirme (Qwen 2.5 7B) - 6GB VRAM Optimized",
