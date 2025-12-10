@@ -80,32 +80,8 @@
             <h3>Ayarlar</h3>
             <button class="close-btn" onclick="togglePanel('settingsPanel')"><i class="fas fa-times"></i></button>
         </div>
-        <div class="panel-content">
-            <div class="setting-group">
-                <label>PERSONA</label>
-                <div class="chip-grid">
-                    <button class="chip active" onclick="setPersona('default')">🇹🇷 Asistan</button>
-                    <button class="chip" onclick="setPersona('coder')">💻 Dev</button>
-                    <button class="chip" onclick="setPersona('creative')">🎨 Sanat</button>
-                    <button class="chip" onclick="setPersona('english')">🇺🇸 EN</button>
-                </div>
-            </div>
-            
-            <div class="setting-group">
-                <label>SİSTEM TALİMATI</label>
-                <textarea id="systemPrompt" class="code-area" rows="5"></textarea>
-            </div>
-            
-            <!-- DEĞİŞİKLİK BURADA: Dinamik kontroller için yer tutucu -->
-            <div id="dynamic-controls"></div>
-
-            <div class="setting-group">
-                <label>PARAMETRELER</label>
-                <div class="range-wrap">
-                    <div class="range-head"><span>Token</span><span id="tokenVal">1024</span></div>
-                    <input type="range" id="tokenLimit" min="64" max="8192" step="64" value="1024">
-                </div>
-            </div>
+        <div class="panel-content" id="dynamic-controls">
+            <!-- Bu bölüm backend tarafından doldurulacak -->
         </div>
     </aside>
 
@@ -124,7 +100,9 @@
                 </div>
             </div>
             
-            <div id="dynamic-telemetry-controls"></div>
+            <div id="dynamic-telemetry-controls">
+                <!-- Bu bölüm backend tarafından doldurulacak -->
+            </div>
 
             <div class="setting-group mt-4">
                 <label>DEBUG</label>

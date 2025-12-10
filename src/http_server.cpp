@@ -43,31 +43,54 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         spdlog::debug("HTTP {} {} - Status: {}", req.method, req.path, res.status);
     });
 
-    // --- YENİ ENDPOINT: Dinamik UI Layout ---
+    // --- YENİ ENDPOINT: Dinamik UI Layout (GENİŞLETİLDİ) ---
     svr_.Get("/v1/ui/layout", [this](const httplib::Request &, httplib::Response &res) {
         json layout_schema = {
-            {"widgets", {
-                {
-                    {"type", "textarea"},
-                    {"id", "ragInput"},
-                    {"label", "RAG BAĞLAMI"},
-                    {"properties", {
-                        {"placeholder", "Dinamik olarak oluşturulmuş RAG alanı..."},
-                        {"rows", 5}
-                    }}
-                },
-                {
-                    {"type", "slider"},
-                    {"id", "tempInput"},
-                    {"label", "Sıcaklık"},
-                    {"display_id", "tempVal"},
-                    {"properties", {
-                        {"min", 0.0},
-                        {"max", 2.0},
-                        {"step", 0.1},
-                        {"value", 0.7}
-                    }}
-                }
+            {"panels", {
+                {"settings", {
+                    {
+                        {"type", "chip-group"},
+                        {"id", "persona-chips"},
+                        {"label", "PERSONA"},
+                        {"options", {
+                            {{"label", "🇹🇷 Asistan"}, {"value", "default"}, {"active", true}},
+                            {{"label", "💻 Dev"}, {"value", "coder"}},
+                            {{"label", "🎨 Sanat"}, {"value", "creative"}},
+                            {{"label", "🇺🇸 EN"}, {"value", "english"}}
+                        }}
+                    },
+                    {
+                        {"type", "textarea"},
+                        {"id", "systemPrompt"},
+                        {"label", "SİSTEM TALİMATI"},
+                        {"properties", { {"rows", 5} }}
+                    },
+                    {
+                        {"type", "slider"},
+                        {"id", "tempInput"},
+                        {"label", "Sıcaklık"},
+                        {"display_id", "tempVal"},
+                        {"properties", { {"min", 0.0}, {"max", 2.0}, {"step", 0.1}, {"value", 0.7} }}
+                    },
+                    {
+                        {"type", "slider"},
+                        {"id", "tokenLimit"},
+                        {"label", "Token"},
+                        {"display_id", "tokenVal"},
+                        {"properties", { {"min", 64}, {"max", 8192}, {"step", 64}, {"value", 1024} }}
+                    }
+                }},
+                {"telemetry", {
+                    {
+                        {"type", "textarea"},
+                        {"id", "ragInput"},
+                        {"label", "RAG BAĞLAMI"},
+                        {"properties", {
+                            {"placeholder", "Dinamik olarak oluşturulmuş RAG alanı..."},
+                            {"rows", 5}
+                        }}
+                    }
+                }}
             }}
         };
         res.set_header("Access-Control-Allow-Origin", "*");
