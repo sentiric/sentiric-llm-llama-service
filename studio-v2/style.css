@@ -28,7 +28,9 @@ body { background: var(--bg-dark); color: var(--text-main); font-family: 'Inter'
     color: var(--text-main); cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 0.85rem;
 }
 .dock-trigger:hover { border-color: var(--primary); }
-.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 5px #10b981; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #f87171; transition: background-color 0.3s; }
+.status-dot.online { background: #10b981; box-shadow: 0 0 5px #10b981; }
+.status-dot.loading { background: #facc15; animation: pulse 1.5s infinite; }
 
 .model-matrix {
     position: absolute; top: 110%; left: 50%; transform: translateX(-50%); width: 280px;
@@ -50,13 +52,30 @@ body { background: var(--bg-dark); color: var(--text-main); font-family: 'Inter'
 .stage { flex: 1; position: relative; display: flex; flex-direction: column; overflow: hidden; }
 .stream-flow { flex: 1; overflow-y: auto; padding: 20px; padding-bottom: 120px; display: flex; flex-direction: column; gap: 20px; scroll-behavior: smooth; }
 
-/* MESSAGES */
-.msg-block { display: flex; gap: 12px; max-width: 800px; margin: 0 auto; width: 100%; }
+/* MESSAGES & ANIMATIONS */
+.msg-block { display: flex; gap: 12px; max-width: 800px; margin: 0 auto; width: 100%; animation: slide-in-fade 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) both; }
 .msg-block.user { flex-direction: row-reverse; }
 .msg-avatar { width: 32px; height: 32px; border-radius: 8px; background: var(--bg-panel); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .msg-block.ai .msg-avatar { background: var(--primary); border: none; color: white; }
 .msg-content { background: var(--bg-panel); border: 1px solid var(--border); padding: 12px 16px; border-radius: 12px; font-size: 0.95rem; line-height: 1.6; max-width: 85%; }
 .msg-block.user .msg-content { background: var(--primary); border: none; color: white; }
+.msg-block.system { font-size: 0.8rem; color: var(--text-sub); text-align: center; justify-content: center; opacity: 0.7; }
+.msg-block.system .msg-avatar { background: transparent; border: 1px solid var(--border); }
+
+@keyframes slide-in-fade {
+    0% { transform: translateY(20px); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+}
+
+.typing-indicator { display: flex; align-items: center; gap: 5px; padding: 10px 0; }
+.typing-indicator span { width: 8px; height: 8px; background-color: #a1a1aa; border-radius: 50%; animation: typing-bounce 1.4s infinite ease-in-out both; }
+.typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+.typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes typing-bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1.0); }
+}
 
 /* OMNI BAR (INPUT) */
 .omni-wrapper {
@@ -86,7 +105,7 @@ body { background: var(--bg-dark); color: var(--text-main); font-family: 'Inter'
 
 .omni-status { margin-top: 8px; font-size: 0.75rem; color: var(--text-sub); font-family: 'JetBrains Mono', monospace; opacity: 0.6; }
 
-/* PANELS (FIXED LAYOUT) */
+/* PANELS */
 .slide-panel {
     position: absolute; top: 60px; right: 0; bottom: 0; width: 320px;
     background: var(--bg-panel); border-left: 1px solid var(--border);
@@ -100,20 +119,10 @@ body { background: var(--bg-dark); color: var(--text-main); font-family: 'Inter'
 .panel-content { flex: 1; overflow-y: auto; padding: 20px; }
 .close-btn { background: transparent; border: none; color: var(--text-sub); cursor: pointer; font-size: 1.2rem; }
 
-/* METRICS & CHART FIX (KRİTİK DÜZELTME) */
-.metric-card { 
-    background: #000; padding: 15px; border-radius: 12px; 
-    border: 1px solid var(--border); margin-bottom: 15px;
-}
+/* METRICS & CHART */
+.metric-card { background: #000; padding: 15px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 15px; }
 .metric-val { font-size: 2rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--primary); }
-
-/* BU KISIM CHART.JS TAŞMASINI ENGELLER */
-.chart-container {
-    position: relative;
-    height: 120px; /* Sabit yükseklik şart */
-    width: 100%;
-    overflow: hidden;
-}
+.chart-container { position: relative; height: 120px; width: 100%; overflow: hidden; }
 
 /* CONTROLS */
 .setting-group { margin-bottom: 20px; }
@@ -127,7 +136,6 @@ body { background: var(--bg-dark); color: var(--text-main); font-family: 'Inter'
 .range-wrap { margin-bottom: 10px; }
 .range-head { display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px; }
 input[type=range] { width: 100%; accent-color: var(--primary); }
-
 .log-box { background: #000; padding: 10px; border-radius: 8px; color: #0f0; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; height: 150px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word;}
 
 /* EMPTY STATE */
@@ -140,7 +148,10 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .hidden { display: none !important; }
 .neural-loader { width: 40px; height: 40px; border: 3px solid #333; border-top: 3px solid var(--primary); border-radius: 50%; animation: spin 1s infinite linear; margin: 0 auto 15px; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
+@keyframes pulse { 50% { opacity: 0.5; } }
 
 /* CODE BLOCKS */
 pre { background: #000 !important; border: 1px solid var(--border); border-radius: 8px; padding: 15px; margin: 10px 0; overflow-x: auto; }
-code { font-family: var(--font-code) !important; font-size: 0.9em; }
+code { font-family: 'JetBrains Mono', monospace !important; font-size: 0.9em; }
+
+.error-msg { color: #ef4444; font-weight: bold; padding: 10px; text-align: center; }
