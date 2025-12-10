@@ -1,6 +1,8 @@
 # --- Derleme Aşaması ---
 FROM nvcr.io/nvidia/cuda:13.0.2-cudnn-devel-ubuntu24.04 AS builder
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 # 1. Temel bağımlılıkları kur
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential curl zip unzip tar \
@@ -21,17 +23,17 @@ WORKDIR /app
 COPY vcpkg.json .
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# 4. llama.cpp'yi klonla ve belirli bir versiyona sabitle
+# 4. llama.cpp'yi klonla
 ARG LLAMA_CPP_VERSION=92bb442ad999a0d52df0af2730cd861012e8ac5c
 RUN git clone https://github.com/ggml-org/llama.cpp.git llama.cpp && \
     cd llama.cpp && \
     git checkout ${LLAMA_CPP_VERSION}
 
-# 5. Proje kaynak kodunu ve build script'ini kopyala
+# 5. Kaynak kodu kopyala
 COPY src ./src
 COPY CMakeLists.txt .
 
-# 6. Projeyi derle - Sadece temel warning'ler
+# 6. CUDA Destekli Derleme
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
@@ -45,6 +47,8 @@ RUN cmake --build build --target all -j $(nproc)
 # --- Çalışma Aşaması ---
 FROM nvcr.io/nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04 AS runtime
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libgomp1 curl && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -52,12 +56,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/build/llm_service /usr/local/bin/
 COPY --from=builder /app/build/llm_cli /usr/local/bin/
 
+COPY --from=builder /app/vcpkg_installed/x64-linux/lib/*.so* /usr/local/lib/
 COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 RUN ldconfig
 
-# Web UI ve örnekleri kopyala
 COPY studio /app/studio
 COPY examples /app/examples
+
+# --- DEĞİŞİKLİK BURADA: ---
+# profiles.json'ı güvenli bir yere alıyoruz.
+COPY models/profiles.json /app/profiles.json
+
 WORKDIR /app
     
 RUN mkdir -p /models

@@ -15,4 +15,3 @@ docker-compose.*
 Dockerfile*
 LICENSE
 vcpkg_installed/
-models/

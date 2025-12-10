@@ -1,4 +1,3 @@
-// src/llm_engine.cpp
 #include "llm_engine.h"
 #include "spdlog/spdlog.h"
 #include "model_manager.h"
@@ -9,78 +8,144 @@
 #include <vector>
 #include <thread>
 
-// RAII Wrappers
+// RAII Helpers
 struct LlamaBatchGuard {
     llama_batch batch;
-    LlamaBatchGuard(int32_t n_tokens, int32_t embd, int32_t n_seq_max) : batch(llama_batch_init(n_tokens, embd, n_seq_max)) {}
+    LlamaBatchGuard(int32_t n_tokens, int32_t embd, int32_t n_seq_max) 
+        : batch(llama_batch_init(n_tokens, embd, n_seq_max)) {}
     ~LlamaBatchGuard() { if (batch.token) llama_batch_free(batch); }
 };
 
 struct LlamaSamplerGuard {
     llama_sampler* sampler;
-    LlamaSamplerGuard(llama_sampler_chain_params params) : sampler(llama_sampler_chain_init(params)) {}
+    LlamaSamplerGuard(llama_sampler_chain_params params) 
+        : sampler(llama_sampler_chain_init(params)) {}
     ~LlamaSamplerGuard() { if (sampler) llama_sampler_free(sampler); }
 };
 
 LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gauge)
     : settings_(settings), active_contexts_gauge_(active_contexts_gauge) {
     
-    spdlog::info("🚀 Initializing LLM Engine (Parallel Batching Mode)...");
-    settings_.model_path = ModelManager::ensure_model_is_ready(settings_);
-
-    llama_backend_init();
-    llama_numa_init(settings_.numa_strategy);
-
-    llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = settings_.n_gpu_layers;
-    model_params.use_mmap = settings_.use_mmap;
-
-    // --- DEBUG LOG EKLENDİ ---
-    spdlog::info("⚙️ Model Params: GPU Layers={}, MMAP={}", model_params.n_gpu_layers, model_params.use_mmap);
-
-    model_ = llama_model_load_from_file(settings_.model_path.c_str(), model_params);
-    if (!model_) throw std::runtime_error("Model load failed.");
-
-    // --- OTOMATİK FORMAT ALGILAMA ---
-    char arch_buffer[64] = {0};
-    llama_model_meta_val_str(model_, "general.architecture", arch_buffer, sizeof(arch_buffer));
-    std::string arch = arch_buffer[0] ? arch_buffer : "unknown";
+    spdlog::info("🚀 Initializing LLM Engine...");
     
-    spdlog::info("🔍 Detected Model Architecture: {}", arch);
-    
-    formatter_ = create_formatter_for_model(arch);
-
-    context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_, active_contexts_gauge_);
-    model_loaded_ = true;
-
-    if (settings.enable_dynamic_batching && settings.max_batch_size > 1) {
-        batcher_ = std::make_unique<DynamicBatcher>(settings.max_batch_size, std::chrono::milliseconds(settings.batch_timeout_ms));
-        batcher_->batch_processing_callback = [this](std::vector<std::shared_ptr<BatchedRequest>>& batch) {
-            this->process_batch(batch);
-        };
+    // Initial Load
+    if (!reload_model(settings_.profile_name)) {
+        throw std::runtime_error("Critical: Initial model load failed.");
     }
+
+    size_t batch_size = settings_.enable_dynamic_batching ? settings_.max_batch_size : 1;
+    batcher_ = std::make_unique<DynamicBatcher>(batch_size, std::chrono::milliseconds(settings_.batch_timeout_ms));
+    batcher_->batch_processing_callback = [this](std::vector<std::shared_ptr<BatchedRequest>>& batch) {
+        this->process_batch(batch);
+    };
 }
 
 LLMEngine::~LLMEngine() {
     if (batcher_) batcher_->stop();
-    context_pool_.reset();
-    if (model_) llama_model_free(model_);
-    llama_backend_free();
+    {
+        std::unique_lock<std::shared_mutex> lock(model_mutex_);
+        context_pool_.reset();
+        if (model_) llama_model_free(model_);
+        llama_backend_free();
+    }
 }
 
-bool LLMEngine::is_model_loaded() const { return model_loaded_.load(); }
+// --- HOT RELOAD MANTIK (NON-BLOCKING DOWNLOAD) ---
+bool LLMEngine::reload_model(const std::string& profile_name) {
+    spdlog::info("🔄 Profile switch requested: {}", profile_name);
+
+    // ADIM 1: Profili geçici bir ayar nesnesine uygula (Mevcut ayarları bozmadan)
+    Settings temp_settings = settings_; 
+    if (!apply_profile(temp_settings, profile_name)) {
+        spdlog::error("❌ Reload aborted: Profile '{}' invalid.", profile_name);
+        return false;
+    }
+
+    // ADIM 2: Modeli İndir/Doğrula (KİLİT YOK - Uzun sürebilir)
+    // Bu sırada mevcut model hizmet vermeye devam eder.
+    try {
+        spdlog::info("⬇️ checking/downloading model in background...");
+        temp_settings.model_path = ModelManager::ensure_model_is_ready(temp_settings);
+    } catch (const std::exception& e) {
+        spdlog::error("❌ Background download failed: {}", e.what());
+        return false;
+    }
+
+    // ADIM 3: WRITE LOCK AL (Sadece yükleme anında kilitle)
+    std::unique_lock<std::shared_mutex> lock(model_mutex_);
+    spdlog::info("🔒 System locked for model swap...");
+    
+    model_loaded_ = false;
+    settings_ = temp_settings; // Yeni ayarları uygula
+
+    try {
+        // Eski Kaynakları Temizle
+        context_pool_.reset(); 
+        if (model_) {
+            llama_model_free(model_);
+            model_ = nullptr;
+        }
+
+        // Backend Init
+        static bool backend_initialized = false;
+        if(!backend_initialized) {
+            llama_backend_init();
+            llama_numa_init(settings_.numa_strategy);
+            backend_initialized = true;
+        }
+
+        // Yeni Modeli Yükle
+        llama_model_params model_params = llama_model_default_params();
+        model_params.n_gpu_layers = settings_.n_gpu_layers;
+        model_params.use_mmap = settings_.use_mmap;
+
+        spdlog::info("⚙️ Loading model from: {}", settings_.model_path);
+        model_ = llama_model_load_from_file(settings_.model_path.c_str(), model_params);
+        if (!model_) throw std::runtime_error("Failed to load model file.");
+
+        // Mimariyi Algıla
+        char arch_buffer[64] = {0};
+        llama_model_meta_val_str(model_, "general.architecture", arch_buffer, sizeof(arch_buffer));
+        std::string arch = arch_buffer[0] ? arch_buffer : "unknown";
+        spdlog::info("🔍 Architecture: {}", arch);
+        formatter_ = create_formatter_for_model(arch);
+
+        // Havuzu Oluştur
+        context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_, active_contexts_gauge_);
+        
+        model_loaded_ = true;
+        spdlog::info("✅ Model swapped successfully. Unlock.");
+        return true;
+    } catch (const std::exception& e) {
+        spdlog::error("❌ Swap failed: {}", e.what());
+        return false;
+    }
+}
+
+bool LLMEngine::is_model_loaded() const { 
+    std::shared_lock<std::shared_mutex> lock(model_mutex_);
+    return model_loaded_.load(); 
+}
+
+// --- İŞ AKIŞI ---
 
 void LLMEngine::process_single_request(std::shared_ptr<BatchedRequest> batched_request) {
-    execute_single_request(batched_request);
+    if (batcher_) {
+        batcher_->add_request(batched_request); 
+    } else {
+        execute_single_request(batched_request);
+    }
 }
 
 void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batch) {
     if (batch.empty()) return;
+    
+    // READ LOCK: İşlem sırasında modelin altından çekilmemesi için
+    std::shared_lock<std::shared_mutex> lock(model_mutex_);
+    if (!model_loaded_) return;
 
     std::vector<std::thread> threads;
     threads.reserve(batch.size());
-
-    spdlog::info("🚀 Dispatching {} requests in parallel...", batch.size());
 
     for (auto& req_ptr : batch) {
         threads.emplace_back([this, req_ptr]() {
@@ -91,201 +156,176 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
     for (auto& t : threads) {
         if (t.joinable()) t.join();
     }
+}
+
+// --- REFACTORED LOGIC ---
+
+std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<BatchedRequest> req_ptr, const std::string& formatted_prompt) {
+    const auto* vocab = llama_model_get_vocab(model_);
     
-    spdlog::info("✅ Batch processing completed.");
+    // DÜZELTME: Double BOS Hatası İçin add_special = false
+    // PromptFormatter zaten gerekli BOS tokenlarını ekliyor.
+    bool add_special = false; 
+
+    std::vector<llama_token> tokens(formatted_prompt.length() + 64);
+    int n_tokens = llama_tokenize(vocab, formatted_prompt.c_str(), formatted_prompt.length(), tokens.data(), tokens.size(), add_special, true);
+    if (n_tokens < 0) {
+        tokens.resize(-n_tokens);
+        n_tokens = llama_tokenize(vocab, formatted_prompt.c_str(), formatted_prompt.length(), tokens.data(), tokens.size(), add_special, true);
+    }
+    tokens.resize(n_tokens);
+
+    // Truncate Logic
+    const auto& params = req_ptr->request.params();
+    uint32_t req_max_gen = params.has_max_new_tokens() ? params.max_new_tokens() : settings_.default_max_tokens;
+    uint32_t max_context = settings_.context_size;
+    uint32_t buffer = 64;
+    
+    if (req_max_gen > max_context - buffer) {
+        req_max_gen = max_context - buffer;
+    }
+    
+    uint32_t safe_prompt_limit = max_context - req_max_gen - buffer;
+    
+    if (tokens.size() > safe_prompt_limit) {
+        spdlog::warn("⚠️ Prompt truncated: {} -> {} tokens", tokens.size(), safe_prompt_limit);
+        std::vector<llama_token> truncated;
+        truncated.reserve(safe_prompt_limit);
+        auto start_it = tokens.end() - safe_prompt_limit;
+        truncated.assign(start_it, tokens.end());
+        tokens = std::move(truncated);
+    }
+    
+    req_ptr->prompt_tokens = tokens.size();
+    return tokens;
 }
 
-// --- YARDIMCI FONKSİYONLAR ---
-void safe_kv_clear(llama_context* ctx) {
-    llama_memory_seq_rm(llama_get_memory(ctx), -1, 0, -1);
+bool LLMEngine::decode_prompt(llama_context* ctx, ContextGuard& guard, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr) {
+    size_t matched_len = guard.get_matched_tokens();
+
+    if (matched_len == prompt_tokens.size() && matched_len > 0) matched_len--;
+
+    if (matched_len < prompt_tokens.size()) {
+        llama_memory_seq_rm(llama_get_memory(ctx), -1, matched_len, -1);
+    }
+
+    size_t tokens_to_process = prompt_tokens.size() - matched_len;
+    if (tokens_to_process > 0) {
+        int32_t n_batch = llama_n_batch(ctx);
+        for (size_t i = 0; i < tokens_to_process; i += n_batch) {
+            int32_t n_eval = std::min((int32_t)(tokens_to_process - i), n_batch);
+            
+            LlamaBatchGuard batch_guard(n_eval, 0, 1);
+            for(int j = 0; j < n_eval; ++j) {
+                common_batch_add(batch_guard.batch, prompt_tokens[matched_len + i + j], matched_len + i + j, {0}, false);
+            }
+            
+            if (i + n_eval == tokens_to_process) {
+                batch_guard.batch.logits[n_eval - 1] = true;
+            }
+            
+            if (llama_decode(ctx, batch_guard.batch) != 0) {
+                spdlog::error("Prompt decode failed. Context full.");
+                req_ptr->finish_reason = "length_error";
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
-bool safe_kv_seq_rm(llama_context* ctx, llama_seq_id seq, llama_pos p0, llama_pos p1) {
-    return llama_memory_seq_rm(llama_get_memory(ctx), seq, p0, p1);
+void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr) {
+    const auto* vocab = llama_model_get_vocab(model_);
+    const auto& params = req_ptr->request.params();
+    
+    LlamaSamplerGuard sampler_guard(llama_sampler_chain_default_params());
+    llama_sampler* chain = sampler_guard.sampler;
+
+    if (!req_ptr->grammar.empty()) {
+        llama_sampler* g = llama_sampler_init_grammar(vocab, req_ptr->grammar.c_str(), "root");
+        if (g) llama_sampler_chain_add(chain, g);
+    }
+    
+    llama_sampler_chain_add(chain, llama_sampler_init_top_k(params.has_top_k() ? params.top_k() : settings_.default_top_k));
+    llama_sampler_chain_add(chain, llama_sampler_init_temp(params.has_temperature() ? params.temperature() : settings_.default_temperature));
+    llama_sampler_chain_add(chain, llama_sampler_init_dist(time(NULL)));
+
+    auto stop_seqs = formatter_->get_stop_sequences();
+    uint32_t req_max_gen = params.has_max_new_tokens() ? params.max_new_tokens() : settings_.default_max_tokens;
+
+    int n_decoded = 0;
+    llama_pos n_past = prompt_tokens.size();
+    
+    // Eğer generation limit context'i aşacak gibiyse koru
+    uint32_t ctx_limit = settings_.context_size;
+    if (n_past + req_max_gen > ctx_limit) {
+        req_max_gen = ctx_limit - n_past - 1;
+    }
+
+    while (n_decoded < (int)req_max_gen) {
+        if (req_ptr->should_stop_callback && req_ptr->should_stop_callback()) {
+            req_ptr->finish_reason = "cancelled"; break;
+        }
+
+        llama_token new_token_id = llama_sampler_sample(chain, ctx, -1);
+        llama_sampler_accept(chain, new_token_id);
+
+        if (llama_vocab_is_eog(vocab, new_token_id)) {
+            req_ptr->finish_reason = "stop"; break;
+        }
+
+        char buf[64] = {0};
+        int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
+        std::string token_str(buf, n);
+        
+        bool stop = false;
+        for(const auto& seq : stop_seqs) {
+            if(token_str.find(seq) != std::string::npos) { stop = true; break; }
+        }
+        if(stop) { req_ptr->finish_reason = "stop"; break; }
+
+        if(token_str.find("<unused") == std::string::npos) {
+            if(req_ptr->on_token_callback) {
+                if(!req_ptr->on_token_callback(token_str)) {
+                    req_ptr->finish_reason = "cancelled_by_client"; break;
+                }
+            }
+            req_ptr->token_queue.push(token_str);
+        }
+        
+        LlamaBatchGuard next_token_batch(1, 0, 1);
+        common_batch_add(next_token_batch.batch, new_token_id, n_past, {0}, true);
+        if(llama_decode(ctx, next_token_batch.batch) != 0) {
+            req_ptr->finish_reason = "context_full"; break;
+        }
+
+        n_past++;
+        n_decoded++;
+    }
+    
+    req_ptr->completion_tokens = n_decoded;
+    if (req_ptr->finish_reason.empty()) req_ptr->finish_reason = "length";
+    req_ptr->prompt_tokens = prompt_tokens.size(); 
 }
 
-
-// --- execute_single_request GÜNCELLENDİ ---
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
     try {
-        auto& request = req_ptr->request;
-        const auto& params = request.params(); // Parametreleri erkenden al
+        std::string formatted_prompt = formatter_->format(req_ptr->request);
+        std::vector<llama_token> prompt_tokens = tokenize_and_truncate(req_ptr, formatted_prompt);
         
-        const std::string formatted_prompt = formatter_->format(request);
-        const auto* vocab = llama_model_get_vocab(model_);
-        
-        // 1. Tokenizasyon
-        std::vector<llama_token> prompt_tokens(formatted_prompt.length() + 64); 
-        int n_tokens = llama_tokenize(vocab, formatted_prompt.c_str(), formatted_prompt.length(), prompt_tokens.data(), prompt_tokens.size(), true, true);
-        if (n_tokens < 0) {
-            prompt_tokens.resize(-n_tokens);
-            n_tokens = llama_tokenize(vocab, formatted_prompt.c_str(), formatted_prompt.length(), prompt_tokens.data(), prompt_tokens.size(), true, true);
-        }
-        prompt_tokens.resize(n_tokens);
-        
-        // --- DÜZELTİLEN TRUNCATION LOGIC (MİMARİ DÜZELTME) ---
-        uint32_t max_context = settings_.context_size;
-        
-        // İsteğe özel max_tokens varsa onu kullan, yoksa varsayılanı al
-        uint32_t req_max_gen = params.has_max_new_tokens() ? params.max_new_tokens() : settings_.default_max_tokens;
-        
-        // ESKİ HATALI MANTIK: if (req_max_gen > max_context / 2) ...
-        // YENİ MANTIK: Prompt + ReqGen <= MaxContext olmalı.
-        // Prompt önceliği mi, Generation önceliği mi? 
-        // Genelde Generation'a saygı duyarız ama Context'i aşamaz.
-        
-        // Asla Context'in tamamını generation'a ayırma, en azından prompt için yer kalsın.
-        // Ancak prompt çok uzunsa ve RAG yapıyorsak, generation'dan kısmak yerine prompt'un başını keseriz.
-        
-        // Güvenlik buffer'ı
-        uint32_t buffer = 64;
-        if (req_max_gen > max_context - buffer) {
-            req_max_gen = max_context - buffer; 
-        }
-
-        uint32_t reserve_for_gen = req_max_gen + buffer;
-        uint32_t min_prompt_space = std::max((uint32_t)128, max_context / 10); // En az %10 prompt alanı
-        
-        uint32_t safe_prompt_limit;
-        if (max_context > reserve_for_gen) {
-            safe_prompt_limit = max_context - reserve_for_gen;
-        } else {
-            // Generation isteği çok büyükse, prompt için minimum alanı zorla ayır
-            safe_prompt_limit = min_prompt_space;
-            // Generation'ı da mecburen küçült
-            if (max_context > safe_prompt_limit + buffer) {
-                 req_max_gen = max_context - safe_prompt_limit - buffer;
-            }
-        }
-
-        if (prompt_tokens.size() > safe_prompt_limit) {
-            spdlog::warn("⚠️ Input too large ({} tokens). Truncating to last {} tokens to fit context.", prompt_tokens.size(), safe_prompt_limit);
-            std::vector<llama_token> truncated;
-            truncated.reserve(safe_prompt_limit);
-            auto start_it = prompt_tokens.end() - safe_prompt_limit;
-            truncated.assign(start_it, prompt_tokens.end());
-            prompt_tokens = std::move(truncated);
-        }
-        req_ptr->prompt_tokens = prompt_tokens.size();
-
-        // 2. Context Edinme (Aynı)
         ContextGuard guard = context_pool_->acquire(prompt_tokens);
         llama_context* ctx = guard.get();
-        size_t matched_len = guard.get_matched_tokens();
 
-        // Zero-Decode Fix (Aynı)
-        if (matched_len == prompt_tokens.size() && matched_len > 0) {
-            matched_len--; 
-            spdlog::debug("🔄 Forced re-decode of last token.");
+        if (!decode_prompt(ctx, guard, prompt_tokens, req_ptr)) {
+            return;
         }
 
-        // 3. KV Cache Temizliği (Aynı)
-        if (matched_len < prompt_tokens.size()) {
-            llama_memory_seq_rm(llama_get_memory(ctx), -1, matched_len, -1);
-        }
-
-        // 4. Prompt Decode (Aynı)
-        size_t tokens_to_process = prompt_tokens.size() - matched_len;
-        if (tokens_to_process > 0) {
-            int32_t n_batch = llama_n_batch(ctx);
-            for (size_t i = 0; i < tokens_to_process; i += n_batch) {
-                int32_t n_eval = (int32_t)tokens_to_process - i;
-                if (n_eval > n_batch) n_eval = n_batch;
-                
-                LlamaBatchGuard prompt_batch(n_eval, 0, 1);
-                for(int j = 0; j < n_eval; ++j) {
-                    common_batch_add(prompt_batch.batch, prompt_tokens[matched_len + i + j], matched_len + i + j, {0}, false);
-                }
-                if (i + n_eval == tokens_to_process) {
-                    prompt_batch.batch.logits[n_eval - 1] = true;
-                }
-                
-                if (llama_decode(ctx, prompt_batch.batch) != 0) {
-                    spdlog::error("Prompt decode failed. Context might be full.");
-                    req_ptr->finish_reason = "length";
-                    return;
-                }
-            }
-        }
-
-        // 5. Sampler (Aynı)
-        LlamaSamplerGuard sampler_guard(llama_sampler_chain_default_params());
-        llama_sampler* sampler_chain = sampler_guard.sampler;
+        generate_response(ctx, prompt_tokens, req_ptr);
         
-        if (!req_ptr->grammar.empty()) {
-            llama_sampler* grammar_sampler = llama_sampler_init_grammar(vocab, req_ptr->grammar.c_str(), "root");
-            if (grammar_sampler) llama_sampler_chain_add(sampler_chain, grammar_sampler);
-        }
+        guard.release_early(prompt_tokens);
 
-        llama_sampler_chain_add(sampler_chain, llama_sampler_init_top_k(params.has_top_k() ? params.top_k() : settings_.default_top_k));
-        llama_sampler_chain_add(sampler_chain, llama_sampler_init_temp(params.has_temperature() ? params.temperature() : settings_.default_temperature));
-        llama_sampler_chain_add(sampler_chain, llama_sampler_init_dist(time(NULL)));
-        
-        auto stop_sequences = formatter_->get_stop_sequences();
-
-        // 6. Generation Döngüsü (DÜZELTİLDİ: req_max_gen kullanımı)
-        int n_decoded = 0;
-        std::vector<llama_token> final_tokens = prompt_tokens; 
-        llama_pos n_past = prompt_tokens.size();
-
-        // Döngü limiti olarak dinamik hesaplanan req_max_gen kullanılıyor
-        while (n_decoded < (int)req_max_gen) {
-            if (req_ptr->should_stop_callback && req_ptr->should_stop_callback()) {
-                req_ptr->finish_reason = "cancelled"; break;
-            }
-
-            llama_token new_token_id = llama_sampler_sample(sampler_chain, ctx, -1);
-            llama_sampler_accept(sampler_chain, new_token_id);
-            
-            if (llama_vocab_is_eog(vocab, new_token_id)) { 
-                req_ptr->finish_reason = "stop"; 
-                break; 
-            }
-
-            char piece_buf[64] = {0};
-            int n_piece = llama_token_to_piece(vocab, new_token_id, piece_buf, sizeof(piece_buf), 0, true);
-            
-            if (n_piece > 0) {
-                std::string token_str(piece_buf, n_piece);
-                bool stop_triggered = false;
-                for (const auto& seq : stop_sequences) {
-                    if (token_str.find(seq) != std::string::npos) {
-                        stop_triggered = true; break;
-                    }
-                }
-                if (stop_triggered) { req_ptr->finish_reason = "stop"; break; }
-
-                if (token_str.find("<unused") == std::string::npos) {
-                     if (req_ptr->on_token_callback) {
-                        if (!req_ptr->on_token_callback(token_str)) {
-                            req_ptr->finish_reason = "cancelled_by_client"; break;
-                        }
-                     }
-                     req_ptr->token_queue.push(token_str);
-                }
-            }
-            
-            final_tokens.push_back(new_token_id);
-            
-            LlamaBatchGuard token_batch(1, 0, 1);
-            common_batch_add(token_batch.batch, new_token_id, n_past, {0}, true);
-            
-            if (llama_decode(ctx, token_batch.batch) != 0) {
-                 req_ptr->finish_reason = "length";
-                 break;
-            }
-            
-            n_past++;
-            n_decoded++;
-        }
-        
-        req_ptr->completion_tokens = n_decoded;
-        if (req_ptr->finish_reason.empty()) req_ptr->finish_reason = "length";
-
-        guard.release_early(final_tokens);
-
-    } catch(const std::exception& e) {
-        spdlog::error("Request processing error: {}", e.what());
+    } catch (const std::exception& e) {
+        spdlog::error("Error executing request: {}", e.what());
         req_ptr->finish_reason = "error";
     }
 }

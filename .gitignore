@@ -14,7 +14,7 @@ compile_commands.json
 
 # Executables
 llm_service
-models/
+
 
 # Artık vendor dizini yok, bu satırı silebiliriz
 # vendor/

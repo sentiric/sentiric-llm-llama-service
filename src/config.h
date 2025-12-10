@@ -7,6 +7,8 @@
 #include "spdlog/spdlog.h"
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
+#include "nlohmann/json.hpp"
 #include "llama.h"
 
 struct Settings {
@@ -16,12 +18,14 @@ struct Settings {
     int grpc_port = 16071;
     int metrics_port = 16072;
 
-    // Model
+    // Model & Profiles
+    std::string profile_name = "default";
     std::string model_dir = "/models";
     std::string model_id = "";
     std::string model_filename = "";
     std::string model_path = "";
     std::string legacy_model_path = "";
+    std::string system_prompt = "";
 
     // Engine & Performance
     int n_gpu_layers = 0;
@@ -47,19 +51,75 @@ struct Settings {
     std::string grpc_cert_path = "";
     std::string grpc_key_path = "";
     
-    // Dynamic Batching ayarları
+    // Dynamic Batching
     bool enable_dynamic_batching = true;
     size_t max_batch_size = 8;
     int batch_timeout_ms = 5;
     
-    // Warm-up ayarları
+    // Warm-up
     bool enable_warm_up = true;
 
-    // --- GATEWAY INTEGRATION CONFIG ---
+    // Gateway
     std::string worker_id = "worker-default";
     std::string worker_group = "default-group";
-    std::string gateway_address = ""; // Boş ise Gateway bağlantısı pasif
+    std::string gateway_address = "";
 };
+
+// Profil dosyasını okuyup ayarları güncelleyen yardımcı fonksiyon.
+// Başarılı olursa true, profil bulunamazsa false döner.
+inline bool apply_profile(Settings& s, const std::string& profile_name_override) {
+    namespace fs = std::filesystem;
+    using json = nlohmann::json;
+
+    // MİMARİ DÜZELTME:
+    // Artık 'profiles.json' dosyasını '/models' (volume) içinde değil,
+    // uygulamanın çalıştığı kök dizinde ('/app/profiles.json') arıyoruz.
+    // Bu sayede volume mount edilse bile konfigürasyon dosyamız kaybolmuyor.
+    fs::path profile_path = "profiles.json"; 
+    
+    if (!fs::exists(profile_path)) {
+        // Fallback: Belki geliştirme ortamında 'models/' altındadır (Docker dışı)
+        profile_path = fs::path(s.model_dir) / "profiles.json";
+        if (!fs::exists(profile_path)) {
+            spdlog::warn("Profiles file not found at ./profiles.json or {}. Relying on env vars.", profile_path.string());
+            return false;
+        }
+    }
+
+    try {
+        std::ifstream f(profile_path);
+        json j = json::parse(f);
+        
+        std::string active = profile_name_override;
+        if (active.empty()) {
+            active = j.value("active_profile", "default");
+        }
+        
+        if (j.contains("profiles") && j["profiles"].contains(active)) {
+            auto& p = j["profiles"][active];
+            spdlog::info("🔄 Loading Settings from Profile: [{}] (Source: {})", active, profile_path.string());
+            
+            s.profile_name = active;
+            
+            if(p.contains("model_id")) s.model_id = p["model_id"];
+            if(p.contains("filename")) s.model_filename = p["filename"];
+            if(p.contains("context_size")) s.context_size = p["context_size"];
+            if(p.contains("gpu_layers")) s.n_gpu_layers = p["gpu_layers"];
+            if(p.contains("temperature")) s.default_temperature = p["temperature"];
+            if(p.contains("system_prompt")) s.system_prompt = p["system_prompt"];
+            if(p.contains("use_mmap")) s.use_mmap = p["use_mmap"];
+            if(p.contains("kv_offload")) s.kv_offload = p["kv_offload"];
+            
+            return true;
+        } else {
+            spdlog::error("Requested profile '{}' not found in profiles.json.", active);
+            return false;
+        }
+    } catch (const std::exception& e) {
+        spdlog::error("Failed to parse profiles.json: {}", e.what());
+        return false;
+    }
+}
 
 inline Settings load_settings() {
     Settings s;
@@ -70,26 +130,17 @@ inline Settings load_settings() {
     auto get_env_var_as_int = [&](const char* name, int default_val) -> int {
         const char* val_str = std::getenv(name);
         if (!val_str) return default_val;
-        try { return std::stoi(val_str); } catch (const std::exception& e) {
-            spdlog::warn("Invalid integer for env var '{}': {}. Using default {}.", name, e.what(), default_val);
-            return default_val;
-        }
+        try { return std::stoi(val_str); } catch (...) { return default_val; }
     };
     auto get_env_var_as_uint = [&](const char* name, uint32_t default_val) -> uint32_t {
         const char* val_str = std::getenv(name);
         if (!val_str) return default_val;
-        try { return static_cast<uint32_t>(std::stoul(val_str)); } catch (const std::exception& e) {
-            spdlog::warn("Invalid unsigned integer for env var '{}': {}. Using default {}.", name, e.what(), default_val);
-            return default_val;
-        }
+        try { return static_cast<uint32_t>(std::stoul(val_str)); } catch (...) { return default_val; }
     };
     auto get_env_var_as_float = [&](const char* name, float default_val) -> float {
         const char* val_str = std::getenv(name);
         if (!val_str) return default_val;
-        try { return std::stof(val_str); } catch (const std::exception& e) {
-            spdlog::warn("Invalid float for env var '{}': {}. Using default {}.", name, e.what(), default_val);
-            return default_val;
-        }
+        try { return std::stof(val_str); } catch (...) { return default_val; }
     };
     auto get_env_var_as_bool = [&](const char* name, bool default_val) -> bool {
         const char* val_str = std::getenv(name);
@@ -99,37 +150,30 @@ inline Settings load_settings() {
         return val == "true" || val == "1";
     };
     
-    // Network
+    // Base Environment Configs
     s.host = get_env_var("LLM_LLAMA_SERVICE_LISTEN_ADDRESS", s.host);
     s.http_port = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_PORT", s.http_port);
     s.grpc_port = get_env_var_as_int("LLM_LLAMA_SERVICE_GRPC_PORT", s.grpc_port);
     s.metrics_port = get_env_var_as_int("LLM_LLAMA_SERVICE_METRICS_PORT", s.metrics_port);
-    
-    // Model
     s.model_dir = get_env_var("LLM_LLAMA_SERVICE_MODEL_DIR", s.model_dir);
+    
+    // Default values from Env
     s.model_id = get_env_var("LLM_LLAMA_SERVICE_MODEL_ID", s.model_id);
     s.model_filename = get_env_var("LLM_LLAMA_SERVICE_MODEL_FILENAME", s.model_filename);
-    
-    // Engine & Performance
     s.n_gpu_layers = get_env_var_as_int("LLM_LLAMA_SERVICE_GPU_LAYERS", s.n_gpu_layers);
     s.context_size = get_env_var_as_uint("LLM_LLAMA_SERVICE_CONTEXT_SIZE", s.context_size);
     s.n_threads = get_env_var_as_uint("LLM_LLAMA_SERVICE_THREADS", s.n_threads);
     s.n_threads_batch = get_env_var_as_uint("LLM_LLAMA_SERVICE_THREADS_BATCH", s.n_threads_batch);
     s.use_mmap = get_env_var_as_bool("LLM_LLAMA_SERVICE_USE_MMAP", s.use_mmap);
     s.kv_offload = get_env_var_as_bool("LLM_LLAMA_SERVICE_KV_OFFLOAD", s.kv_offload);
-    s.numa_strategy = GGML_NUMA_STRATEGY_DISABLED;
-
-    // Logging
     s.log_level = get_env_var("LLM_LLAMA_SERVICE_LOG_LEVEL", s.log_level);
 
-    // Sampling Defaults
     s.default_max_tokens = get_env_var_as_int("LLM_LLAMA_SERVICE_DEFAULT_MAX_TOKENS", s.default_max_tokens);
     s.default_temperature = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_TEMPERATURE", s.default_temperature);
     s.default_top_k = get_env_var_as_int("LLM_LLAMA_SERVICE_DEFAULT_TOP_K", s.default_top_k);
     s.default_top_p = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_TOP_P", s.default_top_p);
     s.default_repeat_penalty = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY", s.default_repeat_penalty);
 
-    // Security (mTLS)
     s.grpc_ca_path = get_env_var("GRPC_TLS_CA_PATH", s.grpc_ca_path);
     s.grpc_cert_path = get_env_var("LLM_LLAMA_SERVICE_CERT_PATH", s.grpc_cert_path);
     s.grpc_key_path = get_env_var("LLM_LLAMA_SERVICE_KEY_PATH", s.grpc_key_path);
@@ -137,20 +181,20 @@ inline Settings load_settings() {
     s.enable_dynamic_batching = get_env_var_as_bool("LLM_LLAMA_SERVICE_ENABLE_BATCHING", s.enable_dynamic_batching);
     s.max_batch_size = get_env_var_as_uint("LLM_LLAMA_SERVICE_MAX_BATCH_SIZE", s.max_batch_size);
     s.batch_timeout_ms = get_env_var_as_int("LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS", s.batch_timeout_ms);
-    
     s.enable_warm_up = get_env_var_as_bool("LLM_LLAMA_SERVICE_ENABLE_WARM_UP", s.enable_warm_up);
 
-    // Gateway Integration
     s.worker_id = get_env_var("LLM_WORKER_ID", "worker-" + std::to_string(std::rand()));
     s.worker_group = get_env_var("LLM_WORKER_GROUP", "default");
     s.gateway_address = get_env_var("LLM_GATEWAY_ADDRESS", "");
     
-    // Legacy path for backward compatibility
     s.legacy_model_path = get_env_var("LLM_LLAMA_SERVICE_MODEL_PATH", s.legacy_model_path);
     if (s.model_id.empty() && !s.legacy_model_path.empty()) {
-        spdlog::warn("Using legacy LLM_LLAMA_SERVICE_MODEL_PATH. It's recommended to set MODEL_ID and MODEL_FILENAME instead.");
         std::filesystem::path p(s.legacy_model_path);
         s.model_filename = p.filename().string();
     }
+
+    // Profil dosyasını uygula
+    apply_profile(s, ""); 
+
     return s;
 };

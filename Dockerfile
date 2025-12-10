@@ -55,10 +55,16 @@ RUN ldconfig
 
 COPY studio /app/studio
 COPY examples /app/examples
+
+# --- DEĞİŞİKLİK BURADA: ---
+# profiles.json'ı /models yerine /app kök dizinine (WORKDIR) kopyalıyoruz.
+# Bu sayede volume mount edilse bile bu dosya ezilmez/kaybolmaz.
+COPY models/profiles.json /app/profiles.json
+
 WORKDIR /app
     
 RUN mkdir -p /models
 
-EXPOSE 16070 16071
+EXPOSE 16070 16071 16072
 
 CMD ["llm_service"]
