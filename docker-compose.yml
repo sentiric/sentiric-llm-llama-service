@@ -1,6 +1,5 @@
-# docker-compose.yml (BASE)
-# Bu dosya, servisin ortak yapılandırmasını içerir ve tek başına çalıştırılamaz.
-# CPU veya GPU profili ile birleştirilmelidir.
+
+
 networks:
   sentiric-net:
     name: "${NETWORK_NAME:-sentiric.cloud}"
@@ -13,20 +12,31 @@ networks:
 volumes:
   
   # =============================================================
-  # KATMAN 1: TEMEL ALTYAPI (INFRASTRUCTURE)
-  # Platformun temel yapı taşları.
+  # KATMAN 4: YAPAY ZEKA UZMAN MOTORLARI (AI EXPERT ENGINES)
   # =============================================================
 
-  #  [capability-llm]: Büyük Dil Modeli Yetenekleri (LLM Capabilities)
-  # --------------------------------------------------    
+  # [capability-llm]
   llm-llama-models:
-  llm-llama-cache:  
+  llm-llama-cache: 
+
 
 services:
-  llm-llama-service:
+  # =============================================================
+  # KATMAN 4: YAPAY ZEKA UZMAN MOTORLARI (AI EXPERT ENGINES)
+  # Gerçek AI işini yapan, potansiyel olarak yavaş başlayan servisler.
+  # =============================================================
 
+  
+  #  [capability-llm]: Büyük Dil Modeli Yetenekleri (LLM Capabilities)
+  # --------------------------------------------------    
+  llm-llama-service:
+    image: ghcr.io/sentiric/sentiric-llm-llama-service:latest-gpu
+    env_file: ["${ENV_FILE_PATH}"]
+    environment:
+      # GPU için varsayılan katman sayısını ezer
+      - LLM_LLAMA_SERVICE_GPU_LAYERS=${LLM_LLAMA_SERVICE_GPU_LAYERS:-28}    
     volumes:
-      - ../sentiric-certificates:/sentiric-certificates:ro
+      - "${CERTIFICATES_REPO_PATH}:/sentiric-certificates:ro"
       - llm-llama-models:/models
     ports:
       - "${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}:${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}"
@@ -35,10 +45,24 @@ services:
     networks:
       sentiric-net:
         ipv4_address: ${LLM_LLAMA_SERVICE_IPV4_ADDRESS:-10.88.60.7}
-    restart: unless-stopped
+    dns:
+      - ${DISCOVERY_SERVICE_IPV4_ADDRESS:-10.88.5.1}
+      - ${PRIMARY_DNS:-8.8.8.8}
+      - ${SECONDARY_DNS:-1.1.1.1}       
+    dns_search:
+      - ${DISCOVERY_DNS_SEARCH_DOMAIN}
+    restart: always
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:${LLM_LLAMA_SERVICE_HTTP_PORT}/health"]
       interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 60m
+      start_period: 60m # Model indirme ve dönüştürme uzun sürebilir
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]   
+

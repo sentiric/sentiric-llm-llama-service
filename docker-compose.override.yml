@@ -1,9 +1,6 @@
 services:
   llm-llama-service:
     build:
-      context: .
-      dockerfile: Dockerfile
-    image: sentiric/llm-llama-service:local-cpu
-    env_file: [".env.cpu"]    
-    networks:
-      - sentiric-net
+      context: ../sentiric-llm-llama-service
+      dockerfile: Dockerfile.gpu
+      

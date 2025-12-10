@@ -18,3 +18,4 @@ models/
 
 # Artık vendor dizini yok, bu satırı silebiliriz
 # vendor/
+.env

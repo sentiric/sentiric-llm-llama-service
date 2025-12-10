@@ -1,6 +1,0 @@
-# docker-compose.cpu.yml
-# Üretim ortamında CPU imajını çekmek için kullanılır.
-# Kullanım: docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
-services:
-  llm-llama-service:
-    image: ghcr.io/sentiric/sentiric-llm-llama-service:latest

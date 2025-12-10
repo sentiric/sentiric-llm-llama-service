@@ -1,36 +1,27 @@
-# Sentiric LLM Service - Makefile
-
-.PHONY: help up-cpu up-gpu down logs clean cli-gpu up-ui
+.PHONY: help up down logs build clean setup
 
 help:
-	@echo "🧠 Sentiric LLM Service Yönetim Komutları"
-	@echo "------------------------------------------"
-	@echo "make up-cpu   : Servisi CPU modunda başlatır"
-	@echo "make up-gpu   : Servisi GPU modunda başlatır (NVIDIA)"
-	@echo "make up-ui    : Open WebUI arayüzünü başlatır (Port: 3000)"
-	@echo "make down     : Servisi durdurur"
-	@echo "make logs     : Logları izler"
-	@echo "make clean    : Derleme artıklarını temizler"
-	@echo "make cli-gpu  : GPU üzerinde CLI'yı çalıştırır"
+	@echo "🎨 "
+	@echo "-------------------------------------------------------"
+	@echo "make setup   : .env dosyasını hazırlar ve sertifikaları kontrol eder"
+	@echo "make up      : Tüm AI servislerini başlatır (Local Build)"
+	@echo "make prod    : Hazır imajlardan başlatır (No Build)"
+	@echo "make down    : Servisleri durdurur"
+	@echo "make logs    : Logları izler"
 
-up-cpu:
-	docker compose up --build -d
+setup:
+	@if [ ! -f .env ]; then cp .env.example .env; echo "⚠️ .env oluşturuldu."; fi
+	
+# Geliştirme Modu: Override dosyasını kullanır (Local Build)
+up: setup
+	docker compose -f docker-compose.yml -f docker-compose.override.yml up --build -d
 
-up-gpu:
-	docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml up --build -d
-
-up-ui:
-	docker compose -f docker-compose.open-webui.yml up -d
+# Üretim Simülasyonu: Override dosyasını YOK SAYAR (Hazır İmaj)
+prod: setup
+	docker compose -f docker-compose.yml up -d
 
 down:
-	docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml -f docker-compose.open-webui.yml down --remove-orphans
+	docker compose -f docker-compose.yml -f docker-compose.override.yml down --remove-orphans
 
 logs:
-	docker compose logs -f llm-llama-service
-
-clean:
-	rm -rf build/
-	docker compose down -v
-
-cli-gpu:
-	docker compose -f docker-compose.run.gpu.yml run --rm llm-cli llm_cli $(ARGS)
+	docker compose -f docker-compose.yml logs -f
