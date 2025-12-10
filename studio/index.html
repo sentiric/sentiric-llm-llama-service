@@ -2,189 +2,149 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Sentiric Omni-Studio</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentiric Agent OS v6.2</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💠</text></svg>">
     
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/tokyo-night-dark.min.css">
     <link rel="stylesheet" href="style.css">
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body data-theme="light">
+<body data-theme="nebula">
 
-<div class="layout">
-    <!-- SOL PANEL -->
-    <aside class="sidebar left" id="leftPanel">
-        <div class="header">
-            <div class="brand"><i class="fas fa-cube"></i> Sentiric Studio</div>
-            <button class="close-btn mobile-only" onclick="togglePanel('leftPanel')"><i class="fas fa-times"></i></button>
+<div id="systemOverlay" class="overlay hidden">
+    <div class="glass-modal">
+        <div class="neural-loader"></div>
+        <h3>Model Yükleniyor</h3>
+        <p>Sistem yapılandırılıyor...</p>
+    </div>
+</div>
+
+<div class="os-layout">
+    
+    <!-- HEADER -->
+    <header class="os-header">
+        <div class="brand-capsule">
+            <i class="fas fa-cube"></i>
+            <span>SENTIRIC OS</span>
         </div>
-        
-        <div class="scroll-content">
-            <div class="section">
-                <div class="section-title">Persona & Sistem</div>
-                <textarea id="systemPrompt" class="input-area code-font" rows="6"
-                    placeholder="Asistanın nasıl davranacağını belirleyen sistem mesajını buraya yazın."></textarea>
-            </div>
 
-            <div class="section">
-                <div class="section-title">Parametreler</div>
-                <div class="control">
-                    <div class="label-row"><label>Yaratıcılık (Temp)</label><span id="tempVal" class="badge">0.8</span></div>
-                    <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.8">
-                </div>
-                <div class="control">
-                    <div class="label-row"><label>Hafıza (Son Mesaj)</label><span id="historyVal" class="badge">10</span></div>
-                    <input type="range" id="historyLimit" min="0" max="30" step="1" value="10">
-                </div>                
-                <div class="control">
-                    <div class="label-row"><label>Maks. Token</label><span id="tokenLimitVal" class="badge">1024</span></div>
-                    <input type="range" id="tokenLimit" min="64" max="4096" step="64" value="1024">
-                </div>
-            </div>
-
-            <div class="section">
-                <div class="section-title">Ses Ayarları</div>
-                <div class="control" style="display: flex; align-items: center; justify-content: space-between;">
-                    <label>AI Sesli Okusun (TTS)</label>
-                    <label class="switch">
-                        <input type="checkbox" id="ttsToggle">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-                <select id="langSelect" class="dropdown">
-                    <option value="tr-TR">🇹🇷 Türkçe</option>
-                    <option value="en-US">🇺🇸 English</option>
-                </select>
-            </div>
-
-            <button class="theme-switch" onclick="toggleTheme()"><i class="fas fa-moon"></i></button>
+        <div class="model-dock">
+            <button class="dock-trigger" id="modelTrigger" onclick="toggleModelMatrix()">
+                <div class="status-dot online"></div>
+                <span id="activeModelName">Bağlanıyor...</span>
+                <i class="fas fa-chevron-down"></i>
+            </button>
+            <div class="model-matrix hidden" id="modelMatrix"></div>
         </div>
-        <div class="footer">
-            <div class="status-pill" id="connStatus"><span class="dot"></span> <span id="statusText">Bağlanıyor...</span></div>
+
+        <div class="header-actions">
+            <button class="icon-btn" onclick="togglePanel('statsPanel')"><i class="fas fa-chart-line"></i></button>
+            <button class="icon-btn" onclick="togglePanel('settingsPanel')"><i class="fas fa-cog"></i></button>
         </div>
-    </aside>
+    </header>
 
-    <!-- ORTA PANEL -->
-    <main class="main-stage">
-        <header class="top-bar">
-            <button class="toggle-btn" onclick="togglePanel('leftPanel')"><i class="fas fa-sliders-h"></i></button>
-            
-            <!-- MODEL SEÇİCİ (YENİ) -->
-            <div class="model-selector-container">
-                <select id="modelSelector" class="model-dropdown">
-                    <option value="" disabled selected>Model Yükleniyor...</option>
-                </select>
-                <span class="model-tag" id="activeModelTag">GPU</span>
-            </div>
-
-            <div class="actions">
-                <button class="action-icon" onclick="downloadHistory()" title="Geçmişi İndir"><i class="fas fa-download"></i></button>
-                <button class="action-icon" onclick="clearChat()" title="Temizle"><i class="fas fa-trash-alt"></i></button>
-                <button class="toggle-btn" onclick="togglePanel('rightPanel')"><i class="fas fa-database"></i></button>
-            </div>
-        </header>
-
-        <div id="chatContainer" class="chat-view">
-            <div class="empty-state" id="emptyState">
-                <div class="logo-shine"><i class="fas fa-layer-group"></i></div>
-                <h2>Sentiric Engine Hazır</h2>
-                <p>Profil seçin, mikrofonu açın veya yazmaya başlayın.</p>
+    <!-- MAIN STAGE -->
+    <main class="stage">
+        <div id="streamContainer" class="stream-flow">
+            <div class="empty-void">
+                <div class="void-icon"><i class="fas fa-bolt"></i></div>
+                <h1>Agent Ready</h1>
+                <p>Bir görev verin veya dosya yükleyin.</p>
             </div>
         </div>
 
-        <div class="composer-area">
-            <button class="scroll-bottom-btn hidden" id="scrollBtn" onclick="scrollToBottom()"><i class="fas fa-arrow-down"></i></button>
-            
-            <div class="telemetry-bar">
-                <span id="voiceStatus" class="hidden">🔴 Dinleniyor...</span>
-            </div>
-            
-            <div class="input-capsule">
-                <canvas id="audioVisualizer" width="100" height="40" class="audio-canvas hidden"></canvas>
-
-                <button class="tool-btn" onclick="$('fileInput').click()" title="RAG"><i class="fas fa-paperclip"></i></button>
+        <!-- OMNI BAR (Input Area) -->
+        <div class="omni-wrapper">
+            <div class="omni-bar">
+                <button class="tool-btn" onclick="$('fileInput').click()"><i class="fas fa-paperclip"></i></button>
                 <input type="file" id="fileInput" hidden>
                 
-                <div class="textarea-wrapper" style="flex:1; position:relative;">
-                    <textarea id="userInput" placeholder="" rows="1"></textarea>
-                    <div id="ghostText" class="ghost-overlay"></div>
-                </div>
-
-                <button class="tool-btn" id="micBtn" title="Dikte"><i class="fas fa-microphone"></i></button>
-                <button class="tool-btn" id="liveBtn" title="Hands-Free"><i class="fas fa-headset"></i></button>
-
-                <div class="right-tools">
-                    <button class="send-btn" id="sendBtn"><i class="fas fa-paper-plane"></i></button>
+                <textarea id="omniInput" placeholder="Yapay zekaya bir görev verin..." rows="1"></textarea>
+                
+                <div class="omni-actions">
+                    <button class="action-btn" id="sendBtn"><i class="fas fa-arrow-up"></i></button>
                     <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-square"></i></button>
                 </div>
+            </div>
+            <div class="omni-status">
+                <span id="statusText">Sistem Hazır</span> • <span id="latencyStat">0ms</span>
             </div>
         </div>
     </main>
 
-    <!-- SAĞ PANEL -->
-    <aside class="sidebar right" id="rightPanel">
-        <div class="header">
-            <div class="tab-group">
-                <button class="tab active" onclick="switchTab('rag')">RAG / Veri</button>
-                <button class="tab" onclick="switchTab('logs')">Debug</button>
-            </div>
-            <button class="close-btn mobile-only" onclick="togglePanel('rightPanel')"><i class="fas fa-times"></i></button>
+    <!-- SETTINGS PANEL (Right) -->
+    <aside class="slide-panel" id="settingsPanel">
+        <div class="panel-header">
+            <h3>Ayarlar</h3>
+            <button class="close-btn" onclick="togglePanel('settingsPanel')"><i class="fas fa-times"></i></button>
         </div>
-
-        <div class="scroll-content">
-            <div id="ragTab" class="tab-content active">
-                <div class="info-box"><i class="fas fa-info-circle"></i> Bağlam verisi.</div>
-                <textarea id="ragInput" class="input-area code-font" placeholder="RAG verilerini buraya yapıştırın..."></textarea>
-                <div class="rag-stats">Karakter: <span id="ragCharCount">0</span></div>
+        <div class="panel-content">
+            <div class="setting-group">
+                <label>PERSONA</label>
+                <div class="chip-grid">
+                    <button class="chip active" onclick="setPersona('default')">🇹🇷 Asistan</button>
+                    <button class="chip" onclick="setPersona('coder')">💻 Dev</button>
+                    <button class="chip" onclick="setPersona('creative')">🎨 Sanat</button>
+                    <button class="chip" onclick="setPersona('english')">🇺🇸 EN</button>
+                </div>
+            </div>
+            
+            <div class="setting-group">
+                <label>SİSTEM TALİMATI</label>
+                <textarea id="systemPrompt" class="code-area" rows="5"></textarea>
             </div>
 
-            <div id="logsTab" class="tab-content" style="display: none;">
-                <div class="dashboard-grid">
-                    <div class="dash-card"><label>TPS</label><div class="value" id="tpsVal">--</div></div>
-                    <div class="dash-card"><label>Gecikme</label><div class="value" id="latencyVal">--</div></div>
-                    <div class="dash-card full"><label>Oturum Token</label><div class="value" id="sessionTotalTokenVal">0</div></div>
+            <div class="setting-group">
+                <label>PARAMETRELER</label>
+                <div class="range-wrap">
+                    <div class="range-head"><span>Temp</span><span id="tempVal">0.7</span></div>
+                    <input type="range" id="tempInput" min="0" max="1.5" step="0.1" value="0.7">
                 </div>
-                <div class="console-title">Son İstek Payloadi (JSON)</div>
-                <pre class="console-output" id="payloadLog" style="font-size: 0.7rem; white-space: pre-wrap;">Waiting for request...</pre>
+                <div class="range-wrap">
+                    <div class="range-head"><span>Token</span><span id="tokenVal">1024</span></div>
+                    <input type="range" id="tokenLimit" min="64" max="8192" step="64" value="1024">
+                </div>
             </div>
         </div>
     </aside>
 
-    <div class="overlay" id="overlay" onclick="closeAllPanels()"></div>
-</div>
+    <!-- STATS PANEL (Right) -->
+    <aside class="slide-panel" id="statsPanel">
+        <div class="panel-header">
+            <h3>Telemetri</h3>
+            <button class="close-btn" onclick="togglePanel('statsPanel')"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="panel-content">
+            <div class="metric-card">
+                <div class="metric-label">HIZ (TPS)</div>
+                <div class="metric-val" id="tpsBig">0.0</div>
+                
+                <!-- BU WRAPPER CHART.JS TAŞMASINI ENGELLER -->
+                <div class="chart-container">
+                    <canvas id="tpsChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="setting-group mt-4">
+                <label>RAG BAĞLAMI</label>
+                <textarea id="ragInput" class="code-area" placeholder="Doküman içeriği..." rows="5"></textarea>
+                <div class="char-count"><span id="ragCount">0</span> karakter</div>
+            </div>
 
-<!-- DROPDOWN STYLE -->
-<style>
-.model-selector-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-}
-.model-dropdown {
-    background: transparent;
-    border: none;
-    font-weight: 700;
-    font-size: 0.95rem;
-    color: var(--text-main);
-    cursor: pointer;
-    text-align: center;
-    appearance: none;
-    -webkit-appearance: none;
-    padding-right: 15px;
-    background-image: url('data:image/svg+xml;utf8,<svg fill="%2364748b" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>');
-    background-repeat: no-repeat;
-    background-position: right center;
-    background-size: 16px;
-}
-.model-dropdown:focus { outline: none; }
-</style>
+            <div class="setting-group mt-4">
+                <label>DEBUG</label>
+                <pre id="debugLog" class="log-box">Ready</pre>
+            </div>
+        </div>
+    </aside>
+
+</div>
 
 <script src="app.js"></script>
 </body>
