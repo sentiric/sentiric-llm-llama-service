@@ -1,5 +1,5 @@
 /**
- * SENTIRIC AGENT OS v7.0 (LLM-DRIVEN UI)
+ * SENTIRIC AGENT OS v7.1 (LLM-DRIVEN UI - STABLE)
  *
  * Bu dosya, arayüzün tüm mantığını içerir.
  * UI elemanları, sayfa yüklendiğinde /v1/ui/layout endpoint'inden alınan
@@ -30,10 +30,10 @@ const MODEL_CATALOG = [
 
 // --- UYGULAMA BAŞLANGICI ---
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("🌌 Sentiric OS v7.0 Booting (LLM-DRIVEN UI)...");
+    console.log("🌌 Sentiric OS v7.1 Booting (LLM-DRIVEN UI)...");
     
     renderModelList();
-    renderDynamicLayout(); // Çekirdek dinamik render fonksiyonu
+    renderDynamicLayout();
     setupStaticEvents();
     setupCharts();
     checkHealth();
@@ -63,7 +63,7 @@ async function renderDynamicLayout() {
         });
         
         setupDynamicEvents(schema);
-        setPersona('default'); // Default persona'yı uygula
+        setPersona('default');
 
     } catch (error) {
         console.error("Dynamic UI Render Failed:", error);
@@ -79,7 +79,7 @@ function renderWidget(widget) {
                     <label>${widget.label}</label>
                     <div class="chip-grid" id="${widget.id}">
                         ${widget.options.map(opt => `
-                            <button class="chip ${opt.active ? 'active' : ''}" onclick="setPersona('${opt.value}')">${opt.label}</button>
+                            <button class="chip ${opt.active ? 'active' : ''}" data-persona-key="${opt.value}">${opt.label}</button>
                         `).join('')}
                     </div>
                 </div>`;
@@ -109,6 +109,14 @@ function setupDynamicEvents(schema) {
             if(input && display) {
                 input.oninput = (e) => display.innerText = e.target.value;
             }
+        }
+        if (widget.type === 'chip-group') {
+             const container = $(widget.id);
+             if (container) {
+                 container.querySelectorAll('.chip').forEach(chip => {
+                     chip.onclick = () => setPersona(chip.dataset.personaKey);
+                 });
+             }
         }
     });
 }
@@ -163,7 +171,7 @@ async function sendMessage() {
                         if (content) {
                             fullText += content;
                             Store.tokenCount++;
-                            if(Store.tokenCount % 3 === 0) { // Her 3 token'da bir DOM güncelle
+                            if(Store.tokenCount % 3 === 0) {
                                 bubble.innerHTML = marked.parse(fullText);
                                 updateStats();
                                 scrollToBottom();
@@ -195,7 +203,7 @@ function buildPayload(text) {
     if (rag) msgs.push({ role: 'system', content: `CONTEXT:\n${rag}` });
     if (sys) msgs.push({ role: 'system', content: sys });
     
-    Store.history.slice(-10).forEach(m => msgs.push(m)); // Son 10 mesajı geçmiş olarak al
+    Store.history.slice(-10).forEach(m => msgs.push(m));
     msgs.push({ role: 'user', content: text });
 
     return {
@@ -250,12 +258,13 @@ async function switchModel(id, name) {
         addMessage('system', `<span style="color:#ef4444">HATA: Model değiştirilemedi.</span>`);
     } finally {
         Store.isSwitching = false;
-        // Sağlık kontrolü başarılı olana kadar overlay'i göstermeye devam et
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Kısa bir gecikme
+        await new Promise(resolve => setTimeout(resolve, 2000));
         let isHealthy = false;
-        while (!isHealthy) {
+        let retries = 5;
+        while (!isHealthy && retries > 0) {
             isHealthy = await checkHealth(true);
             if (!isHealthy) await new Promise(resolve => setTimeout(resolve, 3000));
+            retries--;
         }
         $('systemOverlay').classList.add('hidden');
     }
@@ -277,28 +286,15 @@ function setupStaticEvents() {
             }
         });
     }
-    const send = $('sendBtn');
-    if(send) send.onclick = sendMessage;
-    
-    const stop = $('stopBtn');
-    if(stop) stop.onclick = () => { if(Store.controller) Store.controller.abort(); };
-
-    document.addEventListener('click', (e) => {
-        const dock = document.querySelector('.model-dock');
-        const matrix = $('modelMatrix');
-        if (dock && matrix && !dock.contains(e.target)) {
-            matrix.classList.add('hidden');
-        }
-    });
+    const send = $('sendBtn'); if(send) send.onclick = sendMessage;
+    const stop = $('stopBtn'); if(stop) stop.onclick = () => { if(Store.controller) Store.controller.abort(); };
 }
 
 function setPersona(key) {
     const container = $('persona-chips');
     if (!container) return;
     container.querySelectorAll('.chip').forEach(b => b.classList.remove('active'));
-    container.querySelectorAll('.chip').forEach(b => {
-        if(b.onclick.toString().includes(`'${key}'`)) b.classList.add('active');
-    });
+    container.querySelector(`[data-persona-key="${key}"]`)?.classList.add('active');
 
     const personaPrompts = {
         'default': "Sen yardımsever bir asistansın. Kısa, net ve Türkçe cevaplar ver.",
@@ -355,7 +351,6 @@ async function checkHealth(returnStatus = false) {
     }
 }
 
-// --- İSTATİSTİK VE GRAFİKLER ---
 function setupCharts() {
     const ctx = $('tpsChart');
     if(!ctx) return;
@@ -377,6 +372,19 @@ function updateStats() {
     }
 }
 
-// --- GLOBAL PENCERE FONKSİYONLARI ---
-window.togglePanel = (id) => { const p = $(id); document.querySelectorAll('.slide-panel').forEach(pan => { if(pan.id !== id) pan.classList.remove('open'); }); if(p) p.classList.toggle('open'); };
-window.clearChat = () => { $('streamContainer').innerHTML = `<div class="empty-void"><div class="void-icon"><i class="fas fa-bolt"></i></div><h1>Agent Ready</h1><p>Bir görev verin veya dosya yükleyin.</p></div>`; Store.history = []; };
+// --- KRİTİK DÜZELTME: Global Fonksiyonları Window Nesnesine Atama ---
+window.toggleModelMatrix = () => {
+    const el = $('modelMatrix');
+    if(el) el.classList.toggle('hidden');
+};
+window.togglePanel = (id) => {
+    const p = $(id);
+    document.querySelectorAll('.slide-panel').forEach(pan => {
+        if(pan.id !== id) pan.classList.remove('open');
+    });
+    if(p) p.classList.toggle('open');
+};
+window.clearChat = () => {
+    $('streamContainer').innerHTML = `<div class="empty-void"><div class="void-icon"><i class="fas fa-bolt"></i></div><h1>Agent Ready</h1><p>Bir görev verin veya dosya yükleyin.</p></div>`;
+    Store.history = [];
+};

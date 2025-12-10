@@ -165,22 +165,36 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
     const auto& params = req_ptr->request.params();
     uint32_t req_max_gen = params.has_max_new_tokens() ? params.max_new_tokens() : settings_.default_max_tokens;
     uint32_t max_context = settings_.context_size;
-    uint32_t buffer = 64;
+    uint32_t buffer = 64; // Güvenlik tamponu
     
-    if (req_max_gen > max_context - buffer) {
-        req_max_gen = max_context - buffer;
-    }
+    // --- KRİTİK DÜZELTME BAŞLANGICI ---
+    uint32_t effective_max_gen = std::min(req_max_gen, max_context - buffer);
+    if (effective_max_gen == 0) effective_max_gen = buffer; // Üretim için her zaman yer bırak
+
+    // Çıkarma işleminden önce unsigned tamsayı taşmasını (underflow) önle
+    uint32_t safe_prompt_limit = (max_context > effective_max_gen + buffer) ? (max_context - effective_max_gen - buffer) : 0;
     
-    uint32_t safe_prompt_limit = max_context - req_max_gen - buffer;
-    
-    if (tokens.size() > safe_prompt_limit) {
+    if (safe_prompt_limit > 0 && tokens.size() > safe_prompt_limit) {
         spdlog::warn("⚠️ Prompt truncated: {} -> {} tokens", tokens.size(), safe_prompt_limit);
-        std::vector<llama_token> truncated;
-        truncated.reserve(safe_prompt_limit);
-        auto start_it = tokens.end() - safe_prompt_limit;
-        truncated.assign(start_it, tokens.end());
-        tokens = std::move(truncated);
+        
+        // Sadece baştaki token'ları kes, sondakileri koru.
+        std::vector<llama_token> truncated_tokens(
+            tokens.begin() + (tokens.size() - safe_prompt_limit), 
+            tokens.end()
+        );
+        tokens = std::move(truncated_tokens);
+    } else if (safe_prompt_limit == 0) {
+        // Bu durum, context'in tamamen dolu olduğu anlamına gelir.
+        // Hata vermek yerine, prompt'un son birkaç token'ını alalım.
+        uint32_t emergency_limit = std::min((uint32_t)tokens.size(), buffer * 2);
+         spdlog::warn("⚠️ Context full. Emergency truncation: {} -> {} tokens", tokens.size(), emergency_limit);
+        std::vector<llama_token> truncated_tokens(
+            tokens.end() - emergency_limit,
+            tokens.end()
+        );
+        tokens = std::move(truncated_tokens);
     }
+    // --- KRİTİK DÜZELTME SONU ---
     
     req_ptr->prompt_tokens = tokens.size();
     return tokens;
@@ -188,8 +202,6 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
 
 bool LLMEngine::decode_prompt(llama_context* ctx, ContextGuard& guard, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr) {
     size_t matched_len = guard.get_matched_tokens();
-
-    if (matched_len == prompt_tokens.size() && matched_len > 0) matched_len--;
 
     if (matched_len < prompt_tokens.size()) {
         llama_memory_seq_rm(llama_get_memory(ctx), -1, matched_len, -1);
@@ -232,15 +244,13 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
         if (g) llama_sampler_chain_add(chain, g);
     }
     
-    // --- DÜZELTME BURADA ---
-    // repeat_penalty -> repetition_penalty
     float repeat_penalty = params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty;
     
     llama_sampler_chain_add(chain, llama_sampler_init_penalties(
-        llama_n_ctx(ctx), // last_n
-        repeat_penalty,   // repeat penalty
-        0.0f,             // frequency penalty
-        0.0f              // presence penalty
+        llama_n_ctx(ctx),
+        repeat_penalty,
+        0.0f,
+        0.0f
     ));
 
     llama_sampler_chain_add(chain, llama_sampler_init_top_k(params.has_top_k() ? params.top_k() : settings_.default_top_k));
