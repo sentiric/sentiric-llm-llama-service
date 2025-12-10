@@ -33,9 +33,8 @@ void run_metrics_server_thread(std::shared_ptr<MetricsServer> server) { if (serv
 HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port)
     : engine_(std::move(engine)), host_(host), port_(port) {
       
-    // Statik dosya sunumu (Studio UI)
     const char* mount_point = "/";
-    const char* base_dir = "./studio"; 
+    const char* base_dir = "./studio-v2"; 
     if (!svr_.set_mount_point(mount_point, base_dir)) {
         spdlog::error("UI directory '{}' not found.", base_dir);
     }
@@ -43,7 +42,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         spdlog::debug("HTTP {} {} - Status: {}", req.method, req.path, res.status);
     });
 
-    // --- YENİ ENDPOINT: Dinamik UI Layout (GENİŞLETİLDİ) ---
     svr_.Get("/v1/ui/layout", [this](const httplib::Request &, httplib::Response &res) {
         json layout_schema = {
             {"panels", {
@@ -96,52 +94,41 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         res.set_header("Access-Control-Allow-Origin", "*");
         res.set_content(layout_schema.dump(), "application/json");
     });
+    
+    // --- YENİ ENDPOINT: Tüm Profilleri Listele ---
+    svr_.Get("/v1/profiles", [](const httplib::Request &, httplib::Response &res) {
+        res.set_header("Access-Control-Allow-Origin", "*");
+        try {
+            std::ifstream f("profiles.json");
+            if (!f.is_open()) {
+                 f.open("models/profiles.json");
+            }
+            json profiles_json = json::parse(f);
+            res.set_content(profiles_json.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 500;
+            res.set_content(json({{"error", "Could not read profiles.json"}}).dump(), "application/json");
+        }
+    });
 
-    // --- Endpoint: Model Profillerini Listele ---
     svr_.Get("/v1/models", [this](const httplib::Request &, httplib::Response &res) {
         const auto& current_settings = engine_->get_settings();
         
-        json models_data = json::array();
-        
-        // 1. Aktif Model
-        models_data.push_back({
-            {"id", current_settings.model_id.empty() ? "local-model" : current_settings.model_id},
-            {"object", "model"},
-            {"created", std::time(nullptr)},
-            {"owned_by", "system"},
-            {"active", true},
-            {"profile", current_settings.profile_name}
-        });
-
-        // 2. Diğer Profiller (profiles.json'dan)
-        try {
-            std::ifstream f("models/profiles.json");
-            json j = json::parse(f);
-            if (j.contains("profiles")) {
-                for (auto& [key, val] : j["profiles"].items()) {
-                    if (key != current_settings.profile_name) {
-                        models_data.push_back({
-                            {"id", val.value("model_id", key)},
-                            {"object", "model"},
-                            {"created", std::time(nullptr)},
-                            {"owned_by", "system"},
-                            {"active", false},
-                            {"profile", key}
-                        });
-                    }
-                }
-            }
-        } catch(...) {}
-
         json response_body = {
             {"object", "list"},
-            {"data", models_data}
+            {"data", {{
+                {"id", current_settings.model_id.empty() ? "local-model" : current_settings.model_id},
+                {"object", "model"},
+                {"created", std::time(nullptr)},
+                {"owned_by", "system"},
+                {"active", true},
+                {"profile", current_settings.profile_name}
+            }}}
         };
         res.set_header("Access-Control-Allow-Origin", "*");
         res.set_content(response_body.dump(), "application/json");
     });
 
-    // --- Endpoint: Model Değiştir (Hot-Swap) ---
     svr_.Post("/v1/models/switch", [this](const httplib::Request &req, httplib::Response &res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         try {
@@ -154,7 +141,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
 
             spdlog::warn("⚠️ API requested model switch to profile: {}", profile);
             
-            // Blocking Call (Reload bitene kadar bekler)
             bool success = engine_->reload_model(profile);
             
             if (success) {
@@ -169,7 +155,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         }
     });
 
-    // --- Endpoint: Health Check ---
     svr_.Get("/health", [this](const httplib::Request &, httplib::Response &res) {
         bool model_ready = engine_->is_model_loaded();
         size_t active_ctx = 0;
@@ -196,7 +181,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         res.status = model_ready ? 200 : 503;
     });
 
-    // --- Endpoint: Chat Completions (Core Logic) ---
     svr_.Post("/v1/chat/completions", [this](const httplib::Request &req, httplib::Response &res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         
@@ -212,12 +196,25 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
 
             if (body.contains("messages") && body["messages"].is_array()) {
                 const auto& messages = body["messages"];
+                bool first_user_message_found = false;
                 for (size_t i = 0; i < messages.size(); ++i) {
                     const auto& msg = messages[i];
                     std::string role = msg.value("role", "");
                     std::string content = msg.value("content", "");
-                    if (role == "system") grpc_request.set_system_prompt(content);
-                    else if (i == messages.size() - 1 && role == "user") grpc_request.set_user_prompt(content);
+                    
+                    if (role == "system") {
+                         if (grpc_request.system_prompt().empty()) {
+                            grpc_request.set_system_prompt(content);
+                         } else {
+                            // Birden fazla sistem mesajı varsa, RAG context'i olarak ele al
+                            if (!grpc_request.has_rag_context()) {
+                                grpc_request.set_rag_context(content);
+                            }
+                         }
+                    } else if (role == "user" && !first_user_message_found) {
+                        grpc_request.set_user_prompt(content);
+                        first_user_message_found = true;
+                    }
                     else {
                         auto* turn = grpc_request.add_history();
                         turn->set_role(role);
@@ -245,7 +242,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                 res.set_chunked_content_provider("text/event-stream",
                     [batched_request](size_t, httplib::DataSink &sink) {
                         batched_request->should_stop_callback = [&sink]() { return !sink.is_writable(); };
-
                         while (!batched_request->is_finished || !batched_request->token_queue.empty()) {
                             std::string token;
                             if (batched_request->token_queue.wait_and_pop(token, 50)) {
@@ -256,7 +252,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                                 chunk["model"] = "sentiric-llm";
                                 chunk["choices"][0]["index"] = 0;
                                 chunk["choices"][0]["delta"]["content"] = token;
-                                
                                 std::string data = "data: " + chunk.dump() + "\n\n";
                                 if (!sink.write(data.c_str(), data.length())) return false;
                             }
@@ -267,13 +262,11 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                     });
             } else {
                  completion_future.wait();
-                 
                  std::string full_response;
                  while (!batched_request->token_queue.empty()) {
                      std::string t;
                      if(batched_request->token_queue.wait_and_pop(t, 0)) full_response += t;
                  }
-                 
                  json response_json;
                  response_json["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));
                  response_json["object"] = "chat.completion";
@@ -286,10 +279,8 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                  response_json["usage"]["prompt_tokens"] = batched_request->prompt_tokens;
                  response_json["usage"]["completion_tokens"] = batched_request->completion_tokens;
                  response_json["usage"]["total_tokens"] = batched_request->prompt_tokens + batched_request->completion_tokens;
-
                  res.set_content(response_json.dump(), "application/json");
             }
-
         } catch (const std::exception& e) {
             spdlog::error("HTTP handler error: {}", e.what());
             res.status = 400;
@@ -297,21 +288,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         }
     });
     
-    svr_.Get("/contexts", [](const httplib::Request &, httplib::Response &res) {
-        json context_list = json::array();
-        try {
-            if (fs::exists("examples") && fs::is_directory("examples")) {
-                for (const auto & entry : fs::directory_iterator("examples")) {
-                    if (entry.is_regular_file() && entry.path().extension() == ".txt") {
-                        context_list.push_back(entry.path().filename().string());
-                    }
-                }
-            }
-        } catch (...) {}
-        res.set_header("Access-Control-Allow-Origin", "*");
-        res.set_content(context_list.dump(), "application/json");
-    });
-
     svr_.Get(R"(/context/(.+))", [](const httplib::Request &req, httplib::Response &res) {
         std::string filename = req.matches[1];
         fs::path file_path = fs::path("examples") / filename;
@@ -333,6 +309,7 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
     svr_.Options("/v1/chat/completions", set_cors);
     svr_.Options("/v1/models", set_cors);
     svr_.Options("/v1/models/switch", set_cors);
+    svr_.Options("/v1/profiles", set_cors);
 }
 
 void HttpServer::run() {
