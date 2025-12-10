@@ -5,13 +5,22 @@ import * as ui from './ui.js';
 document.addEventListener('DOMContentLoaded', initialize);
 
 async function initialize() {
-    console.log("🌌 Sentiric OS v8.0 Booting (Modular)...");
+    console.log("🌌 Sentiric OS v8.1 Booting (Stateful)...");
     
     try {
         const [profilesData, layoutSchema] = await Promise.all([
             api.fetchProfiles(),
             api.fetchLayout()
         ]);
+        
+        const lastUsedProfile = localStorage.getItem('sentiric_last_profile');
+        if (lastUsedProfile && profilesData.profiles[lastUsedProfile]) {
+            // Eğer localStorage'da geçerli bir profil varsa, onu aktif et
+            if (lastUsedProfile !== profilesData.active_profile) {
+                console.log(`Restoring last used profile: ${lastUsedProfile}`);
+                await switchModel(lastUsedProfile, profilesData.profiles[lastUsedProfile].display_name, false); // Onay sorma
+            }
+        }
         
         ui.renderModelList(profilesData);
         renderDynamicControls(layoutSchema);
@@ -41,7 +50,6 @@ function renderDynamicControls(schema) {
         }
     });
     
-    // Setup events for dynamically created elements
     Object.values(schema.panels).flat().forEach(widget => {
         if (widget.type === 'slider') {
             const input = $(widget.id);
@@ -86,9 +94,9 @@ async function checkHealthLoop() {
     }, 5000);
 }
 
-async function switchModel(profileKey, profileName) {
+async function switchModel(profileKey, profileName, confirmUser = true) {
     if (profileKey === Store.currentProfile || Store.isSwitching) return;
-    if (!confirm(`${profileName} profiline geçilsin mi?`)) {
+    if (confirmUser && !confirm(`${profileName} profiline geçilsin mi?`)) {
         $('modelSelector').value = Store.currentProfile;
         return;
     }
@@ -100,14 +108,15 @@ async function switchModel(profileKey, profileName) {
     try {
         await api.switchModelAPI(profileKey);
         Store.currentProfile = profileKey;
+        localStorage.setItem('sentiric_last_profile', profileKey); // Seçimi kaydet
         ui.addMessage('system', `SİSTEM: Model başarıyla **${profileName}** olarak değiştirildi.`);
     } catch (e) {
         ui.addMessage('system', `<span style="color:#ef4444">HATA: ${e.message}</span>`);
-        $('modelSelector').value = Store.currentProfile; // Revert selection on failure
+        $('modelSelector').value = Store.currentProfile;
     } finally {
         Store.isSwitching = false;
         let isHealthy = false;
-        for (let i = 0; i < 10 && !isHealthy; i++) {
+        for (let i = 0; i < 20 && !isHealthy; i++) { // Timeout artırıldı
             await new Promise(resolve => setTimeout(resolve, 3000));
             isHealthy = (await api.checkHealthAPI()).healthy;
         }
@@ -189,16 +198,18 @@ function buildPayload(text) {
     const rag = $('ragInput')?.value || "";
     const msgs = [];
 
-    if (Store.history.length === 0) {
-        if (rag) msgs.push({ role: 'system', content: `CONTEXT:\n${rag}` });
-        if (sys) msgs.push({ role: 'system', content: sys });
-    }
-
+    // ÖNEMLİ: Her istekte history'yi tekrar oluşturuyoruz.
+    // İlk turu belirlemek için history.length'e bakmak yerine,
+    // backend'deki formatter zaten bunu yapıyor. Biz sadece tüm mesajları gönderiyoruz.
+    if (rag) msgs.push({ role: 'system', content: `CONTEXT:\n${rag}` });
+    if (sys) msgs.push({ role: 'system', content: sys });
+    
     Store.history.forEach(m => msgs.push(m));
-    msgs.push({ role: 'user', content: text });
+    // Not: sendMessage'de history'ye eklediğimiz için, payload'a user mesajını burada eklemeye gerek yok.
+    // Ancak temizlik için, burada bırakalım, backend'deki formatter bunu doğru yönetir.
     
     return {
-        messages: msgs.slice(-12), // Son 12 mesajı al (geçmiş + sistem + kullanıcı)
+        messages: msgs,
         temperature: parseFloat($('tempInput')?.value || 0.7),
         max_tokens: parseInt($('tokenLimit')?.value || 1024),
         stream: true
