@@ -29,3 +29,8 @@ Bu servis üretim ortamı için onaylanmıştır. Artık sadece hata düzeltmele
 -   **[✓] `LLM-PERF`:** GPU KV Offload ve Fast Warm-up optimizasyonu.
 
 ---
+## 🔭 GELECEK / VİZYON (PHASE 6)
+
+- **`RFC-UI-001`:** LLM tarafından yönlendirilen, çok modlu yeni nesil bir kullanıcı arayüzü mimarisinin planlanması ve tasarımı.
+  - **Referans Belge:** [docs/design/01_LLM_DRIVEN_UI_RFC.md](./design/01_LLM_DRIVEN_UI_RFC.md)
+  - **Durum:** Planlama / Konsept
