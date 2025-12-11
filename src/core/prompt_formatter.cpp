@@ -1,140 +1,112 @@
 #include "core/prompt_formatter.h"
-#include <sstream>
 #include "spdlog/spdlog.h"
-#include <algorithm>
+#include <vector>
+#include <cstring>
+#include <sstream>
+#include <iostream>
 
-// DÜZELTME: GenerateStreamRequest (Tüm sınıflar için)
-
-// 1. GEMMA
-std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request) const {
-    std::ostringstream oss;
-    
-    std::string combined_system;
-    // Sadece geçmiş yoksa sistem ve RAG context'ini ekle
-    if (request.history_size() == 0) {
-        if (!request.system_prompt().empty()) {
-            combined_system += "Role & Instructions:\n" + request.system_prompt() + "\n\n";
-        }
-        if (request.has_rag_context() && !request.rag_context().empty()) {
-            combined_system += "Context Data:\n" + request.rag_context() + "\n\n";
-        }
-    }
-
-    bool is_first_turn = true;
-    for (const auto& turn : request.history()) {
-        if (turn.role() == "user") {
-            oss << "<start_of_turn>user\n";
-            if (is_first_turn && !combined_system.empty()) {
-                oss << combined_system;
-                is_first_turn = false;
-            }
-            oss << turn.content() << "<end_of_turn>\n";
-        } 
-        else if (turn.role() == "assistant" || turn.role() == "model") {
-            oss << "<start_of_turn>model\n" << turn.content() << "<end_of_turn>\n";
-            is_first_turn = false;
-        }
-    }
-
-    oss << "<start_of_turn>user\n";
-    if (is_first_turn && !combined_system.empty()) { oss << combined_system; }
-    oss << request.user_prompt() << "<end_of_turn>\n";
-    oss << "<start_of_turn>model\n";
-    
-    return oss.str();
+std::unique_ptr<PromptFormatter> create_formatter() {
+    spdlog::info("Creating NativeTemplateFormatter (using GGUF embedded chat template)");
+    return std::make_unique<NativeTemplateFormatter>();
 }
 
-std::vector<std::string> GemmaFormatter::get_stop_sequences() const {
-    return { "<end_of_turn>", "<eos>", "user:", "model:" };
-}
-
-// 2. LLAMA 3
-std::string Llama3Formatter::format(const sentiric::llm::v1::GenerateStreamRequest& request) const {
-    std::ostringstream oss;
-    oss << "<|begin_of_text|>";
-
-    // Sadece geçmiş yoksa sistem ve RAG context'ini ekle
-    if (request.history_size() == 0) {
-        std::string system_content = request.system_prompt();
-        if (request.has_rag_context() && !request.rag_context().empty()) {
-            if(!system_content.empty()) system_content += "\n\n";
-            system_content += "Context:\n" + request.rag_context();
-        }
-
-        if (!system_content.empty()) {
-            oss << "<|start_header_id|>system<|end_header_id|>\n\n" << system_content << "<|eot_id|>";
-        }
+std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model) const {
+    if (!model) {
+        spdlog::error("NativeTemplateFormatter: Model is null!");
+        return "";
     }
 
+    // --- ADIM 1: Modelden Şablonu Çek (Fixing API Mismatch) ---
+    // Model metadata'sından "tokenizer.chat_template" değerini okumaya çalışıyoruz.
+    // Bu değer genellikle 2048 byte'tan küçüktür, güvenli bir buffer açıyoruz.
+    std::vector<char> tmpl_buf(4096); 
+    int32_t tmpl_len = llama_model_meta_val_str(model, "tokenizer.chat_template", tmpl_buf.data(), tmpl_buf.size());
+
+    std::string template_to_use;
+
+    if (tmpl_len > 0) {
+        // Modelin içinde gömülü şablon bulundu
+        template_to_use = std::string(tmpl_buf.data());
+        spdlog::trace("Using embedded GGUF chat template.");
+    } else {
+        // Modelde şablon yoksa veya okunamadıysa FALLBACK kullan
+        // Çoğu modern model (Qwen, Llama 3, Phi-3, Mistral) ChatML veya benzeri yapıları destekler.
+        // Buraya güvenli bir generic şablon koyuyoruz.
+        spdlog::warn("⚠️ 'tokenizer.chat_template' not found in model metadata. Using generic ChatML fallback.");
+        template_to_use = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";
+    }
+
+    // --- ADIM 2: Mesajları Hazırla ---
+    std::vector<llama_chat_message> messages;
+    
+    // Pointer saklama için kalıcı buffer
+    std::vector<std::string> content_storage;
+    
+    // RAG ve System Prompt birleşimi
+    std::string effective_system_prompt = request.system_prompt();
+    if (request.has_rag_context() && !request.rag_context().empty()) {
+        if (!effective_system_prompt.empty()) effective_system_prompt += "\n\n";
+        effective_system_prompt += "CONTEXT DATA:\n" + request.rag_context();
+    }
+
+    // System mesajını ekle
+    if (!effective_system_prompt.empty()) {
+        content_storage.push_back(effective_system_prompt);
+        messages.push_back({"system", content_storage.back().c_str()});
+    }
+
+    // Geçmişi ekle
     for (const auto& turn : request.history()) {
         std::string role = (turn.role() == "user") ? "user" : "assistant";
-        oss << "<|start_header_id|>" << role << "<|end_header_id|>\n\n" << turn.content() << "<|eot_id|>";
+        content_storage.push_back(turn.content());
+        messages.push_back({role.c_str(), content_storage.back().c_str()});
     }
 
-    oss << "<|start_header_id|>user<|end_header_id|>\n\n" << request.user_prompt() << "<|eot_id|>";
-    oss << "<|start_header_id|>assistant<|end_header_id|>\n\n";
+    // Mevcut kullanıcı mesajını ekle
+    if (!request.user_prompt().empty()) {
+        content_storage.push_back(request.user_prompt());
+        messages.push_back({"user", content_storage.back().c_str()});
+    }
 
-    return oss.str();
-}
+    // --- ADIM 3: Şablonu Uygula (Boyut Hesaplama) ---
+    // ARTIK MODELİ DEĞİL, STRING OLAN 'template_to_use' DEĞİŞKENİNİ VERİYORUZ.
+    int32_t required_size = llama_chat_apply_template(
+        template_to_use.c_str(), 
+        messages.data(), 
+        messages.size(), 
+        true, // add_generation_prompt (asistanın cevabını başlat)
+        nullptr, 
+        0
+    );
 
-std::vector<std::string> Llama3Formatter::get_stop_sequences() const {
-    return { "<|eot_id|>", "<|end_of_text|>", "assistant:", "user:" };
-}
-
-// 3. QWEN 2.5
-std::string QwenFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request) const {
-    std::ostringstream oss;
-    
-    // Sadece geçmiş yoksa sistem ve RAG context'ini ekle
-    if (request.history_size() == 0) {
-        std::string system_content = request.system_prompt();
-        if (request.has_rag_context() && !request.rag_context().empty()) {
-            if(!system_content.empty()) system_content += "\n\n";
-            system_content += "REFERANS BİLGİ (RAG):\n" + request.rag_context();
+    if (required_size < 0) {
+        spdlog::error("llama_chat_apply_template failed to calculate size.");
+        // Çok kötü bir durum olursa basit string birleştirme
+        std::ostringstream fallback;
+        for(const auto& msg : messages) {
+            fallback << msg.role << ": " << msg.content << "\n";
         }
-
-        if (!system_content.empty()) {
-            oss << "<|im_start|>system\n" << system_content << "<|im_end|>\n";
-        }
+        fallback << "assistant: ";
+        return fallback.str();
     }
 
-    for (const auto& turn : request.history()) {
-        std::string role = (turn.role() == "user") ? "user" : "assistant";
-        oss << "<|im_start|>" << role << "\n" << turn.content() << "<|im_end|>\n";
-    }
-
-    oss << "<|im_start|>user\n" << request.user_prompt() << "<|im_end|>\n";
-    oss << "<|im_start|>assistant\n";
-
-    return oss.str();
-}
-
-std::vector<std::string> QwenFormatter::get_stop_sequences() const {
-    return { "<|im_end|>", "<|endoftext|>", "<|im_start|>" };
-}
-
-std::unique_ptr<PromptFormatter> create_formatter_for_model(const std::string& model_architecture) {
-    std::string arch = model_architecture;
-    std::transform(arch.begin(), arch.end(), arch.begin(), ::tolower);
-
-    spdlog::info("Creating formatter for architecture: {}", arch);
-
-    if (arch.find("llama") != std::string::npos) {
-        return std::make_unique<Llama3Formatter>();
-    } 
-    if (arch.find("qwen") != std::string::npos) {
-        return std::make_unique<QwenFormatter>();
-    }
-    // YENİ EKLENEN MİMARİLER İÇİN DESTEK
-    if (arch.find("gemma") != std::string::npos) { // gemma ve gemma2
-        return std::make_unique<GemmaFormatter>();
-    }
-    if (arch.find("phi3") != std::string::npos || arch.find("phi-3") != std::string::npos) {
-        // Phi-3, Llama-3 formatını kullanıyor.
-        return std::make_unique<Llama3Formatter>();
-    }
+    // --- ADIM 4: Gerçek Formatlama ---
+    std::string formatted_output;
+    formatted_output.resize(required_size);
     
-    // Varsayılan olarak en yaygın format olan Llama3'ü kullan
-    spdlog::warn("Unknown architecture '{}'. Defaulting to Llama3 formatter.", arch);
-    return std::make_unique<Llama3Formatter>();
+    int32_t final_size = llama_chat_apply_template(
+        template_to_use.c_str(), 
+        messages.data(), 
+        messages.size(), 
+        true, 
+        &formatted_output[0], 
+        formatted_output.size()
+    );
+
+    if (final_size < 0) {
+         spdlog::error("llama_chat_apply_template failed during formatting.");
+         return "";
+    }
+
+    return formatted_output;
 }

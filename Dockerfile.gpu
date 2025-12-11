@@ -1,17 +1,20 @@
-# --- Derleme Aşaması ---
+# --- Derleme Aşaması (GPU) ---
 FROM nvcr.io/nvidia/cuda:13.0.2-cudnn-devel-ubuntu24.04 AS builder
 
+# Etkileşimsiz kurulum için
 ENV DEBIAN_FRONTEND=noninteractive
 
 # 1. Temel bağımlılıkları kur
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential curl zip unzip tar \
-    pkg-config ninja-build ca-certificates python3 \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    pkg-config ninja-build ca-certificates python3
 
-# 2. Vcpkg'yi kur
+# 2. Vcpkg'yi kur (Robust Kurulum)
 ARG VCPKG_VERSION=2024.05.24
-RUN curl -L "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSION}.tar.gz" -o vcpkg.tar.gz && \
+# VCPKG_FORCE_SYSTEM_BINARIES=1: vcpkg'nin kendi araçlarını indirmesini engeller, sistemdekileri kullanır.
+ENV VCPKG_FORCE_SYSTEM_BINARIES=1
+
+RUN curl -fL --retry 5 --retry-delay 5 "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSION}.tar.gz" -o vcpkg.tar.gz && \
     mkdir -p /opt/vcpkg && \
     tar xzf vcpkg.tar.gz -C /opt/vcpkg --strip-components=1 && \
     rm vcpkg.tar.gz && \
@@ -21,33 +24,35 @@ WORKDIR /app
 
 # 3. Bağımlılık manifest'ini kopyala ve kur
 COPY vcpkg.json .
+
+# [KRİTİK DÜZELTME] GitHub Rate Limit Engelini Aşmak İçin Mirror Kullanımı
+ENV X_VCPKG_ASSET_SOURCES="clear;x-azurl,https://asset-store.vcpkg.org/;"
+
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# 4. llama.cpp'yi klonla
+# 4. llama.cpp'yi klonla (Sabit Commit)
 ARG LLAMA_CPP_VERSION=92bb442ad999a0d52df0af2730cd861012e8ac5c
 RUN git clone https://github.com/ggml-org/llama.cpp.git llama.cpp && \
     cd llama.cpp && \
     git checkout ${LLAMA_CPP_VERSION}
 
-# 5. Kaynak kodu kopyala
+# 5. Kaynakları kopyala
 COPY src ./src
 COPY CMakeLists.txt .
 
-# 6. CUDA Destekli Derleme
+# 6. Derle (CUDA Aktif)
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -DGGML_CUDA=ON \
+    -DCMAKE_CUDA_ARCHITECTURES="all-major" \
     -DLLAMA_CURL=OFF \
-    -DCMAKE_CXX_FLAGS="-Wall -Wextra -Wpedantic -Wno-unused-parameter" \
     -DGGML_NATIVE=OFF
-    
+
 RUN cmake --build build --target all -j $(nproc)
 
-# --- Çalışma Aşaması ---
+# --- Çalışma Aşaması (GPU) ---
 FROM nvcr.io/nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04 AS runtime
-
-ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libgomp1 curl && \
@@ -56,20 +61,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/build/llm_service /usr/local/bin/
 COPY --from=builder /app/build/llm_cli /usr/local/bin/
 
+# Dinamik kütüphaneleri kopyala (CUDA runtime container'ında bazıları eksik olabilir)
 COPY --from=builder /app/vcpkg_installed/x64-linux/lib/*.so* /usr/local/lib/
 COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 RUN ldconfig
 
-# --- DEĞİŞİKLİK BURADA: studio -> studio-v2 ---
 COPY studio-v2 /app/studio-v2
 COPY examples /app/examples
-
-# --- DEĞİŞİKLİK BURADA: ---
-# profiles.json'ı güvenli bir yere alıyoruz.
 COPY models/profiles.json /app/profiles.json
 
 WORKDIR /app
-    
 RUN mkdir -p /models
 
 EXPOSE 16070 16071 16072

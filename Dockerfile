@@ -6,9 +6,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential curl zip unzip tar \
     pkg-config ninja-build ca-certificates python3
 
-# 2. Vcpkg'yi kur
+# 2. Vcpkg'yi kur (Robust Kurulum)
 ARG VCPKG_VERSION=2024.05.24
-RUN curl -L "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSION}.tar.gz" -o vcpkg.tar.gz && \
+# VCPKG_FORCE_SYSTEM_BINARIES=1: vcpkg'nin kendi araçlarını indirmesini engeller, sistemdekileri kullanır.
+ENV VCPKG_FORCE_SYSTEM_BINARIES=1 
+
+RUN curl -fL --retry 5 --retry-delay 5 "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSION}.tar.gz" -o vcpkg.tar.gz && \
     mkdir -p /opt/vcpkg && \
     tar xzf vcpkg.tar.gz -C /opt/vcpkg --strip-components=1 && \
     rm vcpkg.tar.gz && \
@@ -18,6 +21,10 @@ WORKDIR /app
 
 # 3. Bağımlılık manifest'ini kopyala ve kur
 COPY vcpkg.json .
+
+# [KRİTİK DÜZELTME] GitHub Rate Limit Engelini Aşmak İçin Mirror Kullanımı
+ENV X_VCPKG_ASSET_SOURCES="clear;x-azurl,https://asset-store.vcpkg.org/;"
+
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
 # 4. llama.cpp'yi klonla ve belirli bir versiyona sabitle
@@ -53,7 +60,6 @@ COPY --from=builder /app/vcpkg_installed/x64-linux/lib/*.so* /usr/local/lib/
 COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 RUN ldconfig
 
-# --- DEĞİŞİKLİK BURADA: studio -> studio-v2 ---
 COPY studio-v2 /app/studio-v2
 COPY examples /app/examples
 
