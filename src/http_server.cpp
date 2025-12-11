@@ -11,6 +11,38 @@
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
+// --- UTF-8 Helper ---
+// Stringin sonunun yarım kalmış bir UTF-8 karakteri olup olmadığını kontrol eder.
+bool has_incomplete_utf8_suffix(const std::string& str) {
+    if (str.empty()) return false;
+    
+    size_t len = str.length();
+    // En fazla son 4 bayta bakmamız yeterli (UTF-8 max 4 byte)
+    for (size_t i = 1; i <= 4 && i <= len; ++i) {
+        unsigned char c = static_cast<unsigned char>(str[len - i]);
+        
+        // Eğer devam baytıysa (10xxxxxx), geriye doğru aramaya devam et
+        if ((c & 0xC0) == 0x80) continue;
+        
+        // Eğer ASCII ise (0xxxxxxx), sorun yok demektir.
+        if ((c & 0x80) == 0) return false;
+        
+        // Başlangıç baytını bulduk, kaç byte olması gerektiğini hesapla
+        size_t char_len = 0;
+        if ((c & 0xE0) == 0xC0) char_len = 2;
+        else if ((c & 0xF0) == 0xE0) char_len = 3;
+        else if ((c & 0xF8) == 0xF0) char_len = 4;
+        else return false; // Geçersiz bayt, bizlik değil
+        
+        // Eğer elimizdeki bayt sayısı (i), gereken uzunluktan (char_len) azsa, YARIM KALMIŞTIR.
+        if (i < char_len) return true;
+        
+        // Tamamlanmış karakter
+        return false;
+    }
+    return false;
+}
+
 // --- MetricsServer ---
 MetricsServer::MetricsServer(const std::string& host, int port, prometheus::Registry& registry)
     : host_(host), port_(port), registry_(registry) {
@@ -95,7 +127,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         res.set_content(layout_schema.dump(), "application/json");
     });
     
-    // --- YENİ ENDPOINT: Tüm Profilleri Listele ---
     svr_.Get("/v1/profiles", [](const httplib::Request &, httplib::Response &res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         try {
@@ -206,7 +237,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                          if (grpc_request.system_prompt().empty()) {
                             grpc_request.set_system_prompt(content);
                          } else {
-                            // Birden fazla sistem mesajı varsa, RAG context'i olarak ele al
                             if (!grpc_request.has_rag_context()) {
                                 grpc_request.set_rag_context(content);
                             }
@@ -239,23 +269,54 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             auto completion_future = engine_->get_batcher()->add_request(batched_request);
 
             if (stream) {
+                // [FIX] UTF-8 Buffer mekanizması eklendi.
+                // Lambda 'mutable' olmalı çünkü pending_data'yı güncelliyoruz.
                 res.set_chunked_content_provider("text/event-stream",
-                    [batched_request](size_t, httplib::DataSink &sink) {
+                    [batched_request, pending_data = std::string("")](size_t, httplib::DataSink &sink) mutable {
                         batched_request->should_stop_callback = [&sink]() { return !sink.is_writable(); };
+                        
                         while (!batched_request->is_finished || !batched_request->token_queue.empty()) {
                             std::string token;
                             if (batched_request->token_queue.wait_and_pop(token, 50)) {
+                                
+                                // Gelen token'ı buffer'a ekle
+                                pending_data += token;
+
+                                // Buffer geçerli (tamamlanmış) bir UTF-8 string mi?
+                                if (has_incomplete_utf8_suffix(pending_data)) {
+                                    // Hayır, yarım kaldı. Sonraki token'ı bekle.
+                                    continue;
+                                }
+
+                                // Evet, tamamlandı. Gönder ve buffer'ı temizle.
                                 json chunk;
                                 chunk["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));
                                 chunk["object"] = "chat.completion.chunk";
                                 chunk["created"] = std::time(nullptr);
                                 chunk["model"] = "sentiric-llm";
                                 chunk["choices"][0]["index"] = 0;
-                                chunk["choices"][0]["delta"]["content"] = token;
+                                chunk["choices"][0]["delta"]["content"] = pending_data; // Birikmiş veriyi kullan
+                                
                                 std::string data = "data: " + chunk.dump() + "\n\n";
                                 if (!sink.write(data.c_str(), data.length())) return false;
+                                
+                                pending_data.clear();
                             }
                         }
+                        
+                        // Stream bitti ama buffer'da hala veri varsa (örn: hatalı UTF-8), zorla gönder.
+                        if (!pending_data.empty()) {
+                             json chunk;
+                             chunk["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));
+                             chunk["object"] = "chat.completion.chunk";
+                             chunk["created"] = std::time(nullptr);
+                             chunk["model"] = "sentiric-llm";
+                             chunk["choices"][0]["index"] = 0;
+                             chunk["choices"][0]["delta"]["content"] = pending_data;
+                             std::string data = "data: " + chunk.dump() + "\n\n";
+                             sink.write(data.c_str(), data.length());
+                        }
+
                         sink.write("data: [DONE]\n\n", 12);
                         sink.done();
                         return true;
