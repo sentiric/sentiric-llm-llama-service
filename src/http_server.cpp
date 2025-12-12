@@ -7,12 +7,14 @@
 #include <vector>
 #include <prometheus/text_serializer.h>
 #include <chrono>
-#include <algorithm> // remove_if için
+#include <algorithm>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-// --- UTF-8 Helper ---
+// --- Helper Functions ---
+
+// 1. UTF-8 Kontrolü (Multi-byte karakterlerin bölünmesini önler)
 bool has_incomplete_utf8_suffix(const std::string& str) {
     if (str.empty()) return false;
     size_t len = str.length();
@@ -31,17 +33,29 @@ bool has_incomplete_utf8_suffix(const std::string& str) {
     return false;
 }
 
-// --- Sanitizer Helper (YENİ) ---
-// Görünmez, geçersiz kontrol karakterlerini (NULL byte dahil) temizler.
-// Sadece \n (newline) ve \t (tab) izin verilir.
+// 2. Token Sanitizer (Görünmez kontrol karakterlerini temizler)
 std::string sanitize_token(const std::string& input) {
     std::string clean = input;
     clean.erase(std::remove_if(clean.begin(), clean.end(), [](unsigned char c) {
-        // 0x00 - 0x1F arası kontrol karakterleridir (DEL hariç)
-        // 0x09 (TAB) ve 0x0A (LF) ve 0x0D (CR) hariç hepsini sil.
         return (c < 32 && c != 9 && c != 10 && c != 13) || c == 127;
     }), clean.end());
     return clean;
+}
+
+// 3. Reasoning Instruction Generator (Yeni Özellik)
+std::string get_reasoning_instruction(const std::string& level) {
+    if (level == "low") {
+        return "\n[TALİMAT]: Cevap vermeden önce kısaca düşün. Düşüncelerini <think>...</think> içine yaz.";
+    } 
+    else if (level == "high") {
+        return "\n[TALİMAT]: Bu karmaşık bir görevdir. Cevap vermeden önce DERİNLEMESİNE düşün.\n"
+               "1. Problemi parçalara ayır.\n"
+               "2. Her adımı analiz et.\n"
+               "3. Olası hataları kontrol et.\n"
+               "4. Tüm bu süreci <think>...</think> etiketleri arasına DETAYLI şekilde yaz.\n"
+               "5. Sonuç olarak cevabı ver.";
+    }
+    return "";
 }
 
 // --- MetricsServer ---
@@ -75,6 +89,7 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         spdlog::debug("HTTP {} {} - Status: {}", req.method, req.path, res.status);
     });
 
+    // --- DYNAMIC UI LAYOUT ---
     svr_.Get("/v1/ui/layout", [this](const httplib::Request &, httplib::Response &res) {
         json layout_schema = {
             {"panels", {
@@ -88,6 +103,17 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                             {{"label", "💻 Dev"}, {"value", "coder"}},
                             {{"label", "🎨 Sanat"}, {"value", "creative"}},
                             {{"label", "🇺🇸 EN"}, {"value", "english"}}
+                        }}
+                    },
+                    // [NEW] Reasoning Level Control
+                    {
+                        {"type", "segmented"},
+                        {"id", "reasoning-level"},
+                        {"label", "AKIL YÜRÜTME (REASONING)"},
+                        {"options", {
+                            {{"label", "Kapalı"}, {"value", "none"}, {"active", true}},
+                            {{"label", "Hızlı"}, {"value", "low"}},
+                            {{"label", "Derin"}, {"value", "high"}}
                         }}
                     },
                     {
@@ -145,7 +171,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
 
     svr_.Get("/v1/models", [this](const httplib::Request &, httplib::Response &res) {
         const auto& current_settings = engine_->get_settings();
-        
         json response_body = {
             {"object", "list"},
             {"data", {{
@@ -172,7 +197,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             }
 
             spdlog::warn("⚠️ API requested model switch to profile: {}", profile);
-            
             bool success = engine_->reload_model(profile);
             
             if (success) {
@@ -226,6 +250,10 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             json body = json::parse(req.body);
             sentiric::llm::v1::GenerateStreamRequest grpc_request;
 
+            // [NEW] Reasoning Injection
+            std::string reasoning_level = body.value("reasoning_effort", "none");
+            std::string reasoning_prompt = get_reasoning_instruction(reasoning_level);
+
             if (body.contains("messages") && body["messages"].is_array()) {
                 const auto& messages = body["messages"];
                 bool first_user_message_found = false;
@@ -235,11 +263,16 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                     std::string content = msg.value("content", "");
                     
                     if (role == "system") {
+                         std::string final_system = content;
+                         if (!reasoning_prompt.empty()) {
+                             final_system += reasoning_prompt;
+                         }
+                         
                          if (grpc_request.system_prompt().empty()) {
-                            grpc_request.set_system_prompt(content);
+                            grpc_request.set_system_prompt(final_system);
                          } else {
                             if (!grpc_request.has_rag_context()) {
-                                grpc_request.set_rag_context(content);
+                                grpc_request.set_rag_context(final_system);
                             }
                          }
                     } else if (role == "user" && !first_user_message_found) {
@@ -251,6 +284,11 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                         turn->set_role(role);
                         turn->set_content(content);
                     }
+                }
+                
+                // Eğer system prompt boşsa ama reasoning isteniyorsa
+                if (grpc_request.system_prompt().empty() && !reasoning_prompt.empty()) {
+                    grpc_request.set_system_prompt("Sen yardımsever bir asistansın." + reasoning_prompt);
                 }
             }
             auto* params = grpc_request.mutable_params();
@@ -278,14 +316,11 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                             std::string token;
                             if (batched_request->token_queue.wait_and_pop(token, 50)) {
                                 
-                                // [FIX] Sanitization: Görünmez NULL byte'ları temizle
                                 std::string clean_token = sanitize_token(token);
-                                if (clean_token.empty()) continue; // Sadece null geldiyse atla
+                                if (clean_token.empty()) continue;
 
-                                // Gelen temiz token'ı buffer'a ekle
                                 pending_data += clean_token;
 
-                                // Buffer geçerli (tamamlanmış) bir UTF-8 string mi?
                                 if (has_incomplete_utf8_suffix(pending_data)) {
                                     continue;
                                 }

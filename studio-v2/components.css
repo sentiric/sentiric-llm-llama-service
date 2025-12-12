@@ -51,7 +51,7 @@
 .msg-block.system { font-size: 0.8rem; color: var(--text-sub); text-align: center; justify-content: center; opacity: 0.7; }
 .msg-block.system .msg-avatar { background: transparent; border: 1px solid var(--border); }
 
-/* --- Thinking Block (YENİ) --- */
+/* --- Thinking Block --- */
 .thought-box {
     border-left: 3px solid var(--text-sub);
     background: rgba(255, 255, 255, 0.03);
@@ -76,13 +76,52 @@
     font-size: 0.85rem;
     color: var(--text-sub);
     font-family: 'JetBrains Mono', monospace;
-    display: none; /* Varsayılan kapalı */
+    display: none; 
     white-space: pre-wrap;
     border-top: 1px solid rgba(255,255,255,0.05);
 }
 .thought-box.open .thought-body { display: block; }
-.thought-header i { transition: transform 0.2s; }
-.thought-box.open .thought-header i { transform: rotate(90deg); }
+.thought-header i.fa-caret-right { transition: transform 0.2s; }
+.thought-box.open .thought-header i.fa-caret-right { transform: rotate(90deg); }
+
+/* --- Segmented Control --- */
+.segmented-control {
+    display: flex;
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 2px;
+}
+.segmented-control label {
+    flex: 1;
+    text-align: center;
+    cursor: pointer;
+    margin: 0 !important; 
+}
+.segmented-control input { display: none; }
+.segmented-control span {
+    display: block;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: var(--text-sub);
+    transition: 0.2s;
+}
+.segmented-control input:checked + span {
+    background: var(--bg-panel);
+    color: var(--primary);
+    font-weight: 600;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+/* --- Think Timer --- */
+.think-timer {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--text-sub);
+    opacity: 0.7;
+    font-family: 'JetBrains Mono', monospace;
+}
 
 /* --- Input Bar (Omni) --- */
 .omni-wrapper { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; z-index: 40; pointer-events: none; }

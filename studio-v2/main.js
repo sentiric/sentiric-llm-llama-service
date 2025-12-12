@@ -5,7 +5,7 @@ import * as ui from './ui.js';
 document.addEventListener('DOMContentLoaded', initialize);
 
 async function initialize() {
-    console.log("🌌 Sentiric OS v8.3 Booting (Fixed State)...");
+    console.log("🌌 Sentiric OS v8.3 Booting (Dynamic Reasoning)...");
     
     try {
         const [profilesData, layoutSchema] = await Promise.all([
@@ -26,8 +26,7 @@ async function initialize() {
         setupEventListeners();
         ui.setupCharts();
         
-        // Başlangıçta geçmişi temizle
-        Store.history = []; 
+        Store.history = [];
         
         await checkHealthLoop();
 
@@ -111,9 +110,8 @@ async function switchModel(profileKey, profileName, confirmUser = true) {
     ui.updateHealthStatus(false);
     $('systemOverlay').classList.remove('hidden');
 
-    // Model değişince geçmişi sıfırla ki kafa karışıklığı olmasın
     Store.history = [];
-    document.getElementById('streamContainer').innerHTML = ''; // Chat ekranını temizle
+    document.getElementById('streamContainer').innerHTML = '';
     
     try {
         await api.switchModelAPI(profileKey);
@@ -143,17 +141,14 @@ async function sendMessage() {
     $('omniInput').style.height = 'auto';
     ui.setBusy(true);
     
-    // 1. Kullanıcı mesajını UI'a bas
     ui.addMessage('user', ui.escapeHtml(text));
-    
-    // 2. Kullanıcı mesajını Store History'e ekle
     Store.history.push({role: 'user', content: text});
 
-    // 3. AI balonu hazırla
     const uiElements = ui.addMessage('ai', '');
     const bubble = uiElements.content;
     const thoughtBox = uiElements.thoughtBox;
     const thoughtBody = uiElements.thoughtBody;
+    const thinkTimer = uiElements.thinkTimer;
 
     Store.startTime = Date.now();
     Store.tokenCount = 0;
@@ -163,9 +158,10 @@ async function sendMessage() {
     let fullThought = "";
     let isThinking = false;
     let thinkingIndicatorRemoved = false;
+    let thinkingStartTime = 0;
+    let totalThinkingTime = 0;
     
     try {
-        // [FIX] buildPayload artık history'yi duplicate etmeyecek
         const payload = buildPayload(); 
         $('debugLog').innerText = JSON.stringify(payload, null, 2);
 
@@ -191,23 +187,37 @@ async function sendMessage() {
                                 thinkingIndicatorRemoved = true;
                             }
 
-                            // --- PARSING LOGIC ---
-                            // <thought> taglerini temizle ve UI modunu değiştir
-                            if (content.includes('<thought>')) {
+                            // --- PARSING & TIMER ---
+                            if (!isThinking && (content.match(/<think>/i) || content.match(/<thought>/i))) {
                                 isThinking = true;
+                                thinkingStartTime = Date.now();
                                 thoughtBox.style.display = 'block';
-                                content = content.replace('<thought>', '');
+                                content = content.replace(/<think>|<thought>/gi, '');
                             }
-                            if (content.includes('</thought>')) {
+
+                            if (isThinking && (content.match(/<\/think>/i) || content.match(/<\/thought>/i))) {
                                 isThinking = false;
-                                content = content.replace('</thought>', '');
+                                
+                                const parts = content.split(/<\/think>|<\/thought>/i);
+                                if (parts.length >= 2) {
+                                    fullThought += parts[0];
+                                    thoughtBody.innerText = fullThought;
+                                    content = parts[1];
+                                } else {
+                                    content = content.replace(/<\/think>|<\/thought>/gi, '');
+                                }
+                                
+                                totalThinkingTime += (Date.now() - thinkingStartTime);
+                                thinkTimer.innerText = `(${(totalThinkingTime/1000).toFixed(1)}s)`;
                             }
 
                             Store.tokenCount++;
 
                             if (isThinking) {
                                 fullThought += content;
-                                thoughtBody.innerText = fullThought; 
+                                thoughtBody.innerText = fullThought;
+                                const currentThinkTime = (Date.now() - thinkingStartTime);
+                                thinkTimer.innerText = `(${((currentThinkTime)/1000).toFixed(1)}s)`;
                             } else {
                                 fullText += content;
                                 bubble.innerHTML = marked.parse(fullText + '▋');
@@ -223,14 +233,11 @@ async function sendMessage() {
         
         bubble.innerHTML = marked.parse(fullText);
         ui.enhanceCode(bubble);
-        
-        // 4. Sadece başarılı cevabı history'e ekle
         Store.history.push({role: 'assistant', content: fullText});
 
     } catch (e) {
         if (e.name !== 'AbortError') {
             bubble.innerHTML = `<span style="color:#ef4444">Hata: ${e.message}</span>`;
-            // Hata aldıysak son kullanıcı mesajını history'den çıkaralım ki döngü olmasın
             Store.history.pop();
         } else {
              bubble.innerHTML += `<span style="color:#facc15"> [İptal edildi]</span>`;
@@ -240,13 +247,15 @@ async function sendMessage() {
     }
 }
 
-// [FIX] Bu fonksiyon artık parametre almıyor, direkt Store.history kullanıyor.
 function buildPayload() {
     const sys = $('systemPrompt')?.value || "";
     const rag = $('ragInput')?.value || "";
     const msgs = [];
 
-    // System Prompt ve RAG birleşimi
+    // [NEW] Reasoning Level oku
+    const reasoningEl = document.querySelector('input[name="reasoning-level"]:checked');
+    const reasoningLevel = reasoningEl ? reasoningEl.value : "none";
+
     let finalSystemPrompt = sys;
     if (rag) {
         finalSystemPrompt = `CONTEXT:\n${rag}\n\nINSTRUCTIONS:\n${sys}`;
@@ -256,13 +265,13 @@ function buildPayload() {
         msgs.push({ role: 'system', content: finalSystemPrompt });
     }
     
-    // Geçmişi ekle (kullanıcının son mesajı zaten sendMessage içinde history'e eklendi)
     Store.history.forEach(m => msgs.push(m));
     
     return {
         messages: msgs,
         temperature: parseFloat($('tempInput')?.value || 0.7),
         max_tokens: parseInt($('tokenLimit')?.value || 1024),
+        reasoning_effort: reasoningLevel, 
         stream: true
     };
 }
