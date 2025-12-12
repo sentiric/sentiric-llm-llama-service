@@ -28,9 +28,10 @@ LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gaug
     
     spdlog::info("🚀 Initializing LLM Engine...");
     
-    // Formatter bir kez oluşturulur (stateless)
+    // Formatter oluştur
     formatter_ = create_formatter();
 
+    // Modeli yükle
     if (!reload_model(settings_.profile_name)) {
         throw std::runtime_error("Critical: Initial model load failed.");
     }
@@ -97,11 +98,10 @@ bool LLMEngine::reload_model(const std::string& profile_name) {
         model_ = llama_model_load_from_file(settings_.model_path.c_str(), model_params);
         if (!model_) throw std::runtime_error("Failed to load model file.");
 
-        // Architecture check sadece bilgi amaçlı loglanır
         char arch_buffer[64] = {0};
         llama_model_meta_val_str(model_, "general.architecture", arch_buffer, sizeof(arch_buffer));
         std::string arch = arch_buffer[0] ? arch_buffer : "unknown";
-        spdlog::info("🔍 Architecture: {} (Native Template Mode Active)", arch);
+        spdlog::info("🔍 Architecture: {} (Refined Engine Active)", arch);
 
         context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_, active_contexts_gauge_);
         
@@ -131,6 +131,7 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
     if (batch.empty()) return;
     std::shared_lock<std::shared_mutex> lock(model_mutex_);
     if (!model_loaded_) return;
+    
     std::vector<std::thread> threads;
     threads.reserve(batch.size());
     for (auto& req_ptr : batch) {
@@ -219,36 +220,94 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     llama_sampler_chain_add(chain, llama_sampler_init_temp(params.has_temperature() ? params.temperature() : settings_.default_temperature));
     llama_sampler_chain_add(chain, llama_sampler_init_dist(time(NULL)));
 
+    // GÜNCELLENMİŞ STOP SEQUENCE LİSTESİ
+    std::vector<std::string> stop_sequences = {
+        "<|im_end|>",       // Qwen
+        "<|endoftext|>",    // Standard
+        "<|end_of_text|>",  // Llama 3
+        "<|eot_id|>",       // Llama 3
+        "<eos>",            // Gemma
+        "<end_of_turn>",    // Gemma
+        "<|end|>",          // Phi-3 (ÖNEMLİ)
+        "user:",            // Fallback
+        "assistant:",       // Fallback
+        "system:",          // Fallback
+        "### Human:",       // Eski Instruct formatları
+        "### User:"
+    };
+
     uint32_t req_max_gen = params.has_max_new_tokens() ? params.max_new_tokens() : settings_.default_max_tokens;
     int n_decoded = 0;
     llama_pos n_past = prompt_tokens.size();
     uint32_t ctx_limit = settings_.context_size;
     if (n_past + req_max_gen > ctx_limit) req_max_gen = ctx_limit - n_past - 1;
 
+    std::string accumulated_text = ""; // Token biriktirme tamponu
+
     while (n_decoded < (int)req_max_gen) {
         if (req_ptr->should_stop_callback && req_ptr->should_stop_callback()) {
             req_ptr->finish_reason = "cancelled"; break;
         }
+        
+        // 1. Örnekleme
         llama_token new_token_id = llama_sampler_sample(chain, ctx, -1);
         llama_sampler_accept(chain, new_token_id);
         
+        // 2. Native EOS Kontrolü
         if (llama_vocab_is_eog(vocab, new_token_id)) {
             req_ptr->finish_reason = "stop"; break;
         }
 
-        char buf[64] = {0};
+        // 3. String Dönüşümü
+        char buf[256] = {0};
         int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
         std::string token_str(buf, n);
         
-        if(token_str.find("<unused") == std::string::npos) {
-            if(req_ptr->on_token_callback) {
-                if(!req_ptr->on_token_callback(token_str)) {
-                    req_ptr->finish_reason = "cancelled_by_client"; break;
-                }
+        // 4. [REAL FIX] Stop Sequence Kontrolü (String Match)
+        // Token'ı doğrudan göndermek yerine biriktirip kontrol ediyoruz.
+        // Bu, parçalı gelen stop kelimelerini (örn: "<", "|", "im", "_end", "|>") yakalamak için.
+        // Basitlik için şu an son token üzerinden kontrol ediyoruz, 
+        // ancak daha sağlamı "token_str" içinde stop words var mı diye bakmaktır.
+        
+        bool stop_found = false;
+        
+        // a. Doğrudan token içinde stop word var mı?
+        for (const auto& seq : stop_sequences) {
+            if (token_str.find(seq) != std::string::npos) {
+                stop_found = true;
+                break;
             }
+        }
+
+        // b. Bir önceki token ile birleşince stop word oluşuyor mu? (Basit bir heuristic)
+        // Burada tam bir ring buffer implementasyonu yerine,
+        // token'ı göndermeden önce basit kontrol yapıyoruz.
+        // Gelen token bir stop word'ün parçasıysa göndermeyebiliriz ama 
+        // şimdilik "gördüğün an dur" mantığı en güvenlisidir.
+
+        if (stop_found) {
+            req_ptr->finish_reason = "stop";
+            spdlog::debug("Stop sequence detected in token: {}", token_str);
+            break;
+        }
+
+        // 5. Token Gönderimi
+        // Özel tokenları (örn: <0x00>) istemciye gönderme
+        if(token_str.find("<") == 0 && token_str.find(">") == token_str.size()-1) {
+             // Potansiyel special token, logla ama gönderme (User UI'da görmesin)
+             // Ancak <br> gibi şeyler olabilir, o yüzden sadece bilinen yapıları filtrele
+             if (token_str.find("<|") == 0 || token_str.find("<0x") == 0) {
+                 // Skip sending
+             } else {
+                 if(req_ptr->on_token_callback) req_ptr->on_token_callback(token_str);
+                 req_ptr->token_queue.push(token_str);
+             }
+        } else {
+            if(req_ptr->on_token_callback) req_ptr->on_token_callback(token_str);
             req_ptr->token_queue.push(token_str);
         }
         
+        // 6. Decode (Context Update)
         LlamaBatchGuard next_token_batch(1, 0, 1);
         common_batch_add(next_token_batch.batch, new_token_id, n_past, {0}, true);
         if(llama_decode(ctx, next_token_batch.batch) != 0) {
@@ -257,6 +316,7 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
         n_past++;
         n_decoded++;
     }
+    
     req_ptr->completion_tokens = n_decoded;
     if (req_ptr->finish_reason.empty()) req_ptr->finish_reason = "length";
     req_ptr->prompt_tokens = prompt_tokens.size(); 

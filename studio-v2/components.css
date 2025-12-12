@@ -46,10 +46,43 @@
 .msg-block.user { flex-direction: row-reverse; }
 .msg-avatar { width: 32px; height: 32px; border-radius: 8px; background: var(--bg-panel); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .msg-block.ai .msg-avatar { background: var(--primary); border: none; color: white; }
-.msg-content { background: var(--bg-panel); border: 1px solid var(--border); padding: 12px 16px; border-radius: 12px; font-size: 0.95rem; line-height: 1.6; max-width: 85%; }
+.msg-content { background: var(--bg-panel); border: 1px solid var(--border); padding: 12px 16px; border-radius: 12px; font-size: 0.95rem; line-height: 1.6; max-width: 85%; display: flex; flex-direction: column; gap: 10px; }
 .msg-block.user .msg-content { background: var(--primary); border: none; color: white; }
 .msg-block.system { font-size: 0.8rem; color: var(--text-sub); text-align: center; justify-content: center; opacity: 0.7; }
 .msg-block.system .msg-avatar { background: transparent; border: 1px solid var(--border); }
+
+/* --- Thinking Block (YENİ) --- */
+.thought-box {
+    border-left: 3px solid var(--text-sub);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 4px;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+.thought-header {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-sub);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+}
+.thought-header:hover { background: rgba(255, 255, 255, 0.05); }
+.thought-body {
+    padding: 10px 12px;
+    font-size: 0.85rem;
+    color: var(--text-sub);
+    font-family: 'JetBrains Mono', monospace;
+    display: none; /* Varsayılan kapalı */
+    white-space: pre-wrap;
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+.thought-box.open .thought-body { display: block; }
+.thought-header i { transition: transform 0.2s; }
+.thought-box.open .thought-header i { transform: rotate(90deg); }
 
 /* --- Input Bar (Omni) --- */
 .omni-wrapper { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; z-index: 40; pointer-events: none; }

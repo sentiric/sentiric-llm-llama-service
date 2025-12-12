@@ -7,40 +7,41 @@
 #include <vector>
 #include <prometheus/text_serializer.h>
 #include <chrono>
+#include <algorithm> // remove_if için
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 // --- UTF-8 Helper ---
-// Stringin sonunun yarım kalmış bir UTF-8 karakteri olup olmadığını kontrol eder.
 bool has_incomplete_utf8_suffix(const std::string& str) {
     if (str.empty()) return false;
-    
     size_t len = str.length();
-    // En fazla son 4 bayta bakmamız yeterli (UTF-8 max 4 byte)
     for (size_t i = 1; i <= 4 && i <= len; ++i) {
         unsigned char c = static_cast<unsigned char>(str[len - i]);
-        
-        // Eğer devam baytıysa (10xxxxxx), geriye doğru aramaya devam et
         if ((c & 0xC0) == 0x80) continue;
-        
-        // Eğer ASCII ise (0xxxxxxx), sorun yok demektir.
         if ((c & 0x80) == 0) return false;
-        
-        // Başlangıç baytını bulduk, kaç byte olması gerektiğini hesapla
         size_t char_len = 0;
         if ((c & 0xE0) == 0xC0) char_len = 2;
         else if ((c & 0xF0) == 0xE0) char_len = 3;
         else if ((c & 0xF8) == 0xF0) char_len = 4;
-        else return false; // Geçersiz bayt, bizlik değil
-        
-        // Eğer elimizdeki bayt sayısı (i), gereken uzunluktan (char_len) azsa, YARIM KALMIŞTIR.
+        else return false;
         if (i < char_len) return true;
-        
-        // Tamamlanmış karakter
         return false;
     }
     return false;
+}
+
+// --- Sanitizer Helper (YENİ) ---
+// Görünmez, geçersiz kontrol karakterlerini (NULL byte dahil) temizler.
+// Sadece \n (newline) ve \t (tab) izin verilir.
+std::string sanitize_token(const std::string& input) {
+    std::string clean = input;
+    clean.erase(std::remove_if(clean.begin(), clean.end(), [](unsigned char c) {
+        // 0x00 - 0x1F arası kontrol karakterleridir (DEL hariç)
+        // 0x09 (TAB) ve 0x0A (LF) ve 0x0D (CR) hariç hepsini sil.
+        return (c < 32 && c != 9 && c != 10 && c != 13) || c == 127;
+    }), clean.end());
+    return clean;
 }
 
 // --- MetricsServer ---
@@ -269,8 +270,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             auto completion_future = engine_->get_batcher()->add_request(batched_request);
 
             if (stream) {
-                // [FIX] UTF-8 Buffer mekanizması eklendi.
-                // Lambda 'mutable' olmalı çünkü pending_data'yı güncelliyoruz.
                 res.set_chunked_content_provider("text/event-stream",
                     [batched_request, pending_data = std::string("")](size_t, httplib::DataSink &sink) mutable {
                         batched_request->should_stop_callback = [&sink]() { return !sink.is_writable(); };
@@ -279,23 +278,25 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                             std::string token;
                             if (batched_request->token_queue.wait_and_pop(token, 50)) {
                                 
-                                // Gelen token'ı buffer'a ekle
-                                pending_data += token;
+                                // [FIX] Sanitization: Görünmez NULL byte'ları temizle
+                                std::string clean_token = sanitize_token(token);
+                                if (clean_token.empty()) continue; // Sadece null geldiyse atla
+
+                                // Gelen temiz token'ı buffer'a ekle
+                                pending_data += clean_token;
 
                                 // Buffer geçerli (tamamlanmış) bir UTF-8 string mi?
                                 if (has_incomplete_utf8_suffix(pending_data)) {
-                                    // Hayır, yarım kaldı. Sonraki token'ı bekle.
                                     continue;
                                 }
 
-                                // Evet, tamamlandı. Gönder ve buffer'ı temizle.
                                 json chunk;
                                 chunk["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));
                                 chunk["object"] = "chat.completion.chunk";
                                 chunk["created"] = std::time(nullptr);
                                 chunk["model"] = "sentiric-llm";
                                 chunk["choices"][0]["index"] = 0;
-                                chunk["choices"][0]["delta"]["content"] = pending_data; // Birikmiş veriyi kullan
+                                chunk["choices"][0]["delta"]["content"] = pending_data;
                                 
                                 std::string data = "data: " + chunk.dump() + "\n\n";
                                 if (!sink.write(data.c_str(), data.length())) return false;
@@ -304,7 +305,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                             }
                         }
                         
-                        // Stream bitti ama buffer'da hala veri varsa (örn: hatalı UTF-8), zorla gönder.
                         if (!pending_data.empty()) {
                              json chunk;
                              chunk["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));

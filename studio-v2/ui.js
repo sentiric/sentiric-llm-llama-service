@@ -55,6 +55,8 @@ export function renderModelList(profilesData) {
     }
 }
 
+// --- MESAJ OLUŞTURMA (GÜNCELLENDİ) ---
+// Yapıyı ayırıyoruz: Mesaj Konteynırı > Düşünce Kutusu (Opsiyonel) + Cevap Metni
 export function addMessage(role, content) {
     const container = $('streamContainer');
     const empty = container.querySelector('.empty-void');
@@ -63,19 +65,41 @@ export function addMessage(role, content) {
     const div = document.createElement('div');
     div.className = `msg-block ${role}`;
     
-    let contentHTML = (role === 'ai' && content === '') 
-        ? `<div class="typing-indicator"><span></span><span></span><span></span></div>` 
-        : marked.parse(content);
+    // Mesaj yapısı: Avatar + İçerik Kutusu
+    let innerHTML = `<div class="msg-avatar"><i class="fas fa-${role==='user'?'user':(role === 'system' ? 'info-circle' : 'robot')}"></i></div>`;
+    innerHTML += `<div class="msg-content">`;
+    
+    // AI ise ve başlangıçta boşsa (yeni mesaj), düşünce kutusu yer tutucusu ve metin alanı oluştur
+    if (role === 'ai') {
+        innerHTML += `<div class="thought-box" style="display:none;"><div class="thought-header"><i class="fas fa-caret-right"></i> Düşünce Süreci</div><div class="thought-body"></div></div>`;
+        innerHTML += `<div class="text-body">${content === '' ? '<div class="typing-indicator"><span></span><span></span><span></span></div>' : marked.parse(content)}</div>`;
+    } else {
+        innerHTML += `<div class="text-body">${marked.parse(content)}</div>`;
+    }
+    innerHTML += `</div>`; // Close msg-content
 
-    div.innerHTML = `
-        <div class="msg-avatar"><i class="fas fa-${role==='user'?'user':(role === 'system' ? 'info-circle' : 'robot')}"></i></div>
-        <div class="msg-content">${contentHTML}</div>
-    `;
+    div.innerHTML = innerHTML;
     if (role === 'system') div.classList.add('system');
     
     container.appendChild(div);
     scrollToBottom();
-    return div.querySelector('.msg-content');
+
+    // Düşünce kutusuna tıklama olayı
+    if(role === 'ai') {
+        const tHeader = div.querySelector('.thought-header');
+        if(tHeader) {
+            tHeader.onclick = () => {
+                div.querySelector('.thought-box').classList.toggle('open');
+            };
+        }
+        return {
+            content: div.querySelector('.text-body'),
+            thoughtBox: div.querySelector('.thought-box'),
+            thoughtBody: div.querySelector('.thought-body')
+        };
+    }
+    
+    return div.querySelector('.text-body');
 }
 
 export function setPersona(key) {

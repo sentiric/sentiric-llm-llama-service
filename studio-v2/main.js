@@ -5,7 +5,7 @@ import * as ui from './ui.js';
 document.addEventListener('DOMContentLoaded', initialize);
 
 async function initialize() {
-    console.log("🌌 Sentiric OS v8.1 Booting (Stateful)...");
+    console.log("🌌 Sentiric OS v8.3 Booting (Fixed State)...");
     
     try {
         const [profilesData, layoutSchema] = await Promise.all([
@@ -15,10 +15,8 @@ async function initialize() {
         
         const lastUsedProfile = localStorage.getItem('sentiric_last_profile');
         if (lastUsedProfile && profilesData.profiles[lastUsedProfile]) {
-            // Eğer localStorage'da geçerli bir profil varsa, onu aktif et
             if (lastUsedProfile !== profilesData.active_profile) {
-                console.log(`Restoring last used profile: ${lastUsedProfile}`);
-                await switchModel(lastUsedProfile, profilesData.profiles[lastUsedProfile].display_name, false); // Onay sorma
+                await switchModel(lastUsedProfile, profilesData.profiles[lastUsedProfile].display_name, false);
             }
         }
         
@@ -28,11 +26,13 @@ async function initialize() {
         setupEventListeners();
         ui.setupCharts();
         
+        // Başlangıçta geçmişi temizle
+        Store.history = []; 
+        
         await checkHealthLoop();
 
     } catch (error) {
         console.error("Initialization Failed:", error);
-        document.body.innerHTML = `<div class="error-msg">Uygulama başlatılamadı: ${error.message}</div>`;
     }
 }
 
@@ -73,12 +73,18 @@ function renderDynamicControls(schema) {
 function setupEventListeners() {
     $('sendBtn').onclick = sendMessage;
     $('stopBtn').onclick = () => Store.controller?.abort();
-    $('omniInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+    $('omniInput').addEventListener('keydown', (e) => { 
+        if (e.key === 'Enter' && !e.shiftKey) { 
+            e.preventDefault(); 
+            sendMessage(); 
+        } 
+    });
     $('toggle-stats-panel').onclick = () => ui.togglePanel('statsPanel');
     $('toggle-settings-panel').onclick = () => ui.togglePanel('settingsPanel');
     $('close-stats-panel').onclick = () => ui.togglePanel('statsPanel');
     $('close-settings-panel').onclick = () => ui.togglePanel('settingsPanel');
     $('file-upload-btn').onclick = () => $('fileInput').click();
+    
     $('modelSelector').onchange = (e) => {
         const selectedOption = e.target.options[e.target.selectedIndex];
         switchModel(e.target.value, selectedOption.textContent.split('-')[0].trim());
@@ -105,10 +111,14 @@ async function switchModel(profileKey, profileName, confirmUser = true) {
     ui.updateHealthStatus(false);
     $('systemOverlay').classList.remove('hidden');
 
+    // Model değişince geçmişi sıfırla ki kafa karışıklığı olmasın
+    Store.history = [];
+    document.getElementById('streamContainer').innerHTML = ''; // Chat ekranını temizle
+    
     try {
         await api.switchModelAPI(profileKey);
         Store.currentProfile = profileKey;
-        localStorage.setItem('sentiric_last_profile', profileKey); // Seçimi kaydet
+        localStorage.setItem('sentiric_last_profile', profileKey);
         ui.addMessage('system', `SİSTEM: Model başarıyla **${profileName}** olarak değiştirildi.`);
     } catch (e) {
         ui.addMessage('system', `<span style="color:#ef4444">HATA: ${e.message}</span>`);
@@ -116,7 +126,7 @@ async function switchModel(profileKey, profileName, confirmUser = true) {
     } finally {
         Store.isSwitching = false;
         let isHealthy = false;
-        for (let i = 0; i < 20 && !isHealthy; i++) { // Timeout artırıldı
+        for (let i = 0; i < 20 && !isHealthy; i++) {
             await new Promise(resolve => setTimeout(resolve, 3000));
             isHealthy = (await api.checkHealthAPI()).healthy;
         }
@@ -133,24 +143,35 @@ async function sendMessage() {
     $('omniInput').style.height = 'auto';
     ui.setBusy(true);
     
-    Store.history.push({role: 'user', content: text});
+    // 1. Kullanıcı mesajını UI'a bas
     ui.addMessage('user', ui.escapeHtml(text));
     
-    const bubble = ui.addMessage('ai', '');
+    // 2. Kullanıcı mesajını Store History'e ekle
+    Store.history.push({role: 'user', content: text});
+
+    // 3. AI balonu hazırla
+    const uiElements = ui.addMessage('ai', '');
+    const bubble = uiElements.content;
+    const thoughtBox = uiElements.thoughtBox;
+    const thoughtBody = uiElements.thoughtBody;
+
     Store.startTime = Date.now();
     Store.tokenCount = 0;
     Store.controller = new AbortController();
     
     let fullText = "";
+    let fullThought = "";
+    let isThinking = false;
+    let thinkingIndicatorRemoved = false;
     
     try {
-        const payload = buildPayload(text);
+        // [FIX] buildPayload artık history'yi duplicate etmeyecek
+        const payload = buildPayload(); 
         $('debugLog').innerText = JSON.stringify(payload, null, 2);
 
         const response = await api.postChatCompletions(payload, Store.controller.signal);
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
-        let thinkingIndicatorRemoved = false;
 
         while (true) {
             const {done, value} = await reader.read();
@@ -162,15 +183,36 @@ async function sendMessage() {
                 if (line.startsWith('data: ') && line !== 'data: [DONE]') {
                     try {
                         const json = JSON.parse(line.substring(6));
-                        const content = json.choices[0]?.delta?.content;
+                        let content = json.choices[0]?.delta?.content;
+                        
                         if (content) {
                             if (!thinkingIndicatorRemoved) {
                                 bubble.innerHTML = '';
                                 thinkingIndicatorRemoved = true;
                             }
-                            fullText += content;
+
+                            // --- PARSING LOGIC ---
+                            // <thought> taglerini temizle ve UI modunu değiştir
+                            if (content.includes('<thought>')) {
+                                isThinking = true;
+                                thoughtBox.style.display = 'block';
+                                content = content.replace('<thought>', '');
+                            }
+                            if (content.includes('</thought>')) {
+                                isThinking = false;
+                                content = content.replace('</thought>', '');
+                            }
+
                             Store.tokenCount++;
-                            bubble.innerHTML = marked.parse(fullText + '▋');
+
+                            if (isThinking) {
+                                fullThought += content;
+                                thoughtBody.innerText = fullThought; 
+                            } else {
+                                fullText += content;
+                                bubble.innerHTML = marked.parse(fullText + '▋');
+                            }
+                            
                             ui.updateStats();
                             ui.scrollToBottom();
                         }
@@ -178,35 +220,44 @@ async function sendMessage() {
                 }
             }
         }
+        
         bubble.innerHTML = marked.parse(fullText);
         ui.enhanceCode(bubble);
+        
+        // 4. Sadece başarılı cevabı history'e ekle
         Store.history.push({role: 'assistant', content: fullText});
 
     } catch (e) {
         if (e.name !== 'AbortError') {
             bubble.innerHTML = `<span style="color:#ef4444">Hata: ${e.message}</span>`;
+            // Hata aldıysak son kullanıcı mesajını history'den çıkaralım ki döngü olmasın
+            Store.history.pop();
         } else {
-             bubble.innerHTML = `<span style="color:#facc15">İptal edildi.</span>`;
+             bubble.innerHTML += `<span style="color:#facc15"> [İptal edildi]</span>`;
         }
     } finally {
         ui.setBusy(false);
     }
 }
 
-function buildPayload(text) {
+// [FIX] Bu fonksiyon artık parametre almıyor, direkt Store.history kullanıyor.
+function buildPayload() {
     const sys = $('systemPrompt')?.value || "";
     const rag = $('ragInput')?.value || "";
     const msgs = [];
 
-    // ÖNEMLİ: Her istekte history'yi tekrar oluşturuyoruz.
-    // İlk turu belirlemek için history.length'e bakmak yerine,
-    // backend'deki formatter zaten bunu yapıyor. Biz sadece tüm mesajları gönderiyoruz.
-    if (rag) msgs.push({ role: 'system', content: `CONTEXT:\n${rag}` });
-    if (sys) msgs.push({ role: 'system', content: sys });
+    // System Prompt ve RAG birleşimi
+    let finalSystemPrompt = sys;
+    if (rag) {
+        finalSystemPrompt = `CONTEXT:\n${rag}\n\nINSTRUCTIONS:\n${sys}`;
+    }
     
+    if (finalSystemPrompt) {
+        msgs.push({ role: 'system', content: finalSystemPrompt });
+    }
+    
+    // Geçmişi ekle (kullanıcının son mesajı zaten sendMessage içinde history'e eklendi)
     Store.history.forEach(m => msgs.push(m));
-    // Not: sendMessage'de history'ye eklediğimiz için, payload'a user mesajını burada eklemeye gerek yok.
-    // Ancak temizlik için, burada bırakalım, backend'deki formatter bunu doğru yönetir.
     
     return {
         messages: msgs,
