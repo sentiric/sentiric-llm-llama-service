@@ -1,13 +1,14 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "llm-llama-service-deps",
-  "version-string": "1.0.0",
+  "version-string": "1.1.0",
   "dependencies": [
     "grpc",
     "protobuf",
     "spdlog",
     "nlohmann-json",
     "cpp-httplib",
-    "prometheus-cpp"
+    "prometheus-cpp",
+    "curl"
   ]
 }

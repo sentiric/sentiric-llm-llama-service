@@ -1,16 +1,20 @@
-// src/model_manager.h
-// Yeni model indirme ve doğrulama mantığını içerir.
 #pragma once
 
 #include "config.h"
 #include <string>
+#include <functional>
 
 namespace ModelManager {
     
+    // İlerleme durumunu bildirmek için callback tipi
+    using ProgressCallback = std::function<void(double total, double now)>;
+
     // Verilen ayarlara göre modelin hazır olduğundan emin olur.
-    // Model yerel olarak mevcut değilse, onu indirir.
-    // Başarılı olduğunda modelin tam yolunu döndürür.
-    // Başarısızlık durumunda bir istisna fırlatır.
-    std::string ensure_model_is_ready(const Settings& settings);
+    // Native libcurl kullanarak güvenli indirme yapar.
+    // Resume (kaldığı yerden devam) ve Timeout özelliklerine sahiptir.
+    std::string ensure_model_is_ready(const Settings& settings, ProgressCallback progress_cb = nullptr);
+
+    // Yardımcı: URL'den dosya boyutunu öğrenme (HEAD request)
+    long long get_remote_file_size(const std::string& url);
 
 } // namespace ModelManager

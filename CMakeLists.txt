@@ -18,6 +18,7 @@ find_package(httplib CONFIG REQUIRED)
 find_package(c-ares CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 find_package(prometheus-cpp CONFIG REQUIRED)
+find_package(CURL CONFIG REQUIRED)
 
 if(GGML_CUDA)
     find_package(CUDAToolkit REQUIRED)
@@ -37,7 +38,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
-# --- DEĞİŞİKLİK BURADA: local.proto -> llama.proto ---
 set(PROTO_FILES
     "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/llama.proto"
     "${sentiric_contracts_SOURCE_DIR}/proto/sentiric/llm/v1/gateway.proto"
@@ -55,7 +55,6 @@ set(PROTO_GENERATED_HDRS
     "${GENERATED_DIR}/sentiric/llm/v1/gateway.pb.h"
     "${GENERATED_DIR}/sentiric/llm/v1/gateway.grpc.pb.h"
 )
-# -----------------------------------------------------
 
 add_custom_command(
     OUTPUT ${PROTO_GENERATED_SRCS} ${PROTO_GENERATED_HDRS}
@@ -101,6 +100,7 @@ target_link_libraries(llm_service PRIVATE
     spdlog::spdlog nlohmann_json::nlohmann_json
     httplib::httplib c-ares::cares Threads::Threads
     prometheus-cpp::core prometheus-cpp::pull
+    CURL::libcurl
 )
 if(GGML_CUDA)
     target_link_libraries(llm_service PRIVATE CUDA::cudart CUDA::cuda_driver)
@@ -127,6 +127,7 @@ target_link_libraries(llm_cli PRIVATE
     llama
     spdlog::spdlog nlohmann_json::nlohmann_json
     httplib::httplib c-ares::cares Threads::Threads
+    CURL::libcurl
 )
 if(GGML_CUDA)
     target_link_libraries(llm_cli PRIVATE CUDA::cudart CUDA::cuda_driver)

@@ -1,104 +1,146 @@
-// src/model_manager.cpp
 #include "model_manager.h"
 #include "spdlog/spdlog.h"
 #include <fmt/core.h>
 #include <filesystem>
-#include <cstdlib> // system() için
+#include <curl/curl.h>
+#include <cstdio>
 
 namespace fs = std::filesystem;
 
 namespace ModelManager {
 
-std::string ensure_model_is_ready(const Settings& settings) {
+// Curl yazma callback'i (dosyaya yazar)
+static size_t write_data(void* ptr, size_t size, size_t nmemb, FILE* stream) {
+    size_t written = fwrite(ptr, size, nmemb, stream);
+    return written;
+}
+
+// Curl progress callback'i
+static int progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) {
+    (void)ultotal; (void)ulnow;
+    ProgressCallback* cb = static_cast<ProgressCallback*>(clientp);
+    if (cb && *cb && dltotal > 0) {
+        (*cb)(static_cast<double>(dltotal), static_cast<double>(dlnow));
+    }
+    return 0;
+}
+
+long long get_remote_file_size(const std::string& url) {
+    CURL* curl = curl_easy_init();
+    double file_size = -1.0;
+    if (curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L); // Header only
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        
+        if (curl_easy_perform(curl) == CURLE_OK) {
+            curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &file_size);
+        }
+        curl_easy_cleanup(curl);
+    }
+    return static_cast<long long>(file_size);
+}
+
+std::string ensure_model_is_ready(const Settings& settings, ProgressCallback progress_cb) {
+    // 1. Model ID kontrolü
     if (settings.model_id.empty()) {
-        spdlog::warn("LLM_LLAMA_SERVICE_MODEL_ID not set. Assuming model exists at '{}' (from LLM_LLAMA_SERVICE_MODEL_PATH).", settings.legacy_model_path);
+        spdlog::warn("LLM_LLAMA_SERVICE_MODEL_ID not set. Checking legacy path: '{}'", settings.legacy_model_path);
         if (!fs::exists(settings.legacy_model_path)) {
-            throw std::runtime_error(fmt::format("Model file does not exist at the specified path: {}", settings.legacy_model_path));
+            throw std::runtime_error(fmt::format("Model not found at: {}", settings.legacy_model_path));
         }
         return settings.legacy_model_path;
     }
 
     fs::path target_dir(settings.model_dir);
+    if (!fs::exists(target_dir)) {
+        fs::create_directories(target_dir);
+    }
+    
     fs::path target_filepath = target_dir / settings.model_filename;
+    fs::path temp_filepath = target_filepath.string() + ".tmp";
+    
+    std::string url = fmt::format("https://huggingface.co/{}/resolve/main/{}", settings.model_id, settings.model_filename);
 
-    // 1. Hedef dosya var mı ve geçerli mi?
+    // 2. Mevcut dosya kontrolü (Tamamlanmış mı?)
     if (fs::exists(target_filepath)) {
-        try {
-            if (fs::file_size(target_filepath) > 1024 * 1024) { // 1 MB'den büyükse geçerli kabul et
-                spdlog::info("✅ Model file '{}' already exists and seems valid. Skipping download.", target_filepath.string());
-                return target_filepath.string();
-            } else {
-                spdlog::warn("⚠️ Existing model file '{}' is too small/corrupt. Deleting and re-downloading.", target_filepath.string());
-                fs::remove(target_filepath);
-            }
-        } catch (...) { /* ignore errors during check */ }
+        // Basit boyut kontrolü (Local vs Remote kıyaslaması yapılabilir ama maliyetli)
+        // Şimdilik >1MB ise geçerli sayıyoruz.
+        if (fs::file_size(target_filepath) > 1024 * 1024) {
+            spdlog::info("✅ Model '{}' exists and is valid. Skipping download.", settings.model_filename);
+            return target_filepath.string();
+        }
+        spdlog::warn("⚠️ Existing model file is corrupt/small. Redownloading.");
+        fs::remove(target_filepath);
     }
 
-    // --- SAĞLAMLAŞTIRILMIŞ İNDİRME MANTIĞI ---
+    // 3. İndirme Başlat (Native Libcurl)
+    spdlog::info("⬇️ Starting secure native download for '{}'", settings.model_filename);
+    spdlog::info("🔗 URL: {}", url);
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        throw std::runtime_error("Failed to initialize libcurl.");
+    }
+
+    long long resume_byte_pos = 0;
+    if (fs::exists(temp_filepath)) {
+        resume_byte_pos = fs::file_size(temp_filepath);
+        spdlog::info("🔄 Resuming download from byte {}", resume_byte_pos);
+    }
+
+    FILE* fp = fopen(temp_filepath.string().c_str(), resume_byte_pos > 0 ? "ab" : "wb");
+    if (!fp) {
+        curl_easy_cleanup(curl);
+        throw std::runtime_error("Failed to open temp file for writing.");
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L); // 404/500 hatalarında fail ol
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L); // 60sn boyunca...
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 30L); // ...30 byte/s altındaysa kopar (Stall protection)
+
+    if (resume_byte_pos > 0) {
+        curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, (curl_off_t)resume_byte_pos);
+    }
+
+    if (progress_cb) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progress_cb);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
+
+    CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
     
-    fs::path temp_filepath = target_filepath.string() + ".tmp";
-    spdlog::info("⬇️ Starting robust download for '{}'...", settings.model_filename);
+    fclose(fp);
+    curl_easy_cleanup(curl);
 
-    std::string url = fmt::format(
-        "https://huggingface.co/{}/resolve/main/{}",
-        settings.model_id,
-        settings.model_filename
-    );
-
-    // CURL FLAGLERİ:
-    // -f: HTTP hatalarında (404, 500) sessizce fail ol (hata kodu döndür).
-    // -L: Redirectleri takip et (HuggingFace redirect verir).
-    // -C -: (RESUME) Eğer dosya varsa kaldığı yerden devam et.
-    // --retry 10: Transient hatalarda (timeout, DNS) 10 kere dene.
-    // --retry-delay 5: Denemeler arası 5 saniye bekle.
-    // --connect-timeout 30: Bağlantı 30 saniyede kurulamazsa retry yap.
-    // --keepalive-time 60: Uzun indirmelerde bağlantıyı canlı tut.
-    // --create-dirs: Klasör yoksa oluştur.
-    std::string command = fmt::format(
-        "curl -fL -C - --retry 10 --retry-delay 5 --retry-max-time 600 --connect-timeout 30 --keepalive-time 60 --create-dirs \"{}\" -o \"{}\"",
-        url,
-        temp_filepath.string()
-    );
-
-    spdlog::info("Executing: curl ... -o {}", temp_filepath.filename().string());
-    
-    int result = system(command.c_str());
-
-    // Başarı Kontrolü
-    if (result == 0 && fs::exists(temp_filepath)) {
-        // İndirme bitti, boyut kontrolü yap
-        if (fs::file_size(temp_filepath) > 1024 * 1024) {
-            spdlog::info("✅ Download complete. Finalizing file...");
+    if (res == CURLE_OK) {
+        if (http_code >= 200 && http_code < 300) {
+            spdlog::info("✅ Download completed successfully.");
             fs::rename(temp_filepath, target_filepath);
             return target_filepath.string();
         } else {
-            spdlog::error("❌ Download finished but file is too small (<1MB). Source might be invalid.");
-            fs::remove(temp_filepath); // Bozuk dosyayı temizle
-            throw std::runtime_error("Downloaded file invalid.");
+             spdlog::error("❌ HTTP Error: {}", http_code);
+             // Resume dosyasını silme, belki geçici sunucu hatasıdır.
+             throw std::runtime_error(fmt::format("Download failed with HTTP {}", http_code));
         }
     } else {
-        // HATA YÖNETİMİ
-        // Resume mantığı için: Eğer dosya oluştuysa ve belirli bir boyuttaysa silme! 
-        // Bir sonraki denemede kaldığı yerden devam etsin.
-        
-        bool keep_partial = false;
-        if (fs::exists(temp_filepath)) {
-            try {
-                auto size = fs::file_size(temp_filepath);
-                if (size > 10 * 1024 * 1024) { // 10MB'dan büyükse değerli veri vardır, sakla.
-                    keep_partial = true;
-                    spdlog::warn("⚠️ Download interrupted. Keeping partial file ({:.2f} MB) for resume on next attempt.", size / 1024.0 / 1024.0);
-                }
-            } catch (...) {}
+        spdlog::error("❌ Curl Error: {}", curl_easy_strerror(res));
+        // Eğer range error verdiyse (dosya bitmiş ama resume deniyoruz), dosyayı tamamlanmış sayabiliriz.
+        if (res == CURLE_RANGE_ERROR) {
+             spdlog::warn("⚠️ Range error detected. Assuming file is already complete.");
+             fs::rename(temp_filepath, target_filepath);
+             return target_filepath.string();
         }
-
-        if (!keep_partial && fs::exists(temp_filepath)) {
-            spdlog::warn("⚠️ Download failed and partial file is tiny. Cleaning up.");
-            fs::remove(temp_filepath);
-        }
-
-        spdlog::error("❌ Model download failed via curl (Exit Code: {}).", result);
-        throw std::runtime_error(fmt::format("Failed to download model from '{}'. Check logs.", url));
+        throw std::runtime_error(fmt::format("Download failed: {}", curl_easy_strerror(res)));
     }
 }
 
