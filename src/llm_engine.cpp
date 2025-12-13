@@ -28,10 +28,8 @@ LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gaug
     
     spdlog::info("🚀 Initializing LLM Engine...");
     
-    // Formatter oluştur
     formatter_ = create_formatter();
 
-    // Modeli yükle
     if (!reload_model(settings_.profile_name)) {
         throw std::runtime_error("Critical: Initial model load failed.");
     }
@@ -70,13 +68,29 @@ bool LLMEngine::reload_model(const std::string& profile_name) {
         return false;
     }
 
+    settings_ = temp_settings;
+    return internal_reload_model();
+}
+
+bool LLMEngine::update_hardware_config(int gpu_layers, int context_size, bool kv_offload) {
+    spdlog::info("⚙️ Hardware Reconfiguration: GPU={} Layers, Context={}, KV_Offload={}", 
+                 gpu_layers, context_size, kv_offload);
+    
+    settings_.n_gpu_layers = gpu_layers;
+    settings_.context_size = context_size;
+    settings_.kv_offload = kv_offload;
+    
+    return internal_reload_model();
+}
+
+bool LLMEngine::internal_reload_model() {
     std::unique_lock<std::shared_mutex> lock(model_mutex_);
-    spdlog::info("🔒 System locked for model swap...");
+    spdlog::info("🔒 System locked for model update...");
     
     model_loaded_ = false;
-    settings_ = temp_settings;
 
     try {
+        // Eski kaynakları temizle
         context_pool_.reset(); 
         if (model_) {
             llama_model_free(model_);
@@ -106,10 +120,10 @@ bool LLMEngine::reload_model(const std::string& profile_name) {
         context_pool_ = std::make_unique<LlamaContextPool>(settings_, model_, active_contexts_gauge_);
         
         model_loaded_ = true;
-        spdlog::info("✅ Model swapped successfully. Unlock.");
+        spdlog::info("✅ Model update successful. Unlock.");
         return true;
     } catch (const std::exception& e) {
-        spdlog::error("❌ Swap failed: {}", e.what());
+        spdlog::error("❌ Update failed: {}", e.what());
         return false;
     }
 }
@@ -220,7 +234,6 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     llama_sampler_chain_add(chain, llama_sampler_init_temp(params.has_temperature() ? params.temperature() : settings_.default_temperature));
     llama_sampler_chain_add(chain, llama_sampler_init_dist(time(NULL)));
 
-    // GÜNCELLENMİŞ STOP SEQUENCE LİSTESİ
     std::vector<std::string> stop_sequences = {
         "<|im_end|>",       // Qwen
         "<|endoftext|>",    // Standard
@@ -228,11 +241,11 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
         "<|eot_id|>",       // Llama 3
         "<eos>",            // Gemma
         "<end_of_turn>",    // Gemma
-        "<|end|>",          // Phi-3 (ÖNEMLİ)
+        "<|end|>",          // Phi-3 
         "user:",            // Fallback
         "assistant:",       // Fallback
         "system:",          // Fallback
-        "### Human:",       // Eski Instruct formatları
+        "### Human:",       
         "### User:"
     };
 
@@ -242,36 +255,25 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     uint32_t ctx_limit = settings_.context_size;
     if (n_past + req_max_gen > ctx_limit) req_max_gen = ctx_limit - n_past - 1;
 
-    std::string accumulated_text = ""; // Token biriktirme tamponu
+    std::string accumulated_text = "";
 
     while (n_decoded < (int)req_max_gen) {
         if (req_ptr->should_stop_callback && req_ptr->should_stop_callback()) {
             req_ptr->finish_reason = "cancelled"; break;
         }
         
-        // 1. Örnekleme
         llama_token new_token_id = llama_sampler_sample(chain, ctx, -1);
         llama_sampler_accept(chain, new_token_id);
         
-        // 2. Native EOS Kontrolü
         if (llama_vocab_is_eog(vocab, new_token_id)) {
             req_ptr->finish_reason = "stop"; break;
         }
 
-        // 3. String Dönüşümü
         char buf[256] = {0};
         int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
         std::string token_str(buf, n);
         
-        // 4. [REAL FIX] Stop Sequence Kontrolü (String Match)
-        // Token'ı doğrudan göndermek yerine biriktirip kontrol ediyoruz.
-        // Bu, parçalı gelen stop kelimelerini (örn: "<", "|", "im", "_end", "|>") yakalamak için.
-        // Basitlik için şu an son token üzerinden kontrol ediyoruz, 
-        // ancak daha sağlamı "token_str" içinde stop words var mı diye bakmaktır.
-        
         bool stop_found = false;
-        
-        // a. Doğrudan token içinde stop word var mı?
         for (const auto& seq : stop_sequences) {
             if (token_str.find(seq) != std::string::npos) {
                 stop_found = true;
@@ -279,25 +281,15 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
             }
         }
 
-        // b. Bir önceki token ile birleşince stop word oluşuyor mu? (Basit bir heuristic)
-        // Burada tam bir ring buffer implementasyonu yerine,
-        // token'ı göndermeden önce basit kontrol yapıyoruz.
-        // Gelen token bir stop word'ün parçasıysa göndermeyebiliriz ama 
-        // şimdilik "gördüğün an dur" mantığı en güvenlisidir.
-
         if (stop_found) {
             req_ptr->finish_reason = "stop";
             spdlog::debug("Stop sequence detected in token: {}", token_str);
             break;
         }
 
-        // 5. Token Gönderimi
-        // Özel tokenları (örn: <0x00>) istemciye gönderme
         if(token_str.find("<") == 0 && token_str.find(">") == token_str.size()-1) {
-             // Potansiyel special token, logla ama gönderme (User UI'da görmesin)
-             // Ancak <br> gibi şeyler olabilir, o yüzden sadece bilinen yapıları filtrele
              if (token_str.find("<|") == 0 || token_str.find("<0x") == 0) {
-                 // Skip sending
+                 // Skip internal special tokens
              } else {
                  if(req_ptr->on_token_callback) req_ptr->on_token_callback(token_str);
                  req_ptr->token_queue.push(token_str);
@@ -307,7 +299,6 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
             req_ptr->token_queue.push(token_str);
         }
         
-        // 6. Decode (Context Update)
         LlamaBatchGuard next_token_batch(1, 0, 1);
         common_batch_add(next_token_batch.batch, new_token_id, n_past, {0}, true);
         if(llama_decode(ctx, next_token_batch.batch) != 0) {

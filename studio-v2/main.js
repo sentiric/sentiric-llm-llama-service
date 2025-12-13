@@ -5,7 +5,7 @@ import * as ui from './ui.js';
 document.addEventListener('DOMContentLoaded', initialize);
 
 async function initialize() {
-    console.log("🌌 Sentiric OS v8.3 Booting (Dynamic Reasoning)...");
+    console.log("🌌 Sentiric Omni-Studio v3 Booting...");
     
     try {
         const [profilesData, layoutSchema] = await Promise.all([
@@ -50,7 +50,7 @@ function renderDynamicControls(schema) {
     });
     
     Object.values(schema.panels).flat().forEach(widget => {
-        if (widget.type === 'slider') {
+        if (widget.type === 'slider' || widget.type === 'hardware-slider') {
             const input = $(widget.id);
             const display = $(widget.display_id);
             if (input && display) {
@@ -82,12 +82,52 @@ function setupEventListeners() {
     $('toggle-settings-panel').onclick = () => ui.togglePanel('settingsPanel');
     $('close-stats-panel').onclick = () => ui.togglePanel('statsPanel');
     $('close-settings-panel').onclick = () => ui.togglePanel('settingsPanel');
+    
+    // Artifact Toggle
+    $('toggle-artifacts').onclick = () => ui.toggleArtifacts();
+    $('closeArtifact').onclick = () => ui.toggleArtifacts();
+
     $('file-upload-btn').onclick = () => $('fileInput').click();
     
     $('modelSelector').onchange = (e) => {
         const selectedOption = e.target.options[e.target.selectedIndex];
         switchModel(e.target.value, selectedOption.textContent.split('-')[0].trim());
     };
+
+    // Hardware Update Button
+    const hwBtn = $('applyHardwareBtn');
+    if(hwBtn) hwBtn.onclick = applyHardwareConfig;
+}
+
+async function applyHardwareConfig() {
+    if (!confirm("Donanım ayarlarını güncellemek modeli yeniden yükleyecektir. Devam edilsin mi?")) return;
+    
+    const layers = parseInt($('gpuLayers')?.value || -1);
+    const ctx = parseInt($('ctxSize')?.value || 4096);
+    
+    ui.setBusy(true);
+    $('systemOverlay').classList.remove('hidden');
+    $('overlayTitle').innerText = "Donanım Yapılandırılıyor";
+
+    try {
+        const res = await fetch('/v1/hardware/config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ gpu_layers: layers, context_size: ctx, kv_offload: true })
+        });
+        
+        if (res.ok) {
+            alert("Donanım ayarları başarıyla güncellendi.");
+        } else {
+            const err = await res.json();
+            alert("Hata: " + (err.message || "Bilinmeyen hata"));
+        }
+    } catch(e) {
+        alert("Bağlantı hatası: " + e.message);
+    } finally {
+        $('systemOverlay').classList.add('hidden');
+        ui.setBusy(false);
+    }
 }
 
 async function checkHealthLoop() {
@@ -187,7 +227,6 @@ async function sendMessage() {
                                 thinkingIndicatorRemoved = true;
                             }
 
-                            // --- PARSING & TIMER ---
                             if (!isThinking && (content.match(/<think>/i) || content.match(/<thought>/i))) {
                                 isThinking = true;
                                 thinkingStartTime = Date.now();
@@ -221,6 +260,8 @@ async function sendMessage() {
                             } else {
                                 fullText += content;
                                 bubble.innerHTML = marked.parse(fullText + '▋');
+                                // ARTIFACT LIVE PREVIEW
+                                ui.updateArtifact(fullText);
                             }
                             
                             ui.updateStats();
@@ -233,6 +274,7 @@ async function sendMessage() {
         
         bubble.innerHTML = marked.parse(fullText);
         ui.enhanceCode(bubble);
+        ui.updateArtifact(fullText); // Final check
         Store.history.push({role: 'assistant', content: fullText});
 
     } catch (e) {
@@ -252,7 +294,6 @@ function buildPayload() {
     const rag = $('ragInput')?.value || "";
     const msgs = [];
 
-    // [NEW] Reasoning Level oku
     const reasoningEl = document.querySelector('input[name="reasoning-level"]:checked');
     const reasoningLevel = reasoningEl ? reasoningEl.value : "none";
 

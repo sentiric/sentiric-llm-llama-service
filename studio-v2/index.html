@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sentiric Agent OS v8.0</title>
+    <title>Sentiric Omni-Studio v3</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💠</text></svg>">
     
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -24,7 +24,7 @@
 <div id="systemOverlay" class="overlay hidden">
     <div class="glass-modal">
         <div class="neural-loader"></div>
-        <h3>Model Yükleniyor</h3>
+        <h3 id="overlayTitle">Model Yükleniyor</h3>
         <p>Sistem yapılandırılıyor...</p>
     </div>
 </div>
@@ -34,7 +34,7 @@
     <header class="os-header">
         <div class="brand-capsule">
             <i class="fas fa-cube"></i>
-            <span>SENTIRIC OS</span>
+            <span>SENTIRIC OMNI-STUDIO</span>
         </div>
 
         <div class="model-selector-wrapper">
@@ -43,46 +43,74 @@
         </div>
 
         <div class="header-actions">
-            <button class="icon-btn" id="toggle-stats-panel"><i class="fas fa-chart-line"></i></button>
-            <button class="icon-btn" id="toggle-settings-panel"><i class="fas fa-cog"></i></button>
+            <button class="icon-btn" id="toggle-artifacts" title="Artifacts Panel"><i class="fas fa-columns"></i></button>
+            <button class="icon-btn" id="toggle-stats-panel" title="Telemetry"><i class="fas fa-chart-line"></i></button>
+            <button class="icon-btn" id="toggle-settings-panel" title="Settings"><i class="fas fa-cog"></i></button>
         </div>
     </header>
 
-    <main class="stage">
-        <div id="streamContainer" class="stream-flow">
-            <div class="empty-void">
-                <div class="void-icon"><i class="fas fa-bolt"></i></div>
-                <h1>Agent Ready</h1>
-                <p>Bir görev verin veya dosya yükleyin.</p>
-            </div>
-        </div>
-
-        <div class="omni-wrapper">
-            <div class="omni-bar">
-                <button class="tool-btn" id="file-upload-btn"><i class="fas fa-paperclip"></i></button>
-                <input type="file" id="fileInput" hidden>
-                
-                <textarea id="omniInput" placeholder="Yapay zekaya bir görev verin..." rows="1"></textarea>
-                
-                <div class="omni-actions">
-                    <button class="action-btn" id="sendBtn"><i class="fas fa-arrow-up"></i></button>
-                    <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-square"></i></button>
+    <div class="workspace">
+        <!-- SOL PANEL: SOHBET -->
+        <main class="stage">
+            <div id="streamContainer" class="stream-flow">
+                <div class="empty-void">
+                    <div class="void-icon"><i class="fas fa-bolt"></i></div>
+                    <h1>Omni-Studio v3</h1>
+                    <p>Artifacts + Reasoning + Hardware Control</p>
                 </div>
             </div>
-            <div class="omni-status">
-                <span id="statusText">Sistem Hazır</span> • <span id="latencyStat">0ms</span>
-            </div>
-        </div>
-    </main>
 
+            <div class="omni-wrapper">
+                <div class="omni-bar">
+                    <button class="tool-btn" id="file-upload-btn"><i class="fas fa-paperclip"></i></button>
+                    <input type="file" id="fileInput" hidden>
+                    
+                    <textarea id="omniInput" placeholder="Yapay zekaya bir görev verin..." rows="1"></textarea>
+                    
+                    <div class="omni-actions">
+                        <button class="action-btn" id="sendBtn"><i class="fas fa-arrow-up"></i></button>
+                        <button class="stop-btn hidden" id="stopBtn"><i class="fas fa-square"></i></button>
+                    </div>
+                </div>
+                <div class="omni-status">
+                    <span id="statusText">Sistem Hazır</span> • <span id="latencyStat">0ms</span>
+                </div>
+            </div>
+        </main>
+
+        <!-- SAĞ PANEL: ARTIFACTS (Live Preview) -->
+        <aside class="artifact-panel" id="artifactPanel">
+            <div class="artifact-header">
+                <h3><i class="fas fa-code"></i> Artifact Preview</h3>
+                <div class="artifact-actions">
+                    <button class="icon-btn-sm" id="refreshArtifact"><i class="fas fa-sync"></i></button>
+                    <button class="icon-btn-sm" id="closeArtifact"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+            <div class="artifact-content">
+                <div id="artifact-placeholder">
+                    <i class="fas fa-layer-group"></i>
+                    <p>Kod veya HTML önizlemesi burada görünecek.</p>
+                </div>
+                <iframe id="artifact-frame" sandbox="allow-scripts allow-same-origin" class="hidden"></iframe>
+                <pre id="artifact-code" class="hidden"><code class="language-javascript"></code></pre>
+            </div>
+        </aside>
+    </div>
+
+    <!-- SETTINGS PANEL (OVERLAY) -->
     <aside class="slide-panel" id="settingsPanel">
         <div class="panel-header">
-            <h3>Ayarlar</h3>
+            <h3>Ayarlar & Donanım</h3>
             <button class="close-btn" id="close-settings-panel"><i class="fas fa-times"></i></button>
         </div>
         <div class="panel-content" id="dynamic-controls"></div>
+        <div class="panel-footer">
+            <button id="applyHardwareBtn" class="primary-btn full-width">Donanım Ayarlarını Uygula</button>
+        </div>
     </aside>
 
+    <!-- STATS PANEL (OVERLAY) -->
     <aside class="slide-panel" id="statsPanel">
         <div class="panel-header">
             <h3>Telemetri</h3>

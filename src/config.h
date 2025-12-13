@@ -63,22 +63,28 @@ struct Settings {
     std::string worker_id = "worker-default";
     std::string worker_group = "default-group";
     std::string gateway_address = "";
+
+    // Serialization for UI
+    nlohmann::json to_json() const {
+        return {
+            {"gpu_layers", n_gpu_layers},
+            {"context_size", context_size},
+            {"threads", n_threads},
+            {"batch_size", max_batch_size},
+            {"kv_offload", kv_offload},
+            {"use_mmap", use_mmap}
+        };
+    }
 };
 
 // Profil dosyasını okuyup ayarları güncelleyen yardımcı fonksiyon.
-// Başarılı olursa true, profil bulunamazsa false döner.
 inline bool apply_profile(Settings& s, const std::string& profile_name_override) {
     namespace fs = std::filesystem;
     using json = nlohmann::json;
 
-    // MİMARİ DÜZELTME:
-    // Artık 'profiles.json' dosyasını '/models' (volume) içinde değil,
-    // uygulamanın çalıştığı kök dizinde ('/app/profiles.json') arıyoruz.
-    // Bu sayede volume mount edilse bile konfigürasyon dosyamız kaybolmuyor.
     fs::path profile_path = "profiles.json"; 
     
     if (!fs::exists(profile_path)) {
-        // Fallback: Belki geliştirme ortamında 'models/' altındadır (Docker dışı)
         profile_path = fs::path(s.model_dir) / "profiles.json";
         if (!fs::exists(profile_path)) {
             spdlog::warn("Profiles file not found at ./profiles.json or {}. Relying on env vars.", profile_path.string());

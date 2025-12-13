@@ -23,6 +23,9 @@ public:
 
     void process_single_request(std::shared_ptr<BatchedRequest> batched_request);
     bool reload_model(const std::string& profile_name);
+    
+    // [YENİ] Donanım ayarlarını güncelle ve modeli yeniden yükle
+    bool update_hardware_config(int gpu_layers, int context_size, bool kv_offload);
 
     DynamicBatcher* get_batcher() const { return batcher_.get(); }
     bool is_batching_enabled() const { return batcher_ != nullptr; }
@@ -33,6 +36,7 @@ public:
 private:
     void process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batch);
     void execute_single_request(std::shared_ptr<BatchedRequest> req_ptr);
+    bool internal_reload_model(); // Kod tekrarını önlemek için
 
     std::vector<llama_token> tokenize_and_truncate(std::shared_ptr<BatchedRequest> req_ptr, const std::string& formatted_prompt);
     bool decode_prompt(llama_context* ctx, ContextGuard& guard, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr);

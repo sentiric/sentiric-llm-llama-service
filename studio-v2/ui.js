@@ -37,6 +37,14 @@ export function renderWidget(widget) {
                         <input type="range" id="${widget.id}" min="${widget.properties.min}" max="${widget.properties.max}" step="${widget.properties.step}" value="${widget.properties.value}">
                     </div>
                 </div>`;
+        case 'hardware-slider':
+            return `
+                <div class="setting-group hardware-control">
+                    <div class="range-wrap">
+                        <div class="range-head"><span style="color:#facc15"><i class="fas fa-microchip"></i> ${widget.label}</span><span id="${widget.display_id}">${widget.properties.value}</span></div>
+                        <input type="range" id="${widget.id}" min="${widget.properties.min}" max="${widget.properties.max}" step="${widget.properties.step}" value="${widget.properties.value}">
+                    </div>
+                </div>`;
         default: return '';
     }
 }
@@ -118,6 +126,39 @@ export function addMessage(role, content) {
     return div.querySelector('.text-body');
 }
 
+export function updateArtifact(content) {
+    // Artifact tespit mantığı: ```html ... ``` veya ```javascript ... ```
+    // Basit regex ile son kod bloğunu yakala
+    const matches = [...content.matchAll(/```(\w+)?\n([\s\S]*?)```/g)];
+    if (matches.length > 0) {
+        const lastMatch = matches[matches.length - 1];
+        const lang = lastMatch[1] || 'text';
+        const code = lastMatch[2];
+        
+        const frame = $('artifact-frame');
+        const codeBlock = $('artifact-code');
+        const placeholder = $('artifact-placeholder');
+        
+        if (placeholder) placeholder.classList.add('hidden');
+        
+        // Eğer HTML ise Preview yap
+        if (lang === 'html') {
+            frame.classList.remove('hidden');
+            codeBlock.classList.add('hidden');
+            frame.srcdoc = code;
+        } else {
+            // Değilse kod göster
+            frame.classList.add('hidden');
+            codeBlock.classList.remove('hidden');
+            codeBlock.innerHTML = `<code class="language-${lang}">${escapeHtml(code)}</code>`;
+            hljs.highlightElement(codeBlock.querySelector('code'));
+        }
+        
+        // Paneli otomatik aç
+        $('artifactPanel').classList.add('open');
+    }
+}
+
 export function setPersona(key) {
     const container = $('persona-chips');
     if (!container) return;
@@ -144,6 +185,12 @@ export function togglePanel(panelId) {
     const isOpen = p.classList.contains('open');
     document.querySelectorAll('.slide-panel').forEach(pan => pan.classList.remove('open'));
     if (!isOpen) p.classList.add('open');
+}
+
+export function toggleArtifacts() {
+    const p = $('artifactPanel');
+    if (!p) return;
+    p.classList.toggle('open');
 }
 
 export function setBusy(busy) {
@@ -173,4 +220,4 @@ export function setupCharts() {
 export const escapeHtml = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 export const enhanceCode = (el) => el.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
 export const scrollToBottom = () => { const el = $('streamContainer'); if(el) el.scrollTop = el.scrollHeight; };
-export const clearChat = () => { $('streamContainer').innerHTML = `<div class="empty-void"><div class="void-icon"><i class="fas fa-bolt"></i></div><h1>Agent Ready</h1><p>Bir görev verin veya dosya yükleyin.</p></div>`; Store.history = []; };
+export const clearChat = () => { $('streamContainer').innerHTML = `<div class="empty-void"><div class="void-icon"><i class="fas fa-bolt"></i></div><h1>Omni-Studio v3</h1><p>Artifacts + Reasoning + Hardware Control</p></div>`; Store.history = []; };

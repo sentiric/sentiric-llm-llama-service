@@ -14,7 +14,6 @@ using json = nlohmann::json;
 
 // --- Helper Functions ---
 
-// 1. UTF-8 Kontrolü (Multi-byte karakterlerin bölünmesini önler)
 bool has_incomplete_utf8_suffix(const std::string& str) {
     if (str.empty()) return false;
     size_t len = str.length();
@@ -33,7 +32,6 @@ bool has_incomplete_utf8_suffix(const std::string& str) {
     return false;
 }
 
-// 2. Token Sanitizer (Görünmez kontrol karakterlerini temizler)
 std::string sanitize_token(const std::string& input) {
     std::string clean = input;
     clean.erase(std::remove_if(clean.begin(), clean.end(), [](unsigned char c) {
@@ -42,7 +40,6 @@ std::string sanitize_token(const std::string& input) {
     return clean;
 }
 
-// 3. Reasoning Instruction Generator (Yeni Özellik)
 std::string get_reasoning_instruction(const std::string& level) {
     if (level == "low") {
         return "\n[TALİMAT]: Cevap vermeden önce kısaca düşün. Düşüncelerini <think>...</think> içine yaz.";
@@ -89,8 +86,39 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         spdlog::debug("HTTP {} {} - Status: {}", req.method, req.path, res.status);
     });
 
-    // --- DYNAMIC UI LAYOUT ---
+    // --- API: Hardware Config (NEW) ---
+    svr_.Get("/v1/hardware/config", [this](const httplib::Request &, httplib::Response &res) {
+        res.set_header("Access-Control-Allow-Origin", "*");
+        json config = engine_->get_settings().to_json();
+        res.set_content(config.dump(), "application/json");
+    });
+
+    svr_.Post("/v1/hardware/config", [this](const httplib::Request &req, httplib::Response &res) {
+        res.set_header("Access-Control-Allow-Origin", "*");
+        try {
+            json body = json::parse(req.body);
+            int gpu_layers = body.value("gpu_layers", -1);
+            int ctx_size = body.value("context_size", 4096);
+            bool kv_offload = body.value("kv_offload", true);
+
+            bool success = engine_->update_hardware_config(gpu_layers, ctx_size, kv_offload);
+            
+            if (success) {
+                res.status = 200;
+                res.set_content(json({{"status", "success"}}).dump(), "application/json");
+            } else {
+                res.status = 500;
+                res.set_content(json({{"status", "error"}, {"message", "Hardware update failed"}}).dump(), "application/json");
+            }
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+        }
+    });
+
+    // --- API: UI Layout (Omni-Studio v3) ---
     svr_.Get("/v1/ui/layout", [this](const httplib::Request &, httplib::Response &res) {
+        const auto& s = engine_->get_settings();
         json layout_schema = {
             {"panels", {
                 {"settings", {
@@ -101,26 +129,32 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                         {"options", {
                             {{"label", "🇹🇷 Asistan"}, {"value", "default"}, {"active", true}},
                             {{"label", "💻 Dev"}, {"value", "coder"}},
-                            {{"label", "🎨 Sanat"}, {"value", "creative"}},
-                            {{"label", "🇺🇸 EN"}, {"value", "english"}}
+                            {{"label", "🤖 R1"}, {"value", "reasoning"}}
                         }}
                     },
-                    // [NEW] Reasoning Level Control
                     {
                         {"type", "segmented"},
                         {"id", "reasoning-level"},
-                        {"label", "AKIL YÜRÜTME (REASONING)"},
+                        {"label", "AKIL YÜRÜTME"},
                         {"options", {
                             {{"label", "Kapalı"}, {"value", "none"}, {"active", true}},
-                            {{"label", "Hızlı"}, {"value", "low"}},
-                            {{"label", "Derin"}, {"value", "high"}}
+                            {{"label", "Düşük"}, {"value", "low"}},
+                            {{"label", "Yüksek"}, {"value", "high"}}
                         }}
                     },
                     {
-                        {"type", "textarea"},
-                        {"id", "systemPrompt"},
-                        {"label", "SİSTEM TALİMATI"},
-                        {"properties", { {"rows", 5} }}
+                        {"type", "hardware-slider"},
+                        {"id", "gpuLayers"},
+                        {"label", "GPU Layers"},
+                        {"display_id", "gpuVal"},
+                        {"properties", { {"min", 0}, {"max", 100}, {"step", 1}, {"value", s.n_gpu_layers} }}
+                    },
+                    {
+                        {"type", "hardware-slider"},
+                        {"id", "ctxSize"},
+                        {"label", "Context Size"},
+                        {"display_id", "ctxVal"},
+                        {"properties", { {"min", 1024}, {"max", 32768}, {"step", 1024}, {"value", s.context_size} }}
                     },
                     {
                         {"type", "slider"},
@@ -128,24 +162,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                         {"label", "Sıcaklık"},
                         {"display_id", "tempVal"},
                         {"properties", { {"min", 0.0}, {"max", 2.0}, {"step", 0.1}, {"value", 0.7} }}
-                    },
-                    {
-                        {"type", "slider"},
-                        {"id", "tokenLimit"},
-                        {"label", "Token"},
-                        {"display_id", "tokenVal"},
-                        {"properties", { {"min", 64}, {"max", 8192}, {"step", 64}, {"value", 1024} }}
-                    }
-                }},
-                {"telemetry", {
-                    {
-                        {"type", "textarea"},
-                        {"id", "ragInput"},
-                        {"label", "RAG BAĞLAMI"},
-                        {"properties", {
-                            {"placeholder", "Dinamik olarak oluşturulmuş RAG alanı..."},
-                            {"rows", 5}
-                        }}
                     }
                 }}
             }}
@@ -250,7 +266,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
             json body = json::parse(req.body);
             sentiric::llm::v1::GenerateStreamRequest grpc_request;
 
-            // [NEW] Reasoning Injection
             std::string reasoning_level = body.value("reasoning_effort", "none");
             std::string reasoning_prompt = get_reasoning_instruction(reasoning_level);
 
@@ -286,7 +301,6 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
                     }
                 }
                 
-                // Eğer system prompt boşsa ama reasoning isteniyorsa
                 if (grpc_request.system_prompt().empty() && !reasoning_prompt.empty()) {
                     grpc_request.set_system_prompt("Sen yardımsever bir asistansın." + reasoning_prompt);
                 }
@@ -406,6 +420,7 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
     svr_.Options("/v1/models", set_cors);
     svr_.Options("/v1/models/switch", set_cors);
     svr_.Options("/v1/profiles", set_cors);
+    svr_.Options("/v1/hardware/config", set_cors);
 }
 
 void HttpServer::run() {
