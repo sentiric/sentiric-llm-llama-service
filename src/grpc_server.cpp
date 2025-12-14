@@ -1,6 +1,7 @@
 #include "grpc_server.h"
 #include "spdlog/spdlog.h"
 #include <atomic>
+#include <chrono>
 
 GrpcServer::GrpcServer(std::shared_ptr<LLMEngine> engine, AppMetrics& metrics)
     : engine_(std::move(engine)), metrics_(metrics) {}
@@ -31,8 +32,18 @@ grpc::Status GrpcServer::GenerateStream(
     
     auto batched_request = std::make_shared<BatchedRequest>();
     batched_request->request = *request;
+    batched_request->creation_time = start_time; // Explicitly sync creation time
     
-    batched_request->on_token_callback = [&](const std::string& token) -> bool {
+    batched_request->on_token_callback = [batched_request, writer, trace_id](const std::string& token) -> bool {
+        // --- TTFT CALCULATION ---
+        if (!batched_request->first_token_emitted.exchange(true)) {
+            auto now = std::chrono::steady_clock::now();
+            std::chrono::duration<double, std::milli> ttft = now - batched_request->creation_time;
+            batched_request->ttft_ms = ttft.count();
+            spdlog::debug("[gRPC][TraceID:{}] ⚡ TTFT: {:.2f} ms", trace_id, batched_request->ttft_ms.load());
+        }
+        // ------------------------
+
         sentiric::llm::v1::GenerateStreamResponse response; 
         // TEMİZ KOD: Artık sanitizer yok. Veri kaynağından temiz geliyor.
         response.set_token(token);
@@ -67,6 +78,10 @@ grpc::Status GrpcServer::GenerateStream(
     auto end_time = std::chrono::steady_clock::now();
     std::chrono::duration<double> latency = end_time - start_time;
     metrics_.request_latency.Observe(latency.count());
+
+    spdlog::info("[gRPC][TraceID:{}] Completed. Tokens: {}/{}, TTFT: {:.2f}ms, Total: {:.2f}s", 
+        trace_id, batched_request->prompt_tokens, batched_request->completion_tokens,
+        batched_request->ttft_ms.load(), latency.count());
 
     return grpc::Status::OK;
 }

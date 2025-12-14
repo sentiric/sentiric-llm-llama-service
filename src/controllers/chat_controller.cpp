@@ -2,6 +2,7 @@
 #include "spdlog/spdlog.h"
 #include <algorithm>
 #include <vector>
+#include <chrono>
 
 using json = nlohmann::json;
 
@@ -104,6 +105,15 @@ void ChatController::handle_streaming_response(std::shared_ptr<BatchedRequest> b
                 std::string token;
                 if (batched_request->token_queue.wait_and_pop(token, 50)) {
                     
+                    // --- TTFT MEASUREMENT ---
+                    if (!batched_request->first_token_emitted.exchange(true)) {
+                        auto now = std::chrono::steady_clock::now();
+                        std::chrono::duration<double, std::milli> ttft = now - batched_request->creation_time;
+                        batched_request->ttft_ms = ttft.count();
+                        spdlog::debug("[HTTP] ⚡ TTFT: {:.2f} ms", batched_request->ttft_ms.load());
+                    }
+                    // ------------------------
+
                     std::string clean_token = sanitize_token(token);
                     if (clean_token.empty()) continue;
 
@@ -142,6 +152,10 @@ void ChatController::handle_streaming_response(std::shared_ptr<BatchedRequest> b
 
             sink.write("data: [DONE]\n\n", 12);
             sink.done();
+            
+            spdlog::info("[HTTP] Stream Complete. Tokens: {}/{}, TTFT: {:.2f}ms", 
+                batched_request->prompt_tokens, batched_request->completion_tokens, batched_request->ttft_ms.load());
+            
             return true;
         });
 }
@@ -153,6 +167,10 @@ void ChatController::handle_unary_response(std::shared_ptr<BatchedRequest> batch
         std::string t;
         if(batched_request->token_queue.wait_and_pop(t, 0)) full_response += t;
     }
+    
+    // Unary request için TTFT'nin anlamı daha azdır ancak işleme başlama süresi olarak düşünülebilir.
+    // Burada batching bittiği için TTFT batched_request içinde zaten set edilmiş olabilir (token_queue'ya ilk push anı).
+
     json response_json;
     response_json["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));
     response_json["object"] = "chat.completion";

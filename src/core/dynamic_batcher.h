@@ -14,6 +14,7 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <chrono>
 
 template<typename T>
 class ThreadSafeQueue {
@@ -61,6 +62,11 @@ struct BatchedRequest {
     std::string finish_reason = "stop";
 
     std::string grammar;
+
+    // --- OBSERVABILITY METRICS ---
+    std::chrono::steady_clock::time_point creation_time = std::chrono::steady_clock::now();
+    std::atomic<double> ttft_ms{0.0}; // Time To First Token
+    std::atomic<bool> first_token_emitted{false};
 };
 
 class DynamicBatcher {
