@@ -45,7 +45,6 @@ RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -DGGML_CUDA=ON \
-    -DCMAKE_CUDA_ARCHITECTURES="all-major" \
     -DLLAMA_CURL=OFF \
     -DGGML_NATIVE=OFF
 

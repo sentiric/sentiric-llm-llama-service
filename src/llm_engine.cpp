@@ -90,7 +90,6 @@ bool LLMEngine::internal_reload_model() {
     model_loaded_ = false;
 
     try {
-        // Eski kaynakları temizle
         context_pool_.reset(); 
         if (model_) {
             llama_model_free(model_);
@@ -234,28 +233,20 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     llama_sampler_chain_add(chain, llama_sampler_init_temp(params.has_temperature() ? params.temperature() : settings_.default_temperature));
     llama_sampler_chain_add(chain, llama_sampler_init_dist(time(NULL)));
 
-    std::vector<std::string> stop_sequences = {
-        "<|im_end|>",       // Qwen
-        "<|endoftext|>",    // Standard
-        "<|end_of_text|>",  // Llama 3
-        "<|eot_id|>",       // Llama 3
-        "<eos>",            // Gemma
-        "<end_of_turn>",    // Gemma
-        "<|end|>",          // Phi-3 
-        "user:",            // Fallback
-        "assistant:",       // Fallback
-        "system:",          // Fallback
-        "### Human:",       
-        "### User:"
-    };
+    // [DEĞİŞİKLİK] Hardcoded Stop Sequence'lar KALDIRILDI.
+    // Artık modelin kendi EOG (EOS) tokenlarına ve istemciden gelen isteğe güveniyoruz.
+    std::vector<std::string> dynamic_stop_sequences;
+    if (params.stop_sequences_size() > 0) {
+        for (const auto& seq : params.stop_sequences()) {
+            dynamic_stop_sequences.push_back(seq);
+        }
+    }
 
     uint32_t req_max_gen = params.has_max_new_tokens() ? params.max_new_tokens() : settings_.default_max_tokens;
     int n_decoded = 0;
     llama_pos n_past = prompt_tokens.size();
     uint32_t ctx_limit = settings_.context_size;
     if (n_past + req_max_gen > ctx_limit) req_max_gen = ctx_limit - n_past - 1;
-
-    std::string accumulated_text = "";
 
     while (n_decoded < (int)req_max_gen) {
         if (req_ptr->should_stop_callback && req_ptr->should_stop_callback()) {
@@ -273,8 +264,9 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
         int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
         std::string token_str(buf, n);
         
+        // Sadece dinamik stop sequence kontrolü (varsa)
         bool stop_found = false;
-        for (const auto& seq : stop_sequences) {
+        for (const auto& seq : dynamic_stop_sequences) {
             if (token_str.find(seq) != std::string::npos) {
                 stop_found = true;
                 break;
@@ -283,21 +275,12 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
 
         if (stop_found) {
             req_ptr->finish_reason = "stop";
-            spdlog::debug("Stop sequence detected in token: {}", token_str);
+            spdlog::debug("Client-requested stop sequence detected: {}", token_str);
             break;
         }
 
-        if(token_str.find("<") == 0 && token_str.find(">") == token_str.size()-1) {
-             if (token_str.find("<|") == 0 || token_str.find("<0x") == 0) {
-                 // Skip internal special tokens
-             } else {
-                 if(req_ptr->on_token_callback) req_ptr->on_token_callback(token_str);
-                 req_ptr->token_queue.push(token_str);
-             }
-        } else {
-            if(req_ptr->on_token_callback) req_ptr->on_token_callback(token_str);
-            req_ptr->token_queue.push(token_str);
-        }
+        if(req_ptr->on_token_callback) req_ptr->on_token_callback(token_str);
+        req_ptr->token_queue.push(token_str);
         
         LlamaBatchGuard next_token_batch(1, 0, 1);
         common_batch_add(next_token_batch.batch, new_token_id, n_past, {0}, true);
