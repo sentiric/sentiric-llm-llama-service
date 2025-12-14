@@ -35,43 +35,35 @@ std::string ChatController::sanitize_token(const std::string& input) {
 }
 
 std::string ChatController::get_reasoning_instruction(const std::string& level) {
+    // HARDCODE KALDIRILDI: Config üzerinden okunuyor.
+    const auto& s = engine_->get_settings();
     if (level == "low") {
-        return "\n[TALİMAT]: Cevap vermeden önce kısaca düşün. Düşüncelerini <think>...</think> içine yaz.";
+        return s.reasoning_prompt_low;
     } 
     else if (level == "high") {
-        return "\n[TALİMAT]: Bu karmaşık bir görevdir. Cevap vermeden önce DERİNLEMESİNE düşün.\n"
-               "1. Problemi parçalara ayır.\n"
-               "2. Her adımı analiz et.\n"
-               "3. Olası hataları kontrol et.\n"
-               "4. Tüm bu süreci <think>...</think> etiketleri arasına DETAYLI şekilde yaz.\n"
-               "5. Sonuç olarak cevabı ver.";
+        return s.reasoning_prompt_high;
     }
     return "";
 }
 
 sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(const json& body, const std::string& reasoning_prompt) {
     sentiric::llm::v1::GenerateStreamRequest grpc_request;
+    const auto& settings = engine_->get_settings();
+
+    // System prompt'u belirle (Öncelik: Request -> Config -> Boş)
+    std::string system_prompt = settings.default_system_prompt;
 
     if (body.contains("messages") && body["messages"].is_array()) {
         const auto& messages = body["messages"];
         bool first_user_message_found = false;
+        
         for (const auto& msg : messages) {
             std::string role = msg.value("role", "");
             std::string content = msg.value("content", "");
             
             if (role == "system") {
-                 std::string final_system = content;
-                 if (!reasoning_prompt.empty()) {
-                     final_system += reasoning_prompt;
-                 }
-                 
-                 if (grpc_request.system_prompt().empty()) {
-                    grpc_request.set_system_prompt(final_system);
-                 } else {
-                    if (!grpc_request.has_rag_context()) {
-                        grpc_request.set_rag_context(final_system);
-                    }
-                 }
+                 // Eğer request içinde sistem mesajı varsa, varsayılanı ezer.
+                 system_prompt = content;
             } else if (role == "user" && !first_user_message_found) {
                 grpc_request.set_user_prompt(content);
                 first_user_message_found = true;
@@ -82,14 +74,23 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
                 turn->set_content(content);
             }
         }
-        
-        if (grpc_request.system_prompt().empty() && !reasoning_prompt.empty()) {
-            grpc_request.set_system_prompt("Sen yardımsever bir asistansın." + reasoning_prompt);
-        }
     }
+
+    // Reasoning varsa system prompt'a ekle
+    if (!reasoning_prompt.empty()) {
+        system_prompt += reasoning_prompt;
+    }
+
+    // Nihai system prompt'u ata
+    if (!system_prompt.empty()) {
+        grpc_request.set_system_prompt(system_prompt);
+    }
+
     auto* params = grpc_request.mutable_params();
     if (body.contains("max_tokens")) params->set_max_new_tokens(body["max_tokens"]);
     if (body.contains("temperature")) params->set_temperature(body["temperature"]);
+    if (body.contains("top_p")) params->set_top_p(body["top_p"]);
+    if (body.contains("top_k")) params->set_top_k(body["top_k"]);
 
     return grpc_request;
 }
@@ -116,7 +117,7 @@ void ChatController::handle_streaming_response(std::shared_ptr<BatchedRequest> b
                     chunk["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));
                     chunk["object"] = "chat.completion.chunk";
                     chunk["created"] = std::time(nullptr);
-                    chunk["model"] = "sentiric-llm";
+                    chunk["model"] = engine_->get_settings().model_id;
                     chunk["choices"][0]["index"] = 0;
                     chunk["choices"][0]["delta"]["content"] = pending_data;
                     
@@ -132,7 +133,7 @@ void ChatController::handle_streaming_response(std::shared_ptr<BatchedRequest> b
                  chunk["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));
                  chunk["object"] = "chat.completion.chunk";
                  chunk["created"] = std::time(nullptr);
-                 chunk["model"] = "sentiric-llm";
+                 chunk["model"] = engine_->get_settings().model_id;
                  chunk["choices"][0]["index"] = 0;
                  chunk["choices"][0]["delta"]["content"] = pending_data;
                  std::string data = "data: " + chunk.dump() + "\n\n";
@@ -156,7 +157,7 @@ void ChatController::handle_unary_response(std::shared_ptr<BatchedRequest> batch
     response_json["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));
     response_json["object"] = "chat.completion";
     response_json["created"] = std::time(nullptr);
-    response_json["model"] = "sentiric-llm";
+    response_json["model"] = engine_->get_settings().model_id;
     response_json["choices"][0]["index"] = 0;
     response_json["choices"][0]["message"]["role"] = "assistant";
     response_json["choices"][0]["message"]["content"] = full_response;
@@ -168,12 +169,13 @@ void ChatController::handle_unary_response(std::shared_ptr<BatchedRequest> batch
 }
 
 void ChatController::handle_chat_completions(const httplib::Request &req, httplib::Response &res) {
+    // CORS Headerları HttpServer global middleware tarafından da set ediliyor ama controller seviyesinde garantiye alalım.
     res.set_header("Access-Control-Allow-Origin", "*");
     
     try {
         if (!engine_->is_model_loaded()) {
             res.status = 503; 
-            res.set_content(json({{"error", "Model is reloading or not ready"}}).dump(), "application/json"); 
+            res.set_content(json({{"error", {{"message", "Model is loading or not ready"}, {"type", "server_error"}}}}).dump(), "application/json"); 
             return;
         }
 
@@ -188,6 +190,7 @@ void ChatController::handle_chat_completions(const httplib::Request &req, httpli
         batched_request->request = grpc_request;
 
         if (body.contains("response_format") && body["response_format"].value("type", "") == "json_object") {
+             // Basic JSON grammar (Generic)
              batched_request->grammar = R"(root ::= object; value ::= object | array | string | number | ("true" | "false" | "null") ws; object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws; array ::= "[" ws (value ("," ws value)*)? "]" ws; string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws; number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws; ws ::= [ \t\n\r]*)";
         } else if (body.contains("grammar")) {
             batched_request->grammar = body["grammar"].get<std::string>();
@@ -203,6 +206,6 @@ void ChatController::handle_chat_completions(const httplib::Request &req, httpli
     } catch (const std::exception& e) {
         spdlog::error("HTTP handler error: {}", e.what());
         res.status = 400;
-        res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+        res.set_content(json({{"error", {{"message", e.what()}, {"type", "invalid_request_error"}}}}).dump(), "application/json");
     }
 }

@@ -1,54 +1,72 @@
 import { $, Store, PERSONAS } from './state.js';
 
+// --- GÜVENLİK ---
+export const escapeHtml = (text) => {
+    if (!text) return text;
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+};
+
+// --- WIDGET RENDERER ---
 export function renderWidget(widget) {
-    switch(widget.type) {
-        case 'segmented':
-            return `
-                <div class="setting-group">
-                    <label>${widget.label}</label>
-                    <div class="segmented-control" id="${widget.id}">
-                        ${widget.options.map(opt => `
-                            <label>
-                                <input type="radio" name="${widget.id}" value="${opt.value}" ${opt.active ? 'checked' : ''}>
-                                <span>${opt.label}</span>
-                            </label>
-                        `).join('')}
-                    </div>
-                </div>`;
-        case 'chip-group':
-            return `
-                <div class="setting-group">
-                    <label>${widget.label}</label>
-                    <div class="chip-grid" id="${widget.id}">
-                        ${widget.options.map(opt => `<button class="chip ${opt.active ? 'active' : ''}" data-persona-key="${opt.value}">${opt.label}</button>`).join('')}
-                    </div>
-                </div>`;
-        case 'textarea':
-            return `
-                <div class="setting-group">
-                    <label>${widget.label}</label>
-                    <textarea id="${widget.id}" class="code-area" placeholder="${widget.properties.placeholder || ''}" rows="${widget.properties.rows || 3}"></textarea>
-                </div>`;
-        case 'slider':
-            return `
-                <div class="setting-group">
-                    <div class="range-wrap">
-                        <div class="range-head"><span>${widget.label}</span><span id="${widget.display_id}">${widget.properties.value}</span></div>
-                        <input type="range" id="${widget.id}" min="${widget.properties.min}" max="${widget.properties.max}" step="${widget.properties.step}" value="${widget.properties.value}">
-                    </div>
-                </div>`;
-        case 'hardware-slider':
-            return `
-                <div class="setting-group hardware-control">
-                    <div class="range-wrap">
-                        <div class="range-head"><span style="color:#facc15"><i class="fas fa-microchip"></i> ${widget.label}</span><span id="${widget.display_id}">${widget.properties.value}</span></div>
-                        <input type="range" id="${widget.id}" min="${widget.properties.min}" max="${widget.properties.max}" step="${widget.properties.step}" value="${widget.properties.value}">
-                    </div>
-                </div>`;
-        default: return '';
+    try {
+        switch(widget.type) {
+            case 'segmented':
+                return `
+                    <div class="setting-group">
+                        <label>${escapeHtml(widget.label)}</label>
+                        <div class="segmented-control" id="${widget.id}">
+                            ${widget.options.map(opt => `
+                                <label>
+                                    <input type="radio" name="${widget.id}" value="${opt.value}" ${opt.active ? 'checked' : ''}>
+                                    <span>${escapeHtml(opt.label)}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>`;
+            case 'chip-group':
+                return `
+                    <div class="setting-group">
+                        <label>${escapeHtml(widget.label)}</label>
+                        <div class="chip-grid" id="${widget.id}">
+                            ${widget.options.map(opt => `<button class="chip ${opt.active ? 'active' : ''}" data-persona-key="${opt.value}">${escapeHtml(opt.label)}</button>`).join('')}
+                        </div>
+                    </div>`;
+            case 'hardware-slider':
+                return `
+                    <div class="setting-group hardware-control">
+                        <div class="range-wrap">
+                            <div class="range-head">
+                                <span style="color:#facc15"><i class="fas fa-microchip"></i> ${escapeHtml(widget.label)}</span>
+                                <span id="${widget.display_id}">${widget.properties.value}</span>
+                            </div>
+                            <input type="range" id="${widget.id}" min="${widget.properties.min}" max="${widget.properties.max}" step="${widget.properties.step}" value="${widget.properties.value}">
+                        </div>
+                    </div>`;
+            case 'slider':
+                 return `
+                    <div class="setting-group">
+                        <div class="range-wrap">
+                            <div class="range-head">
+                                <span>${escapeHtml(widget.label)}</span>
+                                <span id="${widget.display_id}">${widget.properties.value}</span>
+                            </div>
+                            <input type="range" id="${widget.id}" min="${widget.properties.min}" max="${widget.properties.max}" step="${widget.properties.step}" value="${widget.properties.value}">
+                        </div>
+                    </div>`;
+            default: return '';
+        }
+    } catch (e) {
+        console.error("Widget render error:", e);
+        return `<div class="error-msg">Widget Render Error</div>`;
     }
 }
 
+// --- MODEL LIST ---
 export function renderModelList(profilesData) {
     Store.currentProfile = profilesData.active_profile;
     const selector = $('modelSelector');
@@ -58,8 +76,9 @@ export function renderModelList(profilesData) {
     const groupedProfiles = {};
     for (const key in profilesData.profiles) {
         const profile = profilesData.profiles[key];
-        if (!groupedProfiles[profile.category]) groupedProfiles[profile.category] = [];
-        groupedProfiles[profile.category].push({ key, ...profile });
+        const category = profile.category || 'Other';
+        if (!groupedProfiles[category]) groupedProfiles[category] = [];
+        groupedProfiles[category].push({ key, ...profile });
     }
 
     for (const category in groupedProfiles) {
@@ -68,7 +87,7 @@ export function renderModelList(profilesData) {
         groupedProfiles[category].forEach(profile => {
             const option = document.createElement('option');
             option.value = profile.key;
-            option.textContent = `${profile.display_name} - (${profile.description})`;
+            option.textContent = `${profile.display_name}`;
             if (profile.key === Store.currentProfile) option.selected = true;
             group.appendChild(option);
         });
@@ -76,6 +95,7 @@ export function renderModelList(profilesData) {
     }
 }
 
+// --- MESSAGE RENDERING ---
 export function addMessage(role, content) {
     const container = $('streamContainer');
     const empty = container.querySelector('.empty-void');
@@ -84,14 +104,17 @@ export function addMessage(role, content) {
     const div = document.createElement('div');
     div.className = `msg-block ${role}`;
     
-    let innerHTML = `<div class="msg-avatar"><i class="fas fa-${role==='user'?'user':(role === 'system' ? 'info-circle' : 'robot')}"></i></div>`;
+    // Icon mapping
+    const icon = role === 'user' ? 'user' : (role === 'system' ? 'info-circle' : 'robot');
+    
+    let innerHTML = `<div class="msg-avatar"><i class="fas fa-${icon}"></i></div>`;
     innerHTML += `<div class="msg-content">`;
     
     if (role === 'ai') {
         // Düşünce kutusu (Başlangıçta gizli)
         innerHTML += `<div class="thought-box" style="display:none;">
                         <div class="thought-header">
-                            <span><i class="fas fa-caret-right"></i> Düşünce Süreci</span>
+                            <span><i class="fas fa-caret-right"></i> Chain of Thought</span>
                             <span class="think-timer"></span>
                         </div>
                         <div class="thought-body"></div>
@@ -112,7 +135,8 @@ export function addMessage(role, content) {
         const tHeader = div.querySelector('.thought-header');
         if(tHeader) {
             tHeader.onclick = () => {
-                div.querySelector('.thought-box').classList.toggle('open');
+                const box = div.querySelector('.thought-box');
+                box.classList.toggle('open');
             };
         }
         return {
@@ -126,6 +150,7 @@ export function addMessage(role, content) {
     return div.querySelector('.text-body');
 }
 
+// --- ARTIFACT HANDLER ---
 export function updateArtifact(content) {
     // Artifact tespit mantığı: ```html ... ``` veya ```javascript ... ```
     // Basit regex ile son kod bloğunu yakala
@@ -167,6 +192,8 @@ export function setPersona(key) {
     if(activeChip) activeChip.classList.add('active');
 
     const sysPrompt = $('systemPrompt');
+    // Not: PERSONAS objesi state.js'den geliyor ve hala basit stringler barındırabilir.
+    // Ancak backend'de default system prompt var. Burası sadece UI override için.
     if (sysPrompt && PERSONAS[key]) {
         sysPrompt.value = PERSONAS[key];
     }
@@ -176,6 +203,11 @@ export function updateHealthStatus(isHealthy) {
     const statusIndicator = $('modelStatusIndicator');
     if (statusIndicator) {
         statusIndicator.className = `status-dot ${isHealthy ? 'online' : (Store.isSwitching ? 'loading' : '')}`;
+    }
+    const statusText = $('statusText');
+    if (statusText) {
+        statusText.textContent = isHealthy ? 'System Online' : (Store.isSwitching ? 'Model Loading...' : 'Offline');
+        statusText.style.color = isHealthy ? '#10b981' : '#f87171';
     }
 }
 
@@ -195,8 +227,10 @@ export function toggleArtifacts() {
 
 export function setBusy(busy) {
     Store.generating = busy;
-    $('sendBtn').style.display = busy ? 'none' : 'flex';
-    $('stopBtn').classList.toggle('hidden', !busy);
+    const sendBtn = $('sendBtn');
+    const stopBtn = $('stopBtn');
+    if(sendBtn) sendBtn.style.display = busy ? 'none' : 'flex';
+    if(stopBtn) stopBtn.classList.toggle('hidden', !busy);
 }
 
 export function updateStats() {
@@ -214,10 +248,33 @@ export function updateStats() {
 export function setupCharts() {
     const ctx = $('tpsChart');
     if(!ctx) return;
-    Store.chart = new Chart(ctx, { type: 'line', data: { labels: Store.chartData.labels, datasets: [{ data: Store.chartData.data, borderColor: '#8b5cf6', borderWidth: 2, tension: 0.4, pointRadius: 0, fill: true, backgroundColor: 'rgba(139, 92, 246, 0.1)' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { display: false, min: 0 } }, animation: false } });
+    Store.chart = new Chart(ctx, { 
+        type: 'line', 
+        data: { 
+            labels: Store.chartData.labels, 
+            datasets: [{ 
+                data: Store.chartData.data, 
+                borderColor: '#8b5cf6', 
+                borderWidth: 2, 
+                tension: 0.4, 
+                pointRadius: 0, 
+                fill: true, 
+                backgroundColor: 'rgba(139, 92, 246, 0.1)' 
+            }] 
+        }, 
+        options: { 
+            responsive: true, 
+            maintainAspectRatio: false, 
+            plugins: { legend: { display: false } }, 
+            scales: { x: { display: false }, y: { display: false, min: 0 } }, 
+            animation: false 
+        } 
+    });
 }
 
-export const escapeHtml = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 export const enhanceCode = (el) => el.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
 export const scrollToBottom = () => { const el = $('streamContainer'); if(el) el.scrollTop = el.scrollHeight; };
-export const clearChat = () => { $('streamContainer').innerHTML = `<div class="empty-void"><div class="void-icon"><i class="fas fa-bolt"></i></div><h1>Omni-Studio v3</h1><p>Artifacts + Reasoning + Hardware Control</p></div>`; Store.history = []; };
+export const clearChat = () => { 
+    $('streamContainer').innerHTML = `<div class="empty-void"><div class="void-icon"><i class="fas fa-bolt"></i></div><h1>Omni-Studio v3.1</h1><p>Ready for Inference</p></div>`; 
+    Store.history = []; 
+};

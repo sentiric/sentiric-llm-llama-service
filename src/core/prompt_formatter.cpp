@@ -21,13 +21,15 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
     if (tmpl_len > 0) {
         template_to_use = std::string(tmpl_buf.data());
     } else {
-        // Fallback: Standart ChatML (Qwen, vb. için en güvenlisi)
+        // Fallback: Standart ChatML (Güvenli, yaygın)
+        spdlog::warn("⚠️ Model does not have a native chat template. Using ChatML fallback.");
         template_to_use = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";
     }
 
     std::vector<llama_chat_message> messages;
     std::vector<std::string> content_storage;
     
+    // System Prompt Logic (Request or Fallback handled in Controller, but here we enforce structure)
     std::string effective_system_prompt = request.system_prompt();
     if (request.has_rag_context() && !request.rag_context().empty()) {
         if (!effective_system_prompt.empty()) effective_system_prompt += "\n\n";
@@ -50,33 +52,29 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
         messages.push_back({"user", content_storage.back().c_str()});
     }
 
-    // --- KRİTİK: add_generation_prompt ---
-    // Bu parametre 'true' olduğunda, llama.cpp şablonun sonuna
-    // "<|im_start|>assistant\n" (veya modelin eşdeğerini) ekler.
-    // Bu, modelin "user said..." diye sohbete başlamasını engeller,
-    // direkt cevap vermeye zorlar.
-    
+    // --- Template Application ---
+    // add_generation_prompt=true ensures the model knows it's time to speak.
     int32_t required_size = llama_chat_apply_template(
         template_to_use.c_str(), 
         messages.data(), 
         messages.size(), 
-        true, // add_generation_prompt = TRUE (ZORUNLU)
+        true, 
         nullptr, 
         0
     );
 
     if (required_size < 0) {
-        // Eğer native template başarısız olursa, manuel ChatML uygula
+        spdlog::error("❌ llama_chat_apply_template failed. Fallback to manual concat.");
+        // Manuel fallback (Very reliable last resort)
         std::ostringstream oss;
         if(!effective_system_prompt.empty()) 
-            oss << "<|im_start|>system\n" << effective_system_prompt << "<|im_end|>\n";
+            oss << "System: " << effective_system_prompt << "\n\n";
         
         for(const auto& turn : request.history()) {
-            std::string r = (turn.role() == "user") ? "user" : "assistant";
-            oss << "<|im_start|>" << r << "\n" << turn.content() << "<|im_end|>\n";
+            std::string r = (turn.role() == "user") ? "User" : "Assistant";
+            oss << r << ": " << turn.content() << "\n\n";
         }
-        oss << "<|im_start|>user\n" << request.user_prompt() << "<|im_end|>\n";
-        oss << "<|im_start|>assistant\n"; // Prompt Injection (CoT Engelleme)
+        oss << "User: " << request.user_prompt() << "\n\nAssistant: ";
         return oss.str();
     }
 

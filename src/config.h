@@ -25,7 +25,14 @@ struct Settings {
     std::string model_filename = "";
     std::string model_path = "";
     std::string legacy_model_path = "";
-    std::string system_prompt = "";
+    
+    // --- PROMPT CONFIGURATION ---
+    // Hardcoded değerler yerine ortam değişkeni veya profil ile ezilebilir.
+    std::string default_system_prompt = "You are a helpful assistant."; 
+    
+    // Reasoning Instructions (Dil bağımsız ve genel)
+    std::string reasoning_prompt_low = "\n[INSTRUCTION]: Think briefly before answering. Enclose thoughts in <think> tags.";
+    std::string reasoning_prompt_high = "\n[INSTRUCTION]: This is a complex task. Think deeply step-by-step. Analyze the problem, check for edge cases, and enclose your full reasoning process in <think> tags before answering.";
 
     // Engine & Performance
     int n_gpu_layers = 0;
@@ -72,7 +79,8 @@ struct Settings {
             {"threads", n_threads},
             {"batch_size", max_batch_size},
             {"kv_offload", kv_offload},
-            {"use_mmap", use_mmap}
+            {"use_mmap", use_mmap},
+            {"default_system_prompt", default_system_prompt}
         };
     }
 };
@@ -112,7 +120,10 @@ inline bool apply_profile(Settings& s, const std::string& profile_name_override)
             if(p.contains("context_size")) s.context_size = p["context_size"];
             if(p.contains("gpu_layers")) s.n_gpu_layers = p["gpu_layers"];
             if(p.contains("temperature")) s.default_temperature = p["temperature"];
-            if(p.contains("system_prompt")) s.system_prompt = p["system_prompt"];
+            
+            // System Prompt Overrides
+            if(p.contains("system_prompt")) s.default_system_prompt = p["system_prompt"];
+            
             if(p.contains("use_mmap")) s.use_mmap = p["use_mmap"];
             if(p.contains("kv_offload")) s.kv_offload = p["kv_offload"];
             
@@ -179,6 +190,9 @@ inline Settings load_settings() {
     s.default_top_k = get_env_var_as_int("LLM_LLAMA_SERVICE_DEFAULT_TOP_K", s.default_top_k);
     s.default_top_p = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_TOP_P", s.default_top_p);
     s.default_repeat_penalty = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY", s.default_repeat_penalty);
+    
+    // PROMPT DEFAULTS
+    s.default_system_prompt = get_env_var("LLM_LLAMA_SERVICE_DEFAULT_SYSTEM_PROMPT", s.default_system_prompt);
 
     s.grpc_ca_path = get_env_var("GRPC_TLS_CA_PATH", s.grpc_ca_path);
     s.grpc_cert_path = get_env_var("LLM_LLAMA_SERVICE_CERT_PATH", s.grpc_cert_path);

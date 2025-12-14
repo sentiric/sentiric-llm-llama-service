@@ -20,9 +20,10 @@ CLIClient::~CLIClient() = default;
 bool CLIClient::generate_stream(const std::string& prompt, 
                                const std::function<void(const std::string&)>& on_token) {
     
-    // DÜZELTME: GenerateStreamRequest
     sentiric::llm::v1::GenerateStreamRequest request;
-    request.set_system_prompt("You are a helpful assistant.");
+    // HARDCODE KALDIRILDI: request.set_system_prompt("..."); 
+    // Kullanıcı CLI argümanı olarak vermezse boş gidecek, sunucu config'den dolduracak.
+    
     request.set_user_prompt(prompt);
     
     return grpc_client_->generate_stream(request, on_token);
