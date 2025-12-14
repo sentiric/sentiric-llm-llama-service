@@ -101,7 +101,6 @@ void GRPCClient::ensure_channel_is_ready() {
     }
     
     channel_ = grpc::CreateChannel(endpoint_, creds);
-    // DÜZELTME: LlamaService
     stub_ = sentiric::llm::v1::LlamaService::NewStub(channel_);
 }
 
@@ -113,7 +112,6 @@ bool GRPCClient::is_connected() {
     );
 }
 
-// DÜZELTME: Parametre tipi GenerateStreamRequest
 bool GRPCClient::generate_stream(
     const sentiric::llm::v1::GenerateStreamRequest& request,
     std::function<void(const std::string&)> on_token) {
@@ -129,15 +127,14 @@ bool GRPCClient::generate_stream(
         grpc::ClientContext context;
         context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(timeout_seconds_));
         
-        // YENİ: Trace ID Ekleme
         context.AddMetadata("x-trace-id", "cli-manual-test-" + std::to_string(std::time(nullptr)));
                 
         auto reader = stub_->GenerateStream(&context, request);
-        
-        // DÜZELTME: Yanıt tipi GenerateStreamResponse
         sentiric::llm::v1::GenerateStreamResponse response;
         
         while (reader->Read(&response)) {
+            // [DEĞİŞİKLİK] has_token() kontrolü aynı kalır (field ID değişmedi, type değişti)
+            // C++ protoc generated code, bytes alanları için de std::string döndürür.
             if (response.has_token()) {
                 if (on_token) {
                     on_token(response.token());

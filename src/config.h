@@ -25,12 +25,13 @@ struct Settings {
     std::string model_filename = "";
     std::string model_path = "";
     std::string legacy_model_path = "";
+    // [YENİ] Model indirme şablonu
+    std::string model_url_template = "https://huggingface.co/{model_id}/resolve/main/{filename}";
     
     // --- PROMPT CONFIGURATION ---
-    // Hardcoded değerler yerine ortam değişkeni veya profil ile ezilebilir.
     std::string default_system_prompt = "You are a helpful assistant."; 
     
-    // Reasoning Instructions (Dil bağımsız ve genel)
+    // Reasoning Instructions
     std::string reasoning_prompt_low = "\n[INSTRUCTION]: Think briefly before answering. Enclose thoughts in <think> tags.";
     std::string reasoning_prompt_high = "\n[INSTRUCTION]: This is a complex task. Think deeply step-by-step. Analyze the problem, check for edge cases, and enclose your full reasoning process in <think> tags before answering.";
 
@@ -39,6 +40,11 @@ struct Settings {
     uint32_t context_size = 4096;
     uint32_t n_threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
     uint32_t n_threads_batch = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
+    
+    // [YENİ] Fiziksel Batch Size (Prompt Processing Hızı İçin)
+    // 512 güvenli bir varsayılan, GPU'da 2048+ olabilir.
+    uint32_t physical_batch_size = 512; 
+
     ggml_numa_strategy numa_strategy = GGML_NUMA_STRATEGY_DISABLED;
     bool use_mmap = true;
     bool kv_offload = true;
@@ -78,6 +84,7 @@ struct Settings {
             {"context_size", context_size},
             {"threads", n_threads},
             {"batch_size", max_batch_size},
+            {"physical_batch_size", physical_batch_size},
             {"kv_offload", kv_offload},
             {"use_mmap", use_mmap},
             {"default_system_prompt", default_system_prompt}
@@ -191,7 +198,6 @@ inline Settings load_settings() {
     s.default_top_p = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_TOP_P", s.default_top_p);
     s.default_repeat_penalty = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY", s.default_repeat_penalty);
     
-    // PROMPT DEFAULTS
     s.default_system_prompt = get_env_var("LLM_LLAMA_SERVICE_DEFAULT_SYSTEM_PROMPT", s.default_system_prompt);
 
     s.grpc_ca_path = get_env_var("GRPC_TLS_CA_PATH", s.grpc_ca_path);
@@ -201,6 +207,11 @@ inline Settings load_settings() {
     s.enable_dynamic_batching = get_env_var_as_bool("LLM_LLAMA_SERVICE_ENABLE_BATCHING", s.enable_dynamic_batching);
     s.max_batch_size = get_env_var_as_uint("LLM_LLAMA_SERVICE_MAX_BATCH_SIZE", s.max_batch_size);
     s.batch_timeout_ms = get_env_var_as_int("LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS", s.batch_timeout_ms);
+    
+    // [YENİ]
+    s.physical_batch_size = get_env_var_as_uint("LLM_LLAMA_SERVICE_PHYSICAL_BATCH_SIZE", s.physical_batch_size);
+    s.model_url_template = get_env_var("LLM_LLAMA_SERVICE_MODEL_URL_TEMPLATE", s.model_url_template);
+
     s.enable_warm_up = get_env_var_as_bool("LLM_LLAMA_SERVICE_ENABLE_WARM_UP", s.enable_warm_up);
 
     s.worker_id = get_env_var("LLM_WORKER_ID", "worker-" + std::to_string(std::rand()));
@@ -213,7 +224,6 @@ inline Settings load_settings() {
         s.model_filename = p.filename().string();
     }
 
-    // Profil dosyasını uygula
     apply_profile(s, ""); 
 
     return s;

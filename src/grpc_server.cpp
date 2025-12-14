@@ -7,8 +7,8 @@ GrpcServer::GrpcServer(std::shared_ptr<LLMEngine> engine, AppMetrics& metrics)
 
 grpc::Status GrpcServer::GenerateStream(
     grpc::ServerContext* context,
-    const sentiric::llm::v1::GenerateStreamRequest* request, // DÜZELTME
-    grpc::ServerWriter<sentiric::llm::v1::GenerateStreamResponse>* writer) { // DÜZELTME
+    const sentiric::llm::v1::GenerateStreamRequest* request, 
+    grpc::ServerWriter<sentiric::llm::v1::GenerateStreamResponse>* writer) { 
 
     metrics_.requests_total.Increment();
     auto start_time = std::chrono::steady_clock::now();
@@ -33,7 +33,9 @@ grpc::Status GrpcServer::GenerateStream(
     batched_request->request = *request;
     
     batched_request->on_token_callback = [&](const std::string& token) -> bool {
-        sentiric::llm::v1::GenerateStreamResponse response; // DÜZELTME
+        sentiric::llm::v1::GenerateStreamResponse response; 
+        // [DEĞİŞİKLİK] Protobuf alan adı aynı (token) ancak tipi bytes. 
+        // C++'da string bytes uyumludur, ancak UTF-8 validasyonu yapılmaz.
         response.set_token(token);
         return writer->Write(response);
     };
@@ -55,7 +57,7 @@ grpc::Status GrpcServer::GenerateStream(
     }
 
     
-    sentiric::llm::v1::GenerateStreamResponse final_response; // DÜZELTME
+    sentiric::llm::v1::GenerateStreamResponse final_response; 
     auto* details = final_response.mutable_finish_details();
     details->set_finish_reason(batched_request->finish_reason);
     details->set_prompt_tokens(batched_request->prompt_tokens);
