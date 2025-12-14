@@ -12,8 +12,9 @@
 #include <prometheus/gauge.h>
 
 #include "controllers/chat_controller.h"
-// YENİ EKLEME:
 #include "controllers/model_controller.h"
+// YENİ EKLEME:
+#include "controllers/system_controller.h"
 
 struct AppMetrics {
     prometheus::Counter& requests_total;
@@ -49,8 +50,9 @@ private:
     
     // Controllers
     std::unique_ptr<ChatController> chat_controller_;
-    // YENİ EKLEME:
     std::unique_ptr<ModelController> model_controller_;
+    // YENİ EKLEME:
+    std::unique_ptr<SystemController> system_controller_;
     
     std::string host_;
     int port_;

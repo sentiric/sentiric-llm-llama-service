@@ -76,7 +76,7 @@ set_source_files_properties(${PROTO_GENERATED_SRCS} ${PROTO_GENERATED_HDRS} PROP
 target_include_directories(proto_lib PUBLIC ${GENERATED_DIR})
 target_link_libraries(proto_lib PUBLIC gRPC::grpc++ protobuf::libprotobuf)
 
-# EKLENEN: src/controllers/model_controller.cpp
+# EKLENEN: src/controllers/system_controller.cpp
 add_executable(llm_service
     src/main.cpp
     src/llm_engine.cpp
@@ -84,6 +84,7 @@ add_executable(llm_service
     src/http_server.cpp
     src/controllers/chat_controller.cpp 
     src/controllers/model_controller.cpp
+    src/controllers/system_controller.cpp
     src/model_manager.cpp
     src/core/prompt_formatter.cpp
     src/core/context_pool.cpp 
