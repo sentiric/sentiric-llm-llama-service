@@ -233,8 +233,6 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     llama_sampler_chain_add(chain, llama_sampler_init_temp(params.has_temperature() ? params.temperature() : settings_.default_temperature));
     llama_sampler_chain_add(chain, llama_sampler_init_dist(time(NULL)));
 
-    // [DEĞİŞİKLİK] Hardcoded Stop Sequence'lar KALDIRILDI.
-    // Artık modelin kendi EOG (EOS) tokenlarına ve istemciden gelen isteğe güveniyoruz.
     std::vector<std::string> dynamic_stop_sequences;
     if (params.stop_sequences_size() > 0) {
         for (const auto& seq : params.stop_sequences()) {
@@ -256,15 +254,22 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
         llama_token new_token_id = llama_sampler_sample(chain, ctx, -1);
         llama_sampler_accept(chain, new_token_id);
         
+        // 1. EOG (End of Generation) Kontrolü
         if (llama_vocab_is_eog(vocab, new_token_id)) {
             req_ptr->finish_reason = "stop"; break;
         }
 
+        // 2. Control Token Kontrolü (NATIVE FIX)
+        // Eğer token bir kontrol karakteriyse (örn: <pad>, 0x00, vb.) ve EOG değilse,
+        // bunu kullanıcıya göndermemeliyiz. Sadece context'e ekleyip devam etmeliyiz.
+        // Bu, string manipülasyonu yapmadan "Görünmez" tokenları filtreler.
+        bool is_control = llama_vocab_is_control(vocab, new_token_id);
+
         char buf[256] = {0};
-        int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
+        int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true); // true = special tokens allowed
         std::string token_str(buf, n);
         
-        // Sadece dinamik stop sequence kontrolü (varsa)
+        // Dynamic Stop Sequence Kontrolü
         bool stop_found = false;
         for (const auto& seq : dynamic_stop_sequences) {
             if (token_str.find(seq) != std::string::npos) {
@@ -279,8 +284,15 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
             break;
         }
 
-        if(req_ptr->on_token_callback) req_ptr->on_token_callback(token_str);
-        req_ptr->token_queue.push(token_str);
+        // 3. Token'ı Gönder (Eğer kontrol karakteri değilse)
+        // Control karakterleri context'e girer (aşağıda) ama kullanıcıya gitmez.
+        if (!is_control) {
+            if(req_ptr->on_token_callback) req_ptr->on_token_callback(token_str);
+            req_ptr->token_queue.push(token_str);
+        } else {
+            // Loglamak iyi olabilir (Debug seviyesinde)
+            // spdlog::debug("Skipping control token ID: {}", new_token_id);
+        }
         
         LlamaBatchGuard next_token_batch(1, 0, 1);
         common_batch_add(next_token_batch.batch, new_token_id, n_past, {0}, true);
