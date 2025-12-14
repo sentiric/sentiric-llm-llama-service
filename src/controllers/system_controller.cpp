@@ -125,22 +125,32 @@ void SystemController::handle_ui_layout(const httplib::Request &, httplib::Respo
 
 void SystemController::handle_static_context(const httplib::Request &req, httplib::Response &res) {
     std::string filename = req.matches[1];
+    res.set_header("Access-Control-Allow-Origin", "*");
     
-    // Güvenlik kontrolü: Directory Traversal engelleme
-    if (filename.find("..") != std::string::npos || filename.find("/") != std::string::npos) { 
-        res.status = 400; 
-        return; 
-    }
-    
-    fs::path file_path = fs::path("examples") / filename;
-    std::ifstream file(file_path);
-    
-    if (file) { 
-        std::stringstream buffer; 
-        buffer << file.rdbuf(); 
-        res.set_header("Access-Control-Allow-Origin", "*");
-        res.set_content(buffer.str(), "text/plain; charset=utf-8"); 
-    } else { 
-        res.status = 404; 
+    try {
+        fs::path base_path = fs::canonical(fs::path("examples"));
+        fs::path requested_path = fs::weakly_canonical(base_path / filename);
+
+        // Security Check: Path Traversal Protection
+        if (requested_path.string().find(base_path.string()) != 0) {
+            spdlog::warn("🚨 Security Alert: Path traversal attempt detected. Input: {}", filename);
+            res.status = 403;
+            res.set_content("Access Denied", "text/plain");
+            return;
+        }
+
+        if (fs::exists(requested_path) && fs::is_regular_file(requested_path)) {
+            std::ifstream file(requested_path);
+            if (file) { 
+                std::stringstream buffer; 
+                buffer << file.rdbuf(); 
+                res.set_content(buffer.str(), "text/plain; charset=utf-8"); 
+                return;
+            }
+        }
+        res.status = 404;
+    } catch (const std::exception& e) {
+        spdlog::error("Error in static context handler: {}", e.what());
+        res.status = 500;
     }
 }
