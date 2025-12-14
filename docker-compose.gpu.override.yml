@@ -1,0 +1,9 @@
+services:
+  llm-llama-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    environment:
+      - ENV=development
+      # Geliştirme sırasında build cache'i hızlandırmak için
+      - CCACHE_DIR=/root/.ccache

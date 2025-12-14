@@ -1,0 +1,27 @@
+services:
+  llm-cli:
+    image: ghcr.io/sentiric/sentiric-llm-llama-service:latest-gpu
+    # Entrypoint ve Command kaldırıldı, run komutuyla override edilecek.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - GRPC_TLS_CA_PATH=/sentiric-certificates/certs/ca.crt
+      - LLM_LLAMA_SERVICE_CERT_PATH=/sentiric-certificates/certs/llm-llama-service-chain.crt
+      - LLM_LLAMA_SERVICE_KEY_PATH=/sentiric-certificates/certs/llm-llama-service.key
+    volumes:
+      - "${CERTIFICATES_REPO_PATH:-../sentiric-certificates}:/sentiric-certificates:ro"
+    networks:
+      - sentiric-net
+    # Konteynerin hemen kapanmaması için (debug amaçlı tty: true eklenebilir ama script için gerek yok)
+
+networks:
+  sentiric-net:
+    external: true
+    name: "${NETWORK_NAME:-sentiric.cloud}"

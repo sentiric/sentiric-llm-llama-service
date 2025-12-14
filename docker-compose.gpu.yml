@@ -1,0 +1,28 @@
+services:
+  llm-cli:
+    image: ghcr.io/sentiric/sentiric-llm-llama-service:latest-gpu
+    # entrypoint KALDIRILDI. Scriptler binary adını (llm_cli) kendileri veriyor.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # CLI, servise container ismiyle (DNS) ulaşmalı
+      - GRPC_TLS_CA_PATH=/sentiric-certificates/certs/ca.crt
+      - LLM_LLAMA_SERVICE_CERT_PATH=/sentiric-certificates/certs/llm-llama-service-chain.crt
+      - LLM_LLAMA_SERVICE_KEY_PATH=/sentiric-certificates/certs/llm-llama-service.key
+    volumes:
+      - "${CERTIFICATES_REPO_PATH:-../sentiric-certificates}:/sentiric-certificates:ro"
+    networks:
+      - sentiric-net
+    command: ["llm_cli", "help"]
+
+networks:
+  sentiric-net:
+    external: true
+    name: "${NETWORK_NAME:-sentiric.cloud}"
