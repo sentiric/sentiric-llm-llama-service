@@ -34,8 +34,9 @@ void run_metrics_server_thread(std::shared_ptr<MetricsServer> server) { if (serv
 HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port)
     : engine_(std::move(engine)), host_(host), port_(port) {
     
-    // YENİ: Controller başlatma
+    // Controller başlatma
     chat_controller_ = std::make_unique<ChatController>(engine_);
+    model_controller_ = std::make_unique<ModelController>(engine_);
       
     const char* mount_point = "/";
     const char* base_dir = "./studio-v2"; 
@@ -46,7 +47,7 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         spdlog::debug("HTTP {} {} - Status: {}", req.method, req.path, res.status);
     });
 
-    // --- API: Hardware Config ---
+    // --- API: Hardware Config (Hala burada, sonra SystemController'a gidebilir) ---
     svr_.Get("/v1/hardware/config", [this](const httplib::Request &, httplib::Response &res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         json config = engine_->get_settings().to_json();
@@ -76,7 +77,7 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         }
     });
 
-    // --- API: UI Layout (Omni-Studio v3) ---
+    // --- API: UI Layout ---
     svr_.Get("/v1/ui/layout", [this](const httplib::Request &, httplib::Response &res) {
         const auto& s = engine_->get_settings();
         json layout_schema = {
@@ -130,63 +131,20 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         res.set_content(layout_schema.dump(), "application/json");
     });
     
-    svr_.Get("/v1/profiles", [](const httplib::Request &, httplib::Response &res) {
-        res.set_header("Access-Control-Allow-Origin", "*");
-        try {
-            std::ifstream f("profiles.json");
-            if (!f.is_open()) {
-                 f.open("models/profiles.json");
-            }
-            json profiles_json = json::parse(f);
-            res.set_content(profiles_json.dump(), "application/json");
-        } catch (const std::exception& e) {
-            res.status = 500;
-            res.set_content(json({{"error", "Could not read profiles.json"}}).dump(), "application/json");
-        }
+    // --- Model Management via Controller ---
+    svr_.Get("/v1/profiles", [this](const httplib::Request &req, httplib::Response &res) {
+        model_controller_->handle_get_profiles(req, res);
     });
 
-    svr_.Get("/v1/models", [this](const httplib::Request &, httplib::Response &res) {
-        const auto& current_settings = engine_->get_settings();
-        json response_body = {
-            {"object", "list"},
-            {"data", {{
-                {"id", current_settings.model_id.empty() ? "local-model" : current_settings.model_id},
-                {"object", "model"},
-                {"created", std::time(nullptr)},
-                {"owned_by", "system"},
-                {"active", true},
-                {"profile", current_settings.profile_name}
-            }}}
-        };
-        res.set_header("Access-Control-Allow-Origin", "*");
-        res.set_content(response_body.dump(), "application/json");
+    svr_.Get("/v1/models", [this](const httplib::Request &req, httplib::Response &res) {
+        model_controller_->handle_get_models(req, res);
     });
 
     svr_.Post("/v1/models/switch", [this](const httplib::Request &req, httplib::Response &res) {
-        res.set_header("Access-Control-Allow-Origin", "*");
-        try {
-            json body = json::parse(req.body);
-            std::string profile = body.value("profile", "");
-            
-            if (profile.empty()) {
-                res.status = 400; res.set_content(json({{"error", "Profile name required"}}).dump(), "application/json"); return;
-            }
-
-            spdlog::warn("⚠️ API requested model switch to profile: {}", profile);
-            bool success = engine_->reload_model(profile);
-            
-            if (success) {
-                res.status = 200;
-                res.set_content(json({{"status", "success"}, {"active_profile", profile}}).dump(), "application/json");
-            } else {
-                res.status = 500;
-                res.set_content(json({{"status", "error"}, {"message", "Model reload failed. Profile not found or download error."}}).dump(), "application/json");
-            }
-        } catch(const std::exception& e) {
-            res.status = 400; res.set_content(json({{"error", e.what()}}).dump(), "application/json");
-        }
+        model_controller_->handle_switch_model(req, res);
     });
 
+    // --- Health Check ---
     svr_.Get("/health", [this](const httplib::Request &, httplib::Response &res) {
         bool model_ready = engine_->is_model_loaded();
         size_t active_ctx = 0;
@@ -213,11 +171,12 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         res.status = model_ready ? 200 : 503;
     });
 
-    // YENİ: Delegate to Controller
+    // --- Chat Logic via Controller ---
     svr_.Post("/v1/chat/completions", [this](const httplib::Request &req, httplib::Response &res) {
         chat_controller_->handle_chat_completions(req, res);
     });
     
+    // --- Static Files ---
     svr_.Get(R"(/context/(.+))", [](const httplib::Request &req, httplib::Response &res) {
         std::string filename = req.matches[1];
         fs::path file_path = fs::path("examples") / filename;

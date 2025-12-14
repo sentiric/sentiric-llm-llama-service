@@ -10,10 +10,11 @@
 #include <prometheus/counter.h>
 #include <prometheus/histogram.h>
 #include <prometheus/gauge.h>
-// YENİ EKLEME:
-#include "controllers/chat_controller.h"
 
-// Metrik ailelerini tutacak ve uygulama genelinde taşınacak bir yapı.
+#include "controllers/chat_controller.h"
+// YENİ EKLEME:
+#include "controllers/model_controller.h"
+
 struct AppMetrics {
     prometheus::Counter& requests_total;
     prometheus::Histogram& request_latency;
@@ -21,7 +22,6 @@ struct AppMetrics {
     prometheus::Gauge& active_contexts;
 };
 
-// Metrik sunucusu için ayrı bir sınıf.
 class MetricsServer {
 public:
     MetricsServer(const std::string& host, int port, prometheus::Registry& registry);
@@ -37,7 +37,6 @@ private:
 
 void run_metrics_server_thread(std::shared_ptr<MetricsServer> server);
 
-// Geliştirme Stüdyosu'nu sunan ana HTTP sunucusu.
 class HttpServer {
 public:
     HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port);
@@ -47,8 +46,12 @@ public:
 private:
     httplib::Server svr_;
     std::shared_ptr<LLMEngine> engine_;
-    // YENİ EKLEME: ChatController
+    
+    // Controllers
     std::unique_ptr<ChatController> chat_controller_;
+    // YENİ EKLEME:
+    std::unique_ptr<ModelController> model_controller_;
+    
     std::string host_;
     int port_;
 };
