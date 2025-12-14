@@ -10,6 +10,8 @@
 #include <prometheus/counter.h>
 #include <prometheus/histogram.h>
 #include <prometheus/gauge.h>
+// YENİ EKLEME:
+#include "controllers/chat_controller.h"
 
 // Metrik ailelerini tutacak ve uygulama genelinde taşınacak bir yapı.
 struct AppMetrics {
@@ -45,6 +47,8 @@ public:
 private:
     httplib::Server svr_;
     std::shared_ptr<LLMEngine> engine_;
+    // YENİ EKLEME: ChatController
+    std::unique_ptr<ChatController> chat_controller_;
     std::string host_;
     int port_;
 };

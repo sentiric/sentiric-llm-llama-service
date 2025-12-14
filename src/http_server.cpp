@@ -12,49 +12,6 @@
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
-// --- Helper Functions ---
-
-bool has_incomplete_utf8_suffix(const std::string& str) {
-    if (str.empty()) return false;
-    size_t len = str.length();
-    for (size_t i = 1; i <= 4 && i <= len; ++i) {
-        unsigned char c = static_cast<unsigned char>(str[len - i]);
-        if ((c & 0xC0) == 0x80) continue;
-        if ((c & 0x80) == 0) return false;
-        size_t char_len = 0;
-        if ((c & 0xE0) == 0xC0) char_len = 2;
-        else if ((c & 0xF0) == 0xE0) char_len = 3;
-        else if ((c & 0xF8) == 0xF0) char_len = 4;
-        else return false;
-        if (i < char_len) return true;
-        return false;
-    }
-    return false;
-}
-
-std::string sanitize_token(const std::string& input) {
-    std::string clean = input;
-    clean.erase(std::remove_if(clean.begin(), clean.end(), [](unsigned char c) {
-        return (c < 32 && c != 9 && c != 10 && c != 13) || c == 127;
-    }), clean.end());
-    return clean;
-}
-
-std::string get_reasoning_instruction(const std::string& level) {
-    if (level == "low") {
-        return "\n[TALİMAT]: Cevap vermeden önce kısaca düşün. Düşüncelerini <think>...</think> içine yaz.";
-    } 
-    else if (level == "high") {
-        return "\n[TALİMAT]: Bu karmaşık bir görevdir. Cevap vermeden önce DERİNLEMESİNE düşün.\n"
-               "1. Problemi parçalara ayır.\n"
-               "2. Her adımı analiz et.\n"
-               "3. Olası hataları kontrol et.\n"
-               "4. Tüm bu süreci <think>...</think> etiketleri arasına DETAYLI şekilde yaz.\n"
-               "5. Sonuç olarak cevabı ver.";
-    }
-    return "";
-}
-
 // --- MetricsServer ---
 MetricsServer::MetricsServer(const std::string& host, int port, prometheus::Registry& registry)
     : host_(host), port_(port), registry_(registry) {
@@ -76,6 +33,9 @@ void run_metrics_server_thread(std::shared_ptr<MetricsServer> server) { if (serv
 // --- HttpServer ---
 HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port)
     : engine_(std::move(engine)), host_(host), port_(port) {
+    
+    // YENİ: Controller başlatma
+    chat_controller_ = std::make_unique<ChatController>(engine_);
       
     const char* mount_point = "/";
     const char* base_dir = "./studio-v2"; 
@@ -86,7 +46,7 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         spdlog::debug("HTTP {} {} - Status: {}", req.method, req.path, res.status);
     });
 
-    // --- API: Hardware Config (NEW) ---
+    // --- API: Hardware Config ---
     svr_.Get("/v1/hardware/config", [this](const httplib::Request &, httplib::Response &res) {
         res.set_header("Access-Control-Allow-Origin", "*");
         json config = engine_->get_settings().to_json();
@@ -253,149 +213,9 @@ HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& hos
         res.status = model_ready ? 200 : 503;
     });
 
+    // YENİ: Delegate to Controller
     svr_.Post("/v1/chat/completions", [this](const httplib::Request &req, httplib::Response &res) {
-        res.set_header("Access-Control-Allow-Origin", "*");
-        
-        try {
-            if (!engine_->is_model_loaded()) {
-                res.status = 503; 
-                res.set_content(json({{"error", "Model is reloading or not ready"}}).dump(), "application/json"); 
-                return;
-            }
-
-            json body = json::parse(req.body);
-            sentiric::llm::v1::GenerateStreamRequest grpc_request;
-
-            std::string reasoning_level = body.value("reasoning_effort", "none");
-            std::string reasoning_prompt = get_reasoning_instruction(reasoning_level);
-
-            if (body.contains("messages") && body["messages"].is_array()) {
-                const auto& messages = body["messages"];
-                bool first_user_message_found = false;
-                for (size_t i = 0; i < messages.size(); ++i) {
-                    const auto& msg = messages[i];
-                    std::string role = msg.value("role", "");
-                    std::string content = msg.value("content", "");
-                    
-                    if (role == "system") {
-                         std::string final_system = content;
-                         if (!reasoning_prompt.empty()) {
-                             final_system += reasoning_prompt;
-                         }
-                         
-                         if (grpc_request.system_prompt().empty()) {
-                            grpc_request.set_system_prompt(final_system);
-                         } else {
-                            if (!grpc_request.has_rag_context()) {
-                                grpc_request.set_rag_context(final_system);
-                            }
-                         }
-                    } else if (role == "user" && !first_user_message_found) {
-                        grpc_request.set_user_prompt(content);
-                        first_user_message_found = true;
-                    }
-                    else {
-                        auto* turn = grpc_request.add_history();
-                        turn->set_role(role);
-                        turn->set_content(content);
-                    }
-                }
-                
-                if (grpc_request.system_prompt().empty() && !reasoning_prompt.empty()) {
-                    grpc_request.set_system_prompt("Sen yardımsever bir asistansın." + reasoning_prompt);
-                }
-            }
-            auto* params = grpc_request.mutable_params();
-            if (body.contains("max_tokens")) params->set_max_new_tokens(body["max_tokens"]);
-            if (body.contains("temperature")) params->set_temperature(body["temperature"]);
-
-            bool stream = body.value("stream", false);
-            auto batched_request = std::make_shared<BatchedRequest>();
-            batched_request->request = grpc_request;
-
-            if (body.contains("response_format") && body["response_format"].value("type", "") == "json_object") {
-                 batched_request->grammar = R"(root ::= object; value ::= object | array | string | number | ("true" | "false" | "null") ws; object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws; array ::= "[" ws (value ("," ws value)*)? "]" ws; string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws; number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws; ws ::= [ \t\n\r]*)";
-            } else if (body.contains("grammar")) {
-                batched_request->grammar = body["grammar"].get<std::string>();
-            }
-
-            auto completion_future = engine_->get_batcher()->add_request(batched_request);
-
-            if (stream) {
-                res.set_chunked_content_provider("text/event-stream",
-                    [batched_request, pending_data = std::string("")](size_t, httplib::DataSink &sink) mutable {
-                        batched_request->should_stop_callback = [&sink]() { return !sink.is_writable(); };
-                        
-                        while (!batched_request->is_finished || !batched_request->token_queue.empty()) {
-                            std::string token;
-                            if (batched_request->token_queue.wait_and_pop(token, 50)) {
-                                
-                                std::string clean_token = sanitize_token(token);
-                                if (clean_token.empty()) continue;
-
-                                pending_data += clean_token;
-
-                                if (has_incomplete_utf8_suffix(pending_data)) {
-                                    continue;
-                                }
-
-                                json chunk;
-                                chunk["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));
-                                chunk["object"] = "chat.completion.chunk";
-                                chunk["created"] = std::time(nullptr);
-                                chunk["model"] = "sentiric-llm";
-                                chunk["choices"][0]["index"] = 0;
-                                chunk["choices"][0]["delta"]["content"] = pending_data;
-                                
-                                std::string data = "data: " + chunk.dump() + "\n\n";
-                                if (!sink.write(data.c_str(), data.length())) return false;
-                                
-                                pending_data.clear();
-                            }
-                        }
-                        
-                        if (!pending_data.empty()) {
-                             json chunk;
-                             chunk["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));
-                             chunk["object"] = "chat.completion.chunk";
-                             chunk["created"] = std::time(nullptr);
-                             chunk["model"] = "sentiric-llm";
-                             chunk["choices"][0]["index"] = 0;
-                             chunk["choices"][0]["delta"]["content"] = pending_data;
-                             std::string data = "data: " + chunk.dump() + "\n\n";
-                             sink.write(data.c_str(), data.length());
-                        }
-
-                        sink.write("data: [DONE]\n\n", 12);
-                        sink.done();
-                        return true;
-                    });
-            } else {
-                 completion_future.wait();
-                 std::string full_response;
-                 while (!batched_request->token_queue.empty()) {
-                     std::string t;
-                     if(batched_request->token_queue.wait_and_pop(t, 0)) full_response += t;
-                 }
-                 json response_json;
-                 response_json["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));
-                 response_json["object"] = "chat.completion";
-                 response_json["created"] = std::time(nullptr);
-                 response_json["model"] = "sentiric-llm";
-                 response_json["choices"][0]["index"] = 0;
-                 response_json["choices"][0]["message"]["role"] = "assistant";
-                 response_json["choices"][0]["message"]["content"] = full_response;
-                 response_json["choices"][0]["finish_reason"] = batched_request->finish_reason;
-                 response_json["usage"]["prompt_tokens"] = batched_request->prompt_tokens;
-                 response_json["usage"]["completion_tokens"] = batched_request->completion_tokens;
-                 response_json["usage"]["total_tokens"] = batched_request->prompt_tokens + batched_request->completion_tokens;
-                 res.set_content(response_json.dump(), "application/json");
-            }
-        } catch (const std::exception& e) {
-            spdlog::error("HTTP handler error: {}", e.what());
-            res.status = 400;
-            res.set_content(json({{"error", e.what()}}).dump(), "application/json");
-        }
+        chat_controller_->handle_chat_completions(req, res);
     });
     
     svr_.Get(R"(/context/(.+))", [](const httplib::Request &req, httplib::Response &res) {
