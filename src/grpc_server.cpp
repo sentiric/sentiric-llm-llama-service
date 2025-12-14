@@ -1,6 +1,21 @@
 #include "grpc_server.h"
 #include "spdlog/spdlog.h"
 #include <atomic>
+#include <algorithm>
+#include <vector>
+
+// Yardımcı Fonksiyon: Token Temizleme (ChatController'daki mantığın aynısı)
+// Model bazen 0x00 (Null) veya kontrol karakterleri üretebilir. Bunlar gRPC stream'i bozmaz
+// ama CLI ve Client tarafında işlemeyi zorlaştırır.
+std::string sanitize_token_grpc(const std::string& input) {
+    std::string clean = input;
+    clean.erase(std::remove_if(clean.begin(), clean.end(), [](unsigned char c) {
+        // 0-31 arası kontrol karakterlerini sil (Tab, Newline ve Carriage Return hariç)
+        // Ve 127 (DEL) karakterini sil.
+        return (c < 32 && c != 9 && c != 10 && c != 13) || c == 127;
+    }), clean.end());
+    return clean;
+}
 
 GrpcServer::GrpcServer(std::shared_ptr<LLMEngine> engine, AppMetrics& metrics)
     : engine_(std::move(engine)), metrics_(metrics) {}
@@ -32,11 +47,18 @@ grpc::Status GrpcServer::GenerateStream(
     auto batched_request = std::make_shared<BatchedRequest>();
     batched_request->request = *request;
     
-    batched_request->on_token_callback = [&](const std::string& token) -> bool {
+    // Callback içinde sanitasyon yapıyoruz
+    batched_request->on_token_callback = [&](const std::string& raw_token) -> bool {
+        std::string clean_token = sanitize_token_grpc(raw_token);
+        
+        // Eğer token sadece silinen karakterlerden oluşuyorsa (örn: sadece NULL byte),
+        // boş string göndermeye gerek yok, true dönüp devam et.
+        if (clean_token.empty()) {
+            return true; 
+        }
+
         sentiric::llm::v1::GenerateStreamResponse response; 
-        // [DEĞİŞİKLİK] Protobuf alan adı aynı (token) ancak tipi bytes. 
-        // C++'da string bytes uyumludur, ancak UTF-8 validasyonu yapılmaz.
-        response.set_token(token);
+        response.set_token(clean_token);
         return writer->Write(response);
     };
 
@@ -56,7 +78,6 @@ grpc::Status GrpcServer::GenerateStream(
         batched_request->finish_reason = "error";
     }
 
-    
     sentiric::llm::v1::GenerateStreamResponse final_response; 
     auto* details = final_response.mutable_finish_details();
     details->set_finish_reason(batched_request->finish_reason);

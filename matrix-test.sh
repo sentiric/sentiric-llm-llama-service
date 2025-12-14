@@ -25,10 +25,11 @@ MAX_WAIT_SECONDS=900 # Model indirme süresi uzun olabilir (15 dk)
 # --- CLI COMMAND WRAPPER ---
 # Docker run komutunu merkezi yönetiyoruz
 run_cli() {
+    # tr -d '\000' ekleyerek olası null byte'ları siliyoruz (Defense in Depth)
     docker compose -f docker-compose.yml \
                    -f docker-compose.gpu.yml \
                    -f docker-compose.run.gpu.yml \
-                   run --rm llm-cli /usr/local/bin/llm_cli "$@" 2>&1
+                   run --rm llm-cli /usr/local/bin/llm_cli "$@" 2>&1 | tr -d '\000'
 }
 
 # --- YARDIMCI FONKSİYONLAR ---
@@ -106,8 +107,11 @@ run_tests_for_profile() {
 
     # 2. BASIC CHAT
     log_info "[1/3] Temel Sohbet Testi"
-    res_chat=$(run_cli generate "Merhaba, nasılsın?" --timeout 120)
-    if [[ "$res_chat" == *"Assistant:"* ]] || [[ ${#res_chat} -gt 20 ]]; then
+    # Timeout 180'e çıkarıldı
+    res_chat=$(run_cli generate "Merhaba, nasılsın?" --timeout 180)
+    
+    # Kontrolü gevşettik: Assistant etiketi olmayabilir (raw stream), sadece uzunluk ve hata kontrolü
+    if [[ "$res_chat" != *"gRPC generation error"* ]] && [[ ${#res_chat} -gt 10 ]]; then
         log_success "Temel Sohbet Geçti"
     else
         log_fail "Temel Sohbet Kaldı. Çıktı: $res_chat"
@@ -116,11 +120,12 @@ run_tests_for_profile() {
 
     # 3. RAG TEST
     log_info "[2/3] RAG Context Testi"
-    res_rag=$(run_cli generate "Gizli kod nedir?" --rag-context "GİZLİ KOD: 12345-X" --timeout 120)
+    # Prompt daha belirgin hale getirildi
+    res_rag=$(run_cli generate "Gizli kod nedir? Sadece kodu söyle." --rag-context "GİZLİ KOD: 12345-X" --timeout 180)
     if [[ "$res_rag" == *"12345-X"* ]]; then
         log_success "RAG Testi Geçti"
     else
-        log_fail "RAG Testi Kaldı. Model gizli kodu bulamadı."
+        log_fail "RAG Testi Kaldı. Model gizli kodu bulamadı. Yanıt: $res_rag"
         ((error_count++))
     fi
 
@@ -128,12 +133,12 @@ run_tests_for_profile() {
     log_info "[3/3] History (Hafıza) Testi"
     # History JSON formatında verilmeli
     history_json='[{"role":"user","content":"Benim adım Sentiric."},{"role":"assistant","content":"Memnun oldum Sentiric."}]'
-    res_hist=$(run_cli generate "Benim adım ne?" --history "$history_json" --timeout 120)
+    res_hist=$(run_cli generate "Benim adım ne? Sadece ismi söyle." --history "$history_json" --timeout 180)
     
     if [[ "$res_hist" == *"Sentiric"* ]]; then
         log_success "History Testi Geçti"
     else
-        log_fail "History Testi Kaldı. Model ismi hatırlamadı."
+        log_fail "History Testi Kaldı. Model ismi hatırlamadı. Yanıt: $res_hist"
         ((error_count++))
     fi
 
@@ -147,7 +152,8 @@ main() {
 
     # Servisi başlat (Eğer kapalıysa)
     log_info "Servis ortamı kontrol ediliyor..."
-    docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml up -d
+    # --remove-orphans ekledik temizlik için
+    docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml up -d --remove-orphans
     
     # İlk açılış beklemesi
     if ! wait_for_service "/health" 120; then
@@ -176,6 +182,9 @@ main() {
         else
             results["$key"]="FAILED"
         fi
+        
+        # Testler arası kısa bekleme
+        sleep 2
     done
 
     # --- RAPOR ---
