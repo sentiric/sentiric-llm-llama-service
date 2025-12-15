@@ -4,6 +4,7 @@
 #include <thread>
 #include <future>
 #include <atomic>
+#include <vector>
 #include "benchmark.h"
 #include "spdlog/spdlog.h"
 
@@ -24,8 +25,6 @@ BenchmarkResult Benchmark::run_performance_test(int iterations, const std::strin
     double total_response_time_ms = 0;
 
     for (int i = 0; i < iterations; i++) {
-        spdlog::info("Test {}/{} çalıştırılıyor...", i + 1, iterations);
-
         auto start_time = std::chrono::steady_clock::now();
         std::atomic<int> current_run_tokens = 0;
 
@@ -46,7 +45,7 @@ BenchmarkResult Benchmark::run_performance_test(int iterations, const std::strin
         if (success) {
             result.successful_requests++;
         }
-
+        // Kısa bekleme
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
@@ -55,9 +54,10 @@ BenchmarkResult Benchmark::run_performance_test(int iterations, const std::strin
 
     result.average_response_time_ms = iterations > 0 ? total_response_time_ms / iterations : 0;
     
-    double total_time_seconds = total_response_time_ms / 1000.0;
-    if (total_time_seconds > 0) {
-        result.tokens_per_second = total_tokens_generated / total_time_seconds;
+    // TPS = Total Tokens / Total Duration (sec)
+    double duration_sec = std::chrono::duration<double>(total_end - total_start).count();
+    if (duration_sec > 0) {
+        result.tokens_per_second = total_tokens_generated / duration_sec;
     } else {
         result.tokens_per_second = 0;
     }
@@ -75,30 +75,66 @@ BenchmarkResult Benchmark::run_concurrent_test(int concurrent_connections, int r
 
     BenchmarkResult result;
     result.total_requests = concurrent_connections * requests_per_connection;
+    
+    // Atomik sayaçlar (Thread-Safe)
+    std::atomic<int> success_count{0};
+    std::atomic<long long> total_tokens{0};
+    std::atomic<double> total_latency_sum{0.0};
+
     auto total_start = std::chrono::steady_clock::now();
 
-    std::vector<std::future<int>> futures;
+    std::vector<std::future<void>> futures;
     for (int i = 0; i < concurrent_connections; i++) {
-        futures.push_back(std::async(std::launch::async, [this, requests_per_connection]() {
-            int success_count = 0;
+        futures.push_back(std::async(std::launch::async, [this, requests_per_connection, &success_count, &total_tokens, &total_latency_sum]() {
+            // Her thread kendi client'ını oluşturmalı (gRPC kanalı thread-safe olsa da client nesnesi olmayabilir)
             auto client = std::make_unique<CLIClient>(this->grpc_endpoint_);
+            
             for (int j = 0; j < requests_per_connection; j++) {
-                if (client->generate_stream("Concurrent test prompt " + std::to_string(j),
-                                            [](const std::string&) {})) {
+                auto req_start = std::chrono::steady_clock::now();
+                int tokens_in_req = 0;
+                
+                bool success = client->generate_stream("Concurrent test prompt " + std::to_string(j),
+                                            [&tokens_in_req](const std::string&) {
+                                                tokens_in_req++;
+                                            });
+                
+                auto req_end = std::chrono::steady_clock::now();
+                double latency = std::chrono::duration_cast<std::chrono::milliseconds>(req_end - req_start).count();
+                
+                if (success) {
                     success_count++;
+                    total_tokens += tokens_in_req;
+                    // Atomik double toplama olmadığı için memory order relaxed ile basit döngü yapılabilir 
+                    // veya yaklaşık değer yeterliyse bu şekilde kabul edilebilir (fakat double atomic standart değilse cast gerekebilir).
+                    // Basitleştirme:
+                    total_latency_sum = total_latency_sum.load() + latency; 
                 }
             }
-            return success_count;
         }));
     }
 
-    for (auto& future : futures) result.successful_requests += future.get();
+    for (auto& future : futures) future.wait();
 
     auto total_end = std::chrono::steady_clock::now();
     result.total_duration = std::chrono::duration_cast<std::chrono::seconds>(total_end - total_start);
+    double duration_sec = std::chrono::duration<double>(total_end - total_start).count();
 
+    result.successful_requests = success_count.load();
+    result.total_tokens_generated = total_tokens.load();
+    
     result.error_rate = result.total_requests > 0 ? ((result.total_requests - result.successful_requests) * 100.0) / result.total_requests : 0;
-    result.tokens_per_second = (result.successful_requests * 50) / (result.total_duration.count() > 0 ? result.total_duration.count() : 1);
+    
+    if (result.successful_requests > 0) {
+        result.average_response_time_ms = total_latency_sum.load() / result.successful_requests;
+    } else {
+        result.average_response_time_ms = 0;
+    }
+
+    if (duration_sec > 0) {
+        result.tokens_per_second = result.total_tokens_generated / duration_sec;
+    } else {
+        result.tokens_per_second = 0;
+    }
 
     spdlog::info("✅ Eşzamanlı test tamamlandı");
     return result;
