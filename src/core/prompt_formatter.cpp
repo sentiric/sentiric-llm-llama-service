@@ -28,22 +28,29 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
     }
 
     // 2. Mesajları hazırla
-    // KRİTİK DÜZELTME: std::vector<std::string> kullanıldığında, push_back yapıldıkça
-    // vector resize olur ve önceki stringlerin bellek adresleri değişir (Invalid Pointer).
-    // std::list kullanarak stringlerin bellekte sabit kalmasını garanti ediyoruz.
     std::list<std::string> content_storage; 
     std::vector<llama_chat_message> messages;
     
-    // --- System Prompt & RAG ---
+    // --- System Prompt & RAG (PROMPT ENGINEERING İYİLEŞTİRMESİ) ---
     std::string effective_system_prompt = request.system_prompt();
+    
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        if (!effective_system_prompt.empty()) effective_system_prompt += "\n\n";
-        effective_system_prompt += "CONTEXT DATA:\n" + request.rag_context();
+        // Küçük modellerin context'i ayırt etmesi için daha belirgin ayraçlar
+        std::stringstream ss;
+        if (!effective_system_prompt.empty()) {
+            ss << effective_system_prompt << "\n\n";
+        }
+        
+        ss << "### CONTEXT DATA (Use this to answer):\n" 
+           << request.rag_context() 
+           << "\n\n### INSTRUCTIONS:\n"
+           << "Answer the user's question using ONLY the context above. If the answer is not in the context, say you don't know.";
+           
+        effective_system_prompt = ss.str();
     }
 
     if (!effective_system_prompt.empty()) {
         content_storage.push_back(effective_system_prompt);
-        // list::back() referansı asla geçersiz kalmaz (list eleman silinmediği sürece)
         messages.push_back({"system", content_storage.back().c_str()});
     }
 
@@ -61,7 +68,6 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
     }
 
     // 3. Template Uygula (Native API)
-    // add_generation_prompt=true: Modelin cevaba başlaması için gerekli tokenları ekler.
     int32_t required_size = llama_chat_apply_template(
         template_to_use.c_str(), 
         messages.data(), 
@@ -73,7 +79,6 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
 
     if (required_size < 0) {
         spdlog::error("❌ llama_chat_apply_template failed. Model template might be broken.");
-        // Fallback: Raw concatenation (En kötü senaryo)
         std::ostringstream oss;
         if(!effective_system_prompt.empty()) oss << effective_system_prompt << "\n";
         oss << request.user_prompt();
