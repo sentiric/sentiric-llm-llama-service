@@ -4,7 +4,7 @@
 #include <cstring>
 #include <sstream>
 #include <iostream>
-#include <list> // Vector yerine List kullanımı (Pointer Stability)
+#include <list> 
 
 std::unique_ptr<PromptFormatter> create_formatter() {
     spdlog::info("Creating NativeTemplateFormatter (strict GGUF adherence)");
@@ -14,7 +14,6 @@ std::unique_ptr<PromptFormatter> create_formatter() {
 std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model) const {
     if (!model) return "";
 
-    // 1. Modelin kendi şablonunu al
     std::vector<char> tmpl_buf(4096); 
     int32_t tmpl_len = llama_model_meta_val_str(model, "tokenizer.chat_template", tmpl_buf.data(), tmpl_buf.size());
 
@@ -22,35 +21,39 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
     if (tmpl_len > 0) {
         template_to_use = std::string(tmpl_buf.data());
     } else {
-        // Modelde şablon yoksa, temel bir ChatML varsayımı yapabiliriz ama loglayalım.
         spdlog::warn("⚠️ Model metadata missing 'tokenizer.chat_template'. Falling back to generic ChatML.");
         template_to_use = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";
     }
 
-    // 2. Mesajları hazırla
     std::list<std::string> content_storage; 
     std::vector<llama_chat_message> messages;
     
-    // --- System Prompt & RAG (PROMPT ENGINEERING İYİLEŞTİRMESİ) ---
-    std::string effective_system_prompt = request.system_prompt();
-    
+    // --- System Prompt & RAG Logic ---
+    std::string base_system = request.system_prompt();
+    std::string final_system_content;
+
+    // RAG varsa daha katı ve yapılandırılmış bir prompt kullan
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        // Küçük modellerin context'i ayırt etmesi için daha belirgin ayraçlar
         std::stringstream ss;
-        if (!effective_system_prompt.empty()) {
-            ss << effective_system_prompt << "\n\n";
+        if (!base_system.empty()) {
+            ss << base_system << "\n\n";
         }
         
-        ss << "### CONTEXT DATA (Use this to answer):\n" 
+        // Bu yapı, Qwen ve Llama 3 için RAG performansını artırır
+        ss << "### CONTEXT / BILGI NOTU:\n" 
            << request.rag_context() 
-           << "\n\n### INSTRUCTIONS:\n"
-           << "Answer the user's question using ONLY the context above. If the answer is not in the context, say you don't know.";
+           << "\n\n### YONERGE:\n"
+           << "Kullanicinin sorusunu SADECE yukaridaki Context bilgilerini kullanarak cevapla. "
+           << "Bilgi context icinde yoksa 'Bilmiyorum' de. Asla uydurma.";
            
-        effective_system_prompt = ss.str();
+        final_system_content = ss.str();
+    } else {
+        // RAG yoksa, sadece varsa system prompt'u kullan
+        final_system_content = base_system;
     }
 
-    if (!effective_system_prompt.empty()) {
-        content_storage.push_back(effective_system_prompt);
+    if (!final_system_content.empty()) {
+        content_storage.push_back(final_system_content);
         messages.push_back({"system", content_storage.back().c_str()});
     }
 
@@ -67,7 +70,7 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
         messages.push_back({"user", content_storage.back().c_str()});
     }
 
-    // 3. Template Uygula (Native API)
+    // Apply Template
     int32_t required_size = llama_chat_apply_template(
         template_to_use.c_str(), 
         messages.data(), 
@@ -78,9 +81,9 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
     );
 
     if (required_size < 0) {
-        spdlog::error("❌ llama_chat_apply_template failed. Model template might be broken.");
+        // Hata durumunda fallback
         std::ostringstream oss;
-        if(!effective_system_prompt.empty()) oss << effective_system_prompt << "\n";
+        if(!final_system_content.empty()) oss << final_system_content << "\n";
         oss << request.user_prompt();
         return oss.str();
     }

@@ -1,49 +1,49 @@
 {
-  "active_profile": "llama3_1b_q4",
+  "active_profile": "qwen25_3b_instruct",
   "profiles": {
-    "qwen3_4b_q5": {
-      "display_name": "Qwen 3 (4B, Q5_K_M)",
-      "description": "~2.8 GB VRAM. Akıl yürüten (Reasoning) yetenekli model.",
-      "category": "Reasoning",
-      "model_id": "Qwen/Qwen3-4B-GGUF",
-      "filename": "Qwen3-4B-Q5_K_M.gguf",
+    "qwen25_3b_instruct": {
+      "display_name": "Qwen 2.5 (3B Instruct) - 🏆 ÖNERİLEN",
+      "description": "~2.4 GB VRAM. Şu an piyasadaki en iyi küçük model. Türkçe ve RAG performansı mükemmel.",
+      "category": "Production",
+      "model_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+      "filename": "qwen2.5-3b-instruct-q5_k_m.gguf",
       "context_size": 8192,
       "gpu_layers": 100,
-      "temperature": 0.6,
-      "system_prompt": "Sen yardımsever ve zeki bir asistansın. Türkçe cevap ver."
+      "temperature": 0.3,
+      "system_prompt": "Sen yardımsever bir müşteri hizmetleri asistanısın. Verilen bilgilere sadık kal."
     },
-    "gemma3_1b_q8": {
-      "display_name": "Gemma 3 (1B, Q8_0)",
-      "description": "~1.8 GB VRAM. Çok hızlı, düşük kaynak.",
-      "category": "Speed",
-      "model_id": "ggml-org/gemma-3-1b-it-GGUF",
-      "filename": "gemma-3-1b-it-Q8_0.gguf",
+    "llama32_3b_instruct": {
+      "display_name": "Llama 3.2 (3B Instruct)",
+      "description": "~2.2 GB VRAM. Meta'nın en son küçük modeli. Hızlı ve dengeli.",
+      "category": "Balanced",
+      "model_id": "bartowski/Llama-3.2-3B-Instruct-GGUF",
+      "filename": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+      "context_size": 8192,
+      "gpu_layers": 100,
+      "temperature": 0.5,
+      "system_prompt": "Sen yardımsever bir asistansın."
+    },
+    "phi35_mini_instruct": {
+      "display_name": "Phi-3.5 Mini (3.8B)",
+      "description": "~2.5 GB VRAM. Microsoft'un mantık ve RAG canavarı. Biraz robotik konuşabilir.",
+      "category": "Reasoning",
+      "model_id": "bartowski/Phi-3.5-mini-instruct-GGUF",
+      "filename": "Phi-3.5-mini-instruct-Q4_K_M.gguf",
       "context_size": 4096,
       "gpu_layers": 100,
-      "temperature": 0.7,
-      "system_prompt": "Sen yardımsever bir asistansın."
+      "temperature": 0.1,
+      "system_prompt": "You are a helpful assistant."
     },
-    "llama3_1b_q4": {
-      "display_name": "Llama 3.2 (1B, Q4_K_M)",
-      "description": "~0.8 GB VRAM. Ultra hafif.",
-      "category": "Speed",
-      "model_id": "bartowski/Llama-3.2-1B-Instruct-GGUF",
-      "filename": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-      "context_size": 8192,
-      "gpu_layers": 100,
-      "temperature": 0.6,
-      "system_prompt": "Sen yardımsever bir asistansın."
-    },
-    "phi3_mini_4k_q4": {
-      "display_name": "Phi-3 Mini (3.8B, Q4_K_M)",
-      "description": "~2.2 GB VRAM. Kodlama ve mantıkta güçlü.",
-      "category": "Coding",
-      "model_id": "microsoft/Phi-3-mini-4k-instruct-gguf",
-      "filename": "Phi-3-mini-4k-instruct-q4.gguf",
+    "mistral_nemo_minitron": {
+      "display_name": "Minitron 4B",
+      "description": "~2.8 GB VRAM. Nvidia tarafından optimize edilmiş RAG modeli.",
+      "category": "Experimental",
+      "model_id": "bartowski/Minitron-4B-Base-GGUF",
+      "filename": "Minitron-4B-Base-Q5_K_M.gguf",
       "context_size": 4096,
       "gpu_layers": 100,
       "temperature": 0.5,
-      "system_prompt": "Sen uzman bir yazılım mühendisisin."
+      "system_prompt": "Sen bir asistansın."
     }
   }
 }

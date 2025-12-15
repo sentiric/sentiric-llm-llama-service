@@ -19,19 +19,18 @@ struct Settings {
     int metrics_port = 16072;
 
     // Model & Profiles
-    std::string profile_name = "default";
+    // VARSAYILAN PROFİL DEĞİŞTİRİLDİ -> Qwen 2.5 3B
+    std::string profile_name = "qwen25_3b_instruct"; 
     std::string model_dir = "/models";
     std::string model_id = "";
     std::string model_filename = "";
     std::string model_path = "";
     std::string legacy_model_path = "";
-    // [YENİ] Model indirme şablonu
     std::string model_url_template = "https://huggingface.co/{model_id}/resolve/main/{filename}";
     
     // --- PROMPT CONFIGURATION ---
     std::string default_system_prompt = "You are a helpful assistant."; 
     
-    // Reasoning Instructions
     std::string reasoning_prompt_low = "\n[INSTRUCTION]: Think briefly before answering. Enclose thoughts in <think> tags.";
     std::string reasoning_prompt_high = "\n[INSTRUCTION]: This is a complex task. Think deeply step-by-step. Analyze the problem, check for edge cases, and enclose your full reasoning process in <think> tags before answering.";
 
@@ -41,15 +40,12 @@ struct Settings {
     uint32_t n_threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
     uint32_t n_threads_batch = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
     
-    // [YENİ] Fiziksel Batch Size (Prompt Processing Hızı İçin)
-    // 512 güvenli bir varsayılan, GPU'da 2048+ olabilir.
     uint32_t physical_batch_size = 512; 
 
     ggml_numa_strategy numa_strategy = GGML_NUMA_STRATEGY_DISABLED;
     bool use_mmap = true;
     bool kv_offload = true;
     
-    // Logging
     std::string log_level = "info";
 
     // Sampling Defaults
@@ -59,25 +55,20 @@ struct Settings {
     float default_repeat_penalty = 1.1f;
     int32_t default_max_tokens = 1024;
 
-    // Security (mTLS)
     std::string grpc_ca_path = "";
     std::string grpc_cert_path = "";
     std::string grpc_key_path = "";
     
-    // Dynamic Batching
     bool enable_dynamic_batching = true;
     size_t max_batch_size = 8;
     int batch_timeout_ms = 5;
     
-    // Warm-up
     bool enable_warm_up = true;
 
-    // Gateway
     std::string worker_id = "worker-default";
     std::string worker_group = "default-group";
     std::string gateway_address = "";
 
-    // Serialization for UI
     nlohmann::json to_json() const {
         return {
             {"gpu_layers", n_gpu_layers},
@@ -92,7 +83,6 @@ struct Settings {
     }
 };
 
-// Profil dosyasını okuyup ayarları güncelleyen yardımcı fonksiyon.
 inline bool apply_profile(Settings& s, const std::string& profile_name_override) {
     namespace fs = std::filesystem;
     using json = nlohmann::json;
@@ -128,7 +118,6 @@ inline bool apply_profile(Settings& s, const std::string& profile_name_override)
             if(p.contains("gpu_layers")) s.n_gpu_layers = p["gpu_layers"];
             if(p.contains("temperature")) s.default_temperature = p["temperature"];
             
-            // System Prompt Overrides
             if(p.contains("system_prompt")) s.default_system_prompt = p["system_prompt"];
             
             if(p.contains("use_mmap")) s.use_mmap = p["use_mmap"];
@@ -174,14 +163,12 @@ inline Settings load_settings() {
         return val == "true" || val == "1";
     };
     
-    // Base Environment Configs
     s.host = get_env_var("LLM_LLAMA_SERVICE_LISTEN_ADDRESS", s.host);
     s.http_port = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_PORT", s.http_port);
     s.grpc_port = get_env_var_as_int("LLM_LLAMA_SERVICE_GRPC_PORT", s.grpc_port);
     s.metrics_port = get_env_var_as_int("LLM_LLAMA_SERVICE_METRICS_PORT", s.metrics_port);
     s.model_dir = get_env_var("LLM_LLAMA_SERVICE_MODEL_DIR", s.model_dir);
     
-    // Default values from Env
     s.model_id = get_env_var("LLM_LLAMA_SERVICE_MODEL_ID", s.model_id);
     s.model_filename = get_env_var("LLM_LLAMA_SERVICE_MODEL_FILENAME", s.model_filename);
     s.n_gpu_layers = get_env_var_as_int("LLM_LLAMA_SERVICE_GPU_LAYERS", s.n_gpu_layers);
@@ -208,7 +195,6 @@ inline Settings load_settings() {
     s.max_batch_size = get_env_var_as_uint("LLM_LLAMA_SERVICE_MAX_BATCH_SIZE", s.max_batch_size);
     s.batch_timeout_ms = get_env_var_as_int("LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS", s.batch_timeout_ms);
     
-    // [YENİ]
     s.physical_batch_size = get_env_var_as_uint("LLM_LLAMA_SERVICE_PHYSICAL_BATCH_SIZE", s.physical_batch_size);
     s.model_url_template = get_env_var("LLM_LLAMA_SERVICE_MODEL_URL_TEMPLATE", s.model_url_template);
 
