@@ -1,68 +1,22 @@
-# 🏗️ Sistem Mimarisi (Rev. 2)
+# 🏗️ Sistem Mimarisi (v2.5)
 
-## 1. Sistem Diyagramı
+## 1. Modüler Controller Yapısı
 
-Servis, gelen istemci isteklerini işleyen, bir model motoru aracılığıyla token üreten ve bu token'ları stream eden bir yapıdır. Eşzamanlılık, bir `LlamaContextPool` tarafından yönetilir.
+v2.5 ile birlikte monolitik yapı terk edilmiş ve **Separation of Concerns (SoC)** prensibine göre sorumluluklar dağıtılmıştır:
 
-```mermaid
-graph TD
-    subgraph Clients
-        A[llm_cli]
-        B[Python Client]
-        C[llm-gateway]
-    end
+-   **`SystemController`:** Donanım ayarları, sağlık kontrolü ve statik dosya sunumu (Güvenlikli).
+-   **`ModelController`:** Model indirme, profil değiştirme ve validasyon.
+-   **`ChatController`:** İstek işleme, prompt formatlama ve streaming yanıt yönetimi.
 
-    subgraph LLM Service Container
-        direction LR
-        subgraph "API Endpoints"
-            gRPC_Server[gRPC Server (mTLS)]
-            HTTP_Server[HTTP Server (Health)]
-        end
+## 2. Dynamic Batcher ve TTFT
 
-        LLM_Engine[LLM Engine]
-        
-        subgraph "Concurrency Management"
-            LlamaContextPool(Llama Context Pool)
-        end
+Sistem, gelen istekleri anında işlemek yerine (Naive approach), milisaniyeler mertebesinde (varsayılan 5ms) bekleyerek gruplar (`DynamicBatcher`).
 
-        gRPC_Server --> LLM_Engine
-        HTTP_Server --> LLM_Engine
-        LLM_Engine --> LlamaContextPool
-    end
+-   **Avantajı:** GPU'nun paralel işlem gücünden faydalanarak Throughput (TPS) artırılır.
+-   **Metrik:** Her istek için **Time-To-First-Token (TTFT)** ölçülür ve loglanır. Bu, telefon görüşmesindeki "sessizlik süresini" temsil ettiği için en kritik SLA metriğidir.
 
-    subgraph "llama.cpp Backend"
-        libllama[libllama.so + common]
-        ModelFile[(GGUF Model)]
-    end
-    
-    Clients -- gRPC / HTTP --> LLM Service Container
-    LlamaContextPool -- "Acquires/Releases Context" --> libllama
-    libllama -- "Loads/Interacts" --> ModelFile
+## 3. Güvenlik Katmanı
 
-    classDef client fill:#d4edda,stroke:#155724
-    classDef service fill:#cce5ff,stroke:#004085
-    classDef backend fill:#f8d7da,stroke:#721c24
-    
-    class A,B,C client
-    class gRPC_Server,HTTP_Server,LLM_Engine,LlamaContextPool service
-    class libllama,ModelFile backend
+-   **Path Traversal Koruması:** `SystemController` içinde `std::filesystem::canonical` kullanılarak, dosya sistemi üzerinden yetkisiz erişimler (örn: `../../.env`) engellenmiştir.
+-   **Input Sanitization:** `ChatController`, gelen tokenlardaki geçersiz UTF-8 karakterlerini ve kontrol karakterlerini temizler.
 ```
-
-## 2. Eşzamanlılık Modeli (Concurrency)
-
-Mimari, bir **context havuzu (`LlamaContextPool`)** kullanarak gerçek eşzamanlılık sağlar. Bu, servisin en kritik performans bileşenidir.
-
--   **İlklendirme:** Servis başladığında, `LLM_LLAMA_SERVICE_THREADS` ortam değişkeni ile belirlenen sayıda `llama_context` oluşturulur ve havuza eklenir.
--   **İstek İşleme:** Her gelen gRPC isteği, havuzdan boşta bir `llama_context` "kiralar". Bu sırada diğer istekler, havuzdaki diğer boş context'leri kullanarak **paralel olarak** işlenir.
--   **Kaynak İadesi ve Temizlik (Kritik Adım):** İşlem bittiğinde veya istemci bağlantıyı kapattığında, kullanılan context'in KV cache'i `llama_memory_seq_rm(llama_get_memory(ctx_), -1, -1, -1);` çağrısı ile **mutlaka temizlenir** ve context tekrar havuza bırakılır. Bu, bir sonraki isteğin, önceki isteğin "hafızası" olmadan temiz bir state ile başlamasını garanti eder. Bu adımın atlanması, state sızıntısına (state leak) ve hatalı çıktılara yol açar.
-
-## 3. Build ve Bağımlılık Mimarisi
-
-Sistem, bağımlılıkları derleme anında çözümleyen, taşınabilir ve kendi kendine yeten (self-contained) bir Docker imaj yapısı kullanır.
-
-1.  **vcpkg Kurulumu:** `vcpkg` paket yöneticisi, `vcpkg.json` dosyasında belirtilen C++ kütüphanelerini (`gRPC`, `spdlog` vb.) derler.
-2.  **`llama.cpp` Klonlama:** `Dockerfile` içinde belirtilen **sabit bir commit hash'i** kullanılarak `ggerganov/llama.cpp` reposu klonlanır. Bu, tekrarlanabilir ve stabil build'leri garanti eder.
-3.  **Uygulama Derlemesi:** Projenin ana kodu (`llm_service`, `llm_cli`), `vcpkg` kütüphanelerine ve anlık derlenen `llama` ve `common` kütüphanelerine karşı derlenir. `CMakeLists.txt`, `LLAMA_BUILD_COMMON=ON` bayrağını ayarlayarak `common` kütüphanesinin derlenmesini zorunlu kılar.
-4.  **Runtime İmajı:** Minimal bir `ubuntu` veya `nvidia/cuda` runtime imajı üzerine sadece çalıştırılabilir dosyalar ve `llama.cpp`'nin gerektirdiği paylaşılan kütüphaneler (`*.so`) kopyalanır ve `ldconfig` ile linklenir.
-
----

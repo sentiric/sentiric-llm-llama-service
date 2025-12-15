@@ -1,52 +1,44 @@
-# ⚙️ Yapılandırma Rehberi (v2.0)
+# ⚙️ Yapılandırma Rehberi
 
-Bu servis, `docker-compose.yml` dosyası veya doğrudan sistem ortam değişkenleri aracılığıyla yapılandırılır.
+Bu servis iki katmanlı bir yapılandırma kullanır:
+1.  **Profil (`profiles.json`):** Modelin zekasını ve karakterini belirler.
+2.  **Ortam (`.env`):** Donanım kaynaklarını ve ağ ayarlarını belirler.
 
-### Sistem ve Loglama
-| Değişken | Açıklama | Varsayılan Değer |
+---
+
+### 1. Profil Seçimi
+
+Varsayılan profil: `qwen25_3b_phone_assistant` (src/config.h içinde hardcoded).
+Bu profil, **Telefon Asistanı** senaryosu için optimize edilmiştir:
+-   Düşük `temperature` (0.2) ile halüsinasyon riskini azaltır.
+-   Türkçe talimatlarla güçlendirilmiş System Prompt kullanır.
+
+Gelecekte farklı bir profil seçmek için `LLM_LLAMA_SERVICE_PROFILE` değişkeni eklenecektir (Roadmap).
+
+### 2. RAG Konfigürasyonu
+
+RAG (Retrieval Augmented Generation) için özel bir ayar yapmanıza gerek yoktur.
+Sistem, gRPC veya HTTP isteği içinde `rag_context` alanı dolu gelirse, otomatik olarak **"RAG Modu"**na geçer ve `PromptFormatter` şu şablonu uygular:
+
+```text
+### CONTEXT / BILGI NOTU:
+[Gelen rag_context verisi]
+
+### YONERGE:
+Kullanicinin sorusunu SADECE yukaridaki Context bilgilerini kullanarak cevapla...
+```
+
+Bu yapı, Qwen 2.5 modelinin dış bilgiye sadık kalmasını garanti eder.
+
+### 3. GPU Bellek Yönetimi (VRAM)
+
+**Qwen 2.5 3B Modeli için Kaynak Tüketimi:**
+
+| Ayar | Değer | VRAM Kullanımı (Yaklaşık) |
 |---|---|---|
-| `ENV` | Çalışma ortamı (`development` veya `production`). `production` modunda loglar JSON formatındadır. | `development` |
-| `LLM_LLAMA_SERVICE_LOG_LEVEL` | Log seviyesi: `trace`, `debug`, `info`, `warn`, `error`. | `info` |
+| Model Ağırlıkları | Q5_K_M | ~2.4 GB |
+| KV Cache (Context) | 8192 Token | ~0.5 GB (Kullanıcı başına) |
+| **Toplam (4 Kullanıcı)** | | **~4.5 GB** |
 
-### Network
-| Değişken | Açıklama | Varsayılan Değer |
-|---|---|---|
-| `LLM_LLAMA_SERVICE_LISTEN_ADDRESS`| Servisin dinleyeceği IP adresi. | `0.0.0.0` |
-| `LLM_LLAMA_SERVICE_HTTP_PORT` | HTTP health check sunucusunun portu. | `16070` |
-| `LLM_LLAMA_SERVICE_GRPC_PORT` | gRPC sunucusunun portu. | `16071` |
-| `LLM_LLAMA_SERVICE_METRICS_PORT`| Prometheus metrikleri için port. | `16072`|
-
-### Model Yönetimi
-| Değişken | Açıklama | Varsayılan Değer |
-|---|---|---|
-| `LLM_LLAMA_SERVICE_MODEL_DIR` | Modellerin saklanacağı dizin. | `/models` |
-| `LLM_LLAMA_SERVICE_MODEL_ID` | Hugging Face repo ID'si. | `ggml-org/gemma-3-4b-it-GGUF`|
-| `LLM_LLAMA_SERVICE_MODEL_FILENAME`| İndirilecek GGUF dosyasının adı. | `gemma-3-4b-it-Q4_K_M.gguf` |
-
-### Motor ve Performans Ayarları
-| Değişken | Açıklama | Varsayılan Değer |
-|---|---|---|
-| `LLM_LLAMA_SERVICE_GPU_LAYERS` | GPU'ya yüklenecek model katmanı sayısı. `0` sadece CPU, `-1` tüm katmanlar. | `0` |
-| `LLM_LLAMA_SERVICE_CONTEXT_SIZE` | Modelin maksimum context penceresi. | `8192` |
-| `LLM_LLAMA_SERVICE_THREADS` | Eş zamanlı işlenebilecek istek sayısı (`LlamaContextPool` boyutu). | `8` |
-| `LLM_LLAMA_SERVICE_THREADS_BATCH`| `llama.cpp`'nin batch işleme için kullanacağı thread sayısı. | `8` |
-| `LLM_LLAMA_SERVICE_USE_MMAP` | `true` ise, modelin tamamını RAM'e yüklemek yerine diskten okur. RAM'i kısıtlı sistemler için kritiktir. | `true` |
-| `LLM_LLAMA_SERVICE_KV_OFFLOAD` | `true` ise, KV cache'i GPU'ya (VRAM) yükler. Büyük context'lerde üretim hızını ciddi artırır. | `true` |
-| `LLM_LLAMA_SERVICE_NUMA` | Çoklu CPU soketli sunucular için NUMA stratejisi. (`disabled`, `dist`, `isolate`, `numactl`).| `disabled` |
-
-### Varsayılan Sampling Parametreleri
-*Bu değerler, gRPC isteğinde özel parametre gönderilmediğinde kullanılır.*
-| Değişken | Açıklama | Varsayılan Değer |
-|---|---|---|
-| `LLM_LLAMA_SERVICE_DEFAULT_MAX_TOKENS` | Maksimum üretilecek token sayısı. | `1024` |
-| `LLM_LLAMA_SERVICE_DEFAULT_TEMPERATURE`| Sampling sıcaklığı. | `0.8` |
-| `LLM_LLAMA_SERVICE_DEFAULT_TOP_K` | Top-K sampling değeri. | `40` |
-| `LLM_LLAMA_SERVICE_DEFAULT_TOP_P` | Top-P sampling değeri. | `0.95` |
-| `LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY`| Tekrar cezası. | `1.1` |
-
-### Güvenlik (mTLS)
-| Değişken | Açıklama |
-|---|---|
-| `GRPC_TLS_CA_PATH` | Kök sertifika (CA) dosyasının yolu. |
-| `LLM_LLAMA_SERVICE_CERT_PATH` | Sunucu sertifika zinciri dosyasının yolu. |
-| `LLM_LLAMA_SERVICE_KEY_PATH` | Sunucu özel anahtar dosyasının yolu. |
+**Önemli:** 6GB VRAM'li bir kartta (RTX 3060/4050) güvenle 4 eşzamanlı çağrı yönetebilirsiniz. Daha fazlası için `LLM_LLAMA_SERVICE_CONTEXT_SIZE` değerini 4096'ya düşürün.
+```
