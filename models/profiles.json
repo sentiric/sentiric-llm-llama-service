@@ -9,12 +9,12 @@
       "filename": "qwen2.5-3b-instruct-q5_k_m.gguf",
       "context_size": 8192,
       "gpu_layers": 100,
-      "temperature": 0.2,
+      "temperature": 0.1,
       "top_p": 0.9,
       "repeat_penalty": 1.1,
       "templates": {
         "system_prompt": "Sen yardımsever ve profesyonel bir çağrı merkezi asistanısın. Müşterinin sorularına kısa, net ve nazik cevaplar ver. Asla uydurma yapma. Sadece sana verilen bilgileri kullan.",
-        "rag_prompt": "### CRM / MÜŞTERİ BİLGİ EKRANI:\n{{rag_context}}\n\n### GÖREV:\nSen müşteri temsilcisisin. Ekranındaki (yukarıdaki) bilgileri kullanarak müşterinin sorusunu yanıtla. Bilgiyi doğrudan ve emin bir şekilde ver. Bilgi ekranda yoksa 'Sistemde bu bilgiye ulaşamıyorum' de."
+        "rag_prompt": "### MEVCUT MÜŞTERİ BİLGİLERİ (KESİN GERÇEK):\n{{rag_context}}\n\n### ANLIK TALİMAT:\n{{system_prompt}}\n\n### GÖREV:\nYukarıdaki müşteri bilgilerini kullanarak talimata uygun cevap ver. Bilgiler önünde açık, tekrar sorma. Doğrudan bilgiyi söyle."
       }
     },
     "qwen25_3b_coder": {
@@ -28,7 +28,7 @@
       "temperature": 0.6,
       "templates": {
         "system_prompt": "You are an expert AI programmer. Provide clean, efficient, and well-documented code.",
-        "rag_prompt": "### CONTEXT:\n{{rag_context}}\n\n### INSTRUCTION:\nAnswer the user's question using ONLY the context provided above. If the answer is not in the context, say 'I don't know'."
+        "rag_prompt": "### CONTEXT:\n{{rag_context}}\n\n### INSTRUCTION:\n{{system_prompt}}\n\nAnswer using ONLY the context provided."
       }
     }
   }
