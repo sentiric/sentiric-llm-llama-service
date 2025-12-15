@@ -17,6 +17,8 @@ struct Settings {
     int http_port = 16070;
     int grpc_port = 16071;
     int metrics_port = 16072;
+    // [YENİ] HTTP Thread Pool Boyutu
+    int http_threads = 50; 
 
     // Model & Profiles
     std::string profile_name = "qwen25_3b_phone_assistant"; 
@@ -31,7 +33,6 @@ struct Settings {
     std::string template_system_prompt = "You are a helpful assistant.";
     std::string template_rag_prompt = "Use the following context to answer the question:\nContext: {{rag_context}}\n\nQuestion: {{user_prompt}}";
     
-    // [FIX] ChatController için gerekli Reasoning Promptları geri eklendi
     std::string reasoning_prompt_low = "\n[INSTRUCTION]: Think briefly before answering. Enclose thoughts in <think> tags.";
     std::string reasoning_prompt_high = "\n[INSTRUCTION]: This is a complex task. Think deeply step-by-step. Analyze the problem, check for edge cases, and enclose your full reasoning process in <think> tags before answering.";
 
@@ -76,6 +77,7 @@ struct Settings {
             {"context_size", context_size},
             {"threads", n_threads},
             {"batch_size", max_batch_size},
+            {"http_threads", http_threads}, // [YENİ]
             {"physical_batch_size", physical_batch_size},
             {"kv_offload", kv_offload},
             {"use_mmap", use_mmap},
@@ -172,6 +174,8 @@ inline Settings load_settings() {
     s.http_port = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_PORT", s.http_port);
     s.grpc_port = get_env_var_as_int("LLM_LLAMA_SERVICE_GRPC_PORT", s.grpc_port);
     s.metrics_port = get_env_var_as_int("LLM_LLAMA_SERVICE_METRICS_PORT", s.metrics_port);
+    s.http_threads = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_THREADS", s.http_threads); // [YENİ]
+
     s.model_dir = get_env_var("LLM_LLAMA_SERVICE_MODEL_DIR", s.model_dir);
     
     s.model_id = get_env_var("LLM_LLAMA_SERVICE_MODEL_ID", s.model_id);
@@ -215,7 +219,6 @@ inline Settings load_settings() {
 
     apply_profile(s, ""); 
     
-    // Opsiyonel: Çevresel değişkenle ezme desteği (Gerekirse)
     s.template_system_prompt = get_env_var("LLM_LLAMA_SERVICE_DEFAULT_SYSTEM_PROMPT", s.template_system_prompt);
 
     return s;

@@ -22,9 +22,14 @@ void MetricsServer::stop() { if (svr_.is_running()) svr_.stop(); }
 void run_metrics_server_thread(std::shared_ptr<MetricsServer> server) { if (server) server->run(); }
 
 // --- HttpServer ---
-HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port)
+// [GÜNCELLEME] Thread havuzu ayarı eklendi
+HttpServer::HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port, int threads)
     : engine_(std::move(engine)), host_(host), port_(port) {
     
+    // HTTP Thread Pool Yapılandırması
+    svr_.new_task_queue = [threads] { return new httplib::ThreadPool(threads); };
+    spdlog::info("🌐 HTTP Server initialized with {} threads.", threads);
+
     // Controller başlatma
     chat_controller_ = std::make_unique<ChatController>(engine_);
     model_controller_ = std::make_unique<ModelController>(engine_);

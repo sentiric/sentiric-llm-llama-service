@@ -13,7 +13,6 @@
 
 #include "controllers/chat_controller.h"
 #include "controllers/model_controller.h"
-// YENİ EKLEME:
 #include "controllers/system_controller.h"
 
 struct AppMetrics {
@@ -40,7 +39,8 @@ void run_metrics_server_thread(std::shared_ptr<MetricsServer> server);
 
 class HttpServer {
 public:
-    HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port);
+    // [GÜNCELLEME] Thread count parametresi eklendi
+    HttpServer(std::shared_ptr<LLMEngine> engine, const std::string& host, int port, int threads = 50);
     void run();
     void stop();
 
@@ -51,7 +51,6 @@ private:
     // Controllers
     std::unique_ptr<ChatController> chat_controller_;
     std::unique_ptr<ModelController> model_controller_;
-    // YENİ EKLEME:
     std::unique_ptr<SystemController> system_controller_;
     
     std::string host_;

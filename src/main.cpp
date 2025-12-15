@@ -173,11 +173,10 @@ int main() {
         }
 
         // --- SET HEALTH STATUS TO SERVING ---
-        // Bu adım, Gateway'in bizi "Ready" olarak görmesini sağlar.
         auto health_service = grpc_server_ptr->GetHealthCheckService();
         if (health_service) {
             health_service->SetServingStatus("sentiric.llm.v1.LLMLocalService", true);
-            health_service->SetServingStatus("", true); // Genel servis durumu
+            health_service->SetServingStatus("", true); 
             spdlog::info("✅ gRPC Health Status set to SERVING. Ready for Gateway traffic.");
         } else {
             spdlog::warn("⚠️ gRPC Health Check Service could not be retrieved. Gateway discovery might fail.");
@@ -185,7 +184,8 @@ int main() {
 
         spdlog::info("🚀 gRPC server listening on {}", grpc_address);
 
-        http_server = std::make_shared<HttpServer>(engine, settings.host, settings.http_port);
+        // [GÜNCELLEME] Settings'den gelen http_threads parametresi geçiliyor
+        http_server = std::make_shared<HttpServer>(engine, settings.host, settings.http_port, settings.http_threads);
         metrics_server = std::make_shared<MetricsServer>(settings.host, settings.metrics_port, *registry);
         
         grpc_thread = std::thread(&grpc::Server::Wait, grpc_server_ptr.get());
@@ -196,6 +196,7 @@ int main() {
         spdlog::info("📊 Metrics available at http://{}:{}/metrics", settings.host, settings.metrics_port);
 
         auto shutdown_future = shutdown_promise.get_future();
+        
         shutdown_future.wait();
         
         spdlog::info("Shutting down servers...");
