@@ -36,7 +36,6 @@ std::string ChatController::sanitize_token(const std::string& input) {
 }
 
 std::string ChatController::get_reasoning_instruction(const std::string& level) {
-    // HARDCODE KALDIRILDI: Config üzerinden okunuyor.
     const auto& s = engine_->get_settings();
     if (level == "low") {
         return s.reasoning_prompt_low;
@@ -51,8 +50,8 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
     sentiric::llm::v1::GenerateStreamRequest grpc_request;
     const auto& settings = engine_->get_settings();
 
-    // System prompt'u belirle (Öncelik: Request -> Config -> Boş)
-    std::string system_prompt = settings.default_system_prompt;
+    // [FIX] default_system_prompt yerine template_system_prompt kullanılıyor
+    std::string system_prompt = settings.template_system_prompt;
 
     if (body.contains("messages") && body["messages"].is_array()) {
         const auto& messages = body["messages"];
@@ -105,14 +104,12 @@ void ChatController::handle_streaming_response(std::shared_ptr<BatchedRequest> b
                 std::string token;
                 if (batched_request->token_queue.wait_and_pop(token, 50)) {
                     
-                    // --- TTFT MEASUREMENT ---
                     if (!batched_request->first_token_emitted.exchange(true)) {
                         auto now = std::chrono::steady_clock::now();
                         std::chrono::duration<double, std::milli> ttft = now - batched_request->creation_time;
                         batched_request->ttft_ms = ttft.count();
                         spdlog::debug("[HTTP] ⚡ TTFT: {:.2f} ms", batched_request->ttft_ms.load());
                     }
-                    // ------------------------
 
                     std::string clean_token = sanitize_token(token);
                     if (clean_token.empty()) continue;
@@ -168,9 +165,6 @@ void ChatController::handle_unary_response(std::shared_ptr<BatchedRequest> batch
         if(batched_request->token_queue.wait_and_pop(t, 0)) full_response += t;
     }
     
-    // Unary request için TTFT'nin anlamı daha azdır ancak işleme başlama süresi olarak düşünülebilir.
-    // Burada batching bittiği için TTFT batched_request içinde zaten set edilmiş olabilir (token_queue'ya ilk push anı).
-
     json response_json;
     response_json["id"] = "chatcmpl-" + std::to_string(std::time(nullptr));
     response_json["object"] = "chat.completion";
@@ -187,7 +181,6 @@ void ChatController::handle_unary_response(std::shared_ptr<BatchedRequest> batch
 }
 
 void ChatController::handle_chat_completions(const httplib::Request &req, httplib::Response &res) {
-    // CORS Headerları HttpServer global middleware tarafından da set ediliyor ama controller seviyesinde garantiye alalım.
     res.set_header("Access-Control-Allow-Origin", "*");
     
     try {
@@ -208,7 +201,6 @@ void ChatController::handle_chat_completions(const httplib::Request &req, httpli
         batched_request->request = grpc_request;
 
         if (body.contains("response_format") && body["response_format"].value("type", "") == "json_object") {
-             // Basic JSON grammar (Generic)
              batched_request->grammar = R"(root ::= object; value ::= object | array | string | number | ("true" | "false" | "null") ws; object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws; array ::= "[" ws (value ("," ws value)*)? "]" ws; string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws; number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws; ws ::= [ \t\n\r]*)";
         } else if (body.contains("grammar")) {
             batched_request->grammar = body["grammar"].get<std::string>();

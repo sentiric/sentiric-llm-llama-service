@@ -31,6 +31,10 @@ struct Settings {
     std::string template_system_prompt = "You are a helpful assistant.";
     std::string template_rag_prompt = "Use the following context to answer the question:\nContext: {{rag_context}}\n\nQuestion: {{user_prompt}}";
     
+    // [FIX] ChatController için gerekli Reasoning Promptları geri eklendi
+    std::string reasoning_prompt_low = "\n[INSTRUCTION]: Think briefly before answering. Enclose thoughts in <think> tags.";
+    std::string reasoning_prompt_high = "\n[INSTRUCTION]: This is a complex task. Think deeply step-by-step. Analyze the problem, check for edge cases, and enclose your full reasoning process in <think> tags before answering.";
+
     // Engine & Performance
     int n_gpu_layers = 0;
     uint32_t context_size = 4096;
@@ -115,7 +119,6 @@ inline bool apply_profile(Settings& s, const std::string& profile_name_override)
             if(p.contains("gpu_layers")) s.n_gpu_layers = p["gpu_layers"];
             if(p.contains("temperature")) s.default_temperature = p["temperature"];
             
-            // --- YENİ: TEMPLATE OKUMA ---
             if (p.contains("templates")) {
                 const auto& templates = p["templates"];
                 s.template_system_prompt = templates.value("system_prompt", s.template_system_prompt);
@@ -187,9 +190,6 @@ inline Settings load_settings() {
     s.default_top_p = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_TOP_P", s.default_top_p);
     s.default_repeat_penalty = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY", s.default_repeat_penalty);
     
-    // Yorumlandı: Artık profilden geliyor.
-    // s.default_system_prompt = get_env_var("LLM_LLAMA_SERVICE_DEFAULT_SYSTEM_PROMPT", s.default_system_prompt);
-
     s.grpc_ca_path = get_env_var("GRPC_TLS_CA_PATH", s.grpc_ca_path);
     s.grpc_cert_path = get_env_var("LLM_LLAMA_SERVICE_CERT_PATH", s.grpc_cert_path);
     s.grpc_key_path = get_env_var("LLM_LLAMA_SERVICE_KEY_PATH", s.grpc_key_path);
@@ -213,12 +213,10 @@ inline Settings load_settings() {
         s.model_filename = p.filename().string();
     }
 
-    // Önce profili uygula
     apply_profile(s, ""); 
     
-    // Sonra .env override etsin (istenirse)
+    // Opsiyonel: Çevresel değişkenle ezme desteği (Gerekirse)
     s.template_system_prompt = get_env_var("LLM_LLAMA_SERVICE_DEFAULT_SYSTEM_PROMPT", s.template_system_prompt);
-
 
     return s;
 };

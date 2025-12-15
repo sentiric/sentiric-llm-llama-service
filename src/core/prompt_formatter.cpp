@@ -37,8 +37,8 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
     std::vector<llama_chat_message> messages;
     
     // --- System Prompt & RAG Logic (Template-driven) ---
-    // 1. İstekten gelen system prompt, profilin varsayılanını ezer.
-    std::string base_system_prompt = request.has_system_prompt() && !request.system_prompt().empty() 
+    // [FIX] request.has_system_prompt() yerine !empty() kontrolü
+    std::string base_system_prompt = !request.system_prompt().empty()
                                      ? request.system_prompt() 
                                      : settings.template_system_prompt;
 
@@ -47,7 +47,6 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
         std::string rag_template = settings.template_rag_prompt;
         replace_all(rag_template, "{{rag_context}}", request.rag_context());
         // RAG şablonu, base_system_prompt'u içerebilir veya içermeyebilir.
-        // Bu, {{system_prompt}} placeholder'ı ile kontrol edilir.
         replace_all(rag_template, "{{system_prompt}}", base_system_prompt);
         
         content_storage.push_back(rag_template);
