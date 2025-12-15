@@ -37,7 +37,6 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
     std::vector<llama_chat_message> messages;
     
     // --- System Prompt & RAG Logic (Template-driven) ---
-    // [FIX] request.has_system_prompt() yerine !empty() kontrolü
     std::string base_system_prompt = !request.system_prompt().empty()
                                      ? request.system_prompt() 
                                      : settings.template_system_prompt;
@@ -46,7 +45,6 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
     if (request.has_rag_context() && !request.rag_context().empty()) {
         std::string rag_template = settings.template_rag_prompt;
         replace_all(rag_template, "{{rag_context}}", request.rag_context());
-        // RAG şablonu, base_system_prompt'u içerebilir veya içermeyebilir.
         replace_all(rag_template, "{{system_prompt}}", base_system_prompt);
         
         content_storage.push_back(rag_template);
@@ -54,7 +52,6 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
         content_storage.push_back(base_system_prompt);
     }
 
-    // Nihai system prompt'u ekle (boş değilse)
     if (!content_storage.back().empty()) {
         messages.push_back({"system", content_storage.back().c_str()});
     }
@@ -72,7 +69,7 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
         messages.push_back({"user", content_storage.back().c_str()});
     }
 
-    // Apply Template
+    // Apply Template - Step 1: Get Size
     int32_t required_size = llama_chat_apply_template(
         template_to_use.c_str(), 
         messages.data(), 
@@ -84,20 +81,31 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
 
     if (required_size < 0) {
         spdlog::error("Failed to apply chat template. required_size={}", required_size);
-        return request.user_prompt(); // Fallback to raw prompt
+        return request.user_prompt(); 
     }
 
-    std::string formatted_output;
-    formatted_output.resize(required_size);
+    // Apply Template - Step 2: Format
+    // [FIX] Buffer kullanımı ve null-terminator temizliği
+    std::vector<char> buffer(required_size + 1); // +1 for safety
     
-    llama_chat_apply_template(
+    int32_t written = llama_chat_apply_template(
         template_to_use.c_str(), 
         messages.data(), 
         messages.size(), 
         true, 
-        &formatted_output[0], 
-        formatted_output.size()
+        buffer.data(), 
+        buffer.size()
     );
 
-    return formatted_output;
+    if (written < 0) {
+        return request.user_prompt();
+    }
+
+    // C-string mantığı: Eğer son karakter \0 ise string'e dahil etme.
+    // llama_chat_apply_template null dahil boyutu döndürür.
+    if (written > 0 && buffer[written - 1] == '\0') {
+        return std::string(buffer.data(), written - 1);
+    }
+
+    return std::string(buffer.data(), written);
 }
