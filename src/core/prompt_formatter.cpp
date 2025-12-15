@@ -1,15 +1,15 @@
 #include "core/prompt_formatter.h"
 #include "spdlog/spdlog.h"
-#include <vector>
-#include <cstring>
-#include <list> 
+#include <sstream>
+#include <algorithm>
 
 std::unique_ptr<PromptFormatter> create_formatter() {
-    spdlog::info("Creating NativeTemplateFormatter (strict GGUF adherence)");
-    return std::make_unique<NativeTemplateFormatter>();
+    // Production'da model metadata'sı riskli olabilir. 
+    // Qwen 2.5 ve Llama 3 için Explicit Formatter kullanıyoruz.
+    return std::make_unique<ExplicitChatMLFormatter>();
 }
 
-// Helper function for simple string replacement
+// Helper: String replace
 void replace_all(std::string& str, const std::string& from, const std::string& to) {
     if(from.empty()) return;
     size_t start_pos = 0;
@@ -19,93 +19,50 @@ void replace_all(std::string& str, const std::string& from, const std::string& t
     }
 }
 
-std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
-    if (!model) return "";
+std::string ExplicitChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
+    std::stringstream ss;
 
-    std::vector<char> tmpl_buf(4096); 
-    int32_t tmpl_len = llama_model_meta_val_str(model, "tokenizer.chat_template", tmpl_buf.data(), tmpl_buf.size());
+    // 1. SYSTEM PROMPT İNŞASI
+    std::string system_prompt = !request.system_prompt().empty() 
+                                ? request.system_prompt() 
+                                : settings.template_system_prompt;
 
-    std::string template_to_use;
-    if (tmpl_len > 0) {
-        template_to_use = std::string(tmpl_buf.data());
-    } else {
-        spdlog::warn("⚠️ Model metadata missing 'tokenizer.chat_template'. Falling back to generic ChatML.");
-        template_to_use = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}";
-    }
+    // ChatML Format: <|im_start|>system\n...<|im_end|>\n
+    ss << "<|im_start|>system\n" << system_prompt << "<|im_end|>\n";
 
-    std::list<std::string> content_storage; 
-    std::vector<llama_chat_message> messages;
-    
-    // --- System Prompt & RAG Logic (Template-driven) ---
-    std::string base_system_prompt = !request.system_prompt().empty()
-                                     ? request.system_prompt() 
-                                     : settings.template_system_prompt;
-
-    // 2. RAG varsa, RAG şablonunu uygula
-    if (request.has_rag_context() && !request.rag_context().empty()) {
-        std::string rag_template = settings.template_rag_prompt;
-        replace_all(rag_template, "{{rag_context}}", request.rag_context());
-        replace_all(rag_template, "{{system_prompt}}", base_system_prompt);
-        
-        content_storage.push_back(rag_template);
-    } else {
-        content_storage.push_back(base_system_prompt);
-    }
-
-    if (!content_storage.back().empty()) {
-        messages.push_back({"system", content_storage.back().c_str()});
-    }
-
-    // --- History ---
+    // 2. GEÇMİŞ (HISTORY) İŞLEME
     for (const auto& turn : request.history()) {
         std::string role = (turn.role() == "user") ? "user" : "assistant";
-        content_storage.push_back(turn.content());
-        messages.push_back({role.c_str(), content_storage.back().c_str()});
+        ss << "<|im_start|>" << role << "\n" << turn.content() << "<|im_end|>\n";
     }
 
-    // --- Current User Prompt ---
-    if (!request.user_prompt().empty()) {
-        content_storage.push_back(request.user_prompt());
-        messages.push_back({"user", content_storage.back().c_str()});
-    }
-
-    // Apply Template - Step 1: Get Size
-    int32_t required_size = llama_chat_apply_template(
-        template_to_use.c_str(), 
-        messages.data(), 
-        messages.size(), 
-        true, 
-        nullptr, 
-        0
-    );
-
-    if (required_size < 0) {
-        spdlog::error("Failed to apply chat template. required_size={}", required_size);
-        return request.user_prompt(); 
-    }
-
-    // Apply Template - Step 2: Format
-    // [FIX] Buffer kullanımı ve null-terminator temizliği
-    std::vector<char> buffer(required_size + 1); // +1 for safety
+    // 3. RAG CONTEXT VE USER PROMPT BİRLEŞTİRME (KRİTİK STRATEJİ)
+    // RAG verisini System Prompt yerine User Prompt'un hemen üstüne koyuyoruz.
+    // Bu, modelin dikkatini (attention mechanism) context'e daha çok vermesini sağlar.
     
-    int32_t written = llama_chat_apply_template(
-        template_to_use.c_str(), 
-        messages.data(), 
-        messages.size(), 
-        true, 
-        buffer.data(), 
-        buffer.size()
-    );
-
-    if (written < 0) {
-        return request.user_prompt();
+    ss << "<|im_start|>user\n";
+    
+    if (request.has_rag_context() && !request.rag_context().empty()) {
+        // Profildeki RAG şablonunu kullan
+        std::string rag_block = settings.template_rag_prompt;
+        
+        // Yer tutucuları değiştir
+        // Not: system_prompt burada tekrar kullanılmaz, yukarıda tanımlandı.
+        replace_all(rag_block, "{{rag_context}}", request.rag_context());
+        replace_all(rag_block, "{{user_prompt}}", request.user_prompt()); 
+        
+        // Eğer şablonda {{user_prompt}} yoksa, biz manuel ekleriz.
+        if (rag_block.find(request.user_prompt()) == std::string::npos) {
+             ss << rag_block << "\n\nSORU: " << request.user_prompt();
+        } else {
+             ss << rag_block;
+        }
+    } else {
+        // RAG yoksa direkt soruyu bas
+        ss << request.user_prompt();
     }
+    
+    ss << "<|im_end|>\n<|im_start|>assistant\n";
 
-    // C-string mantığı: Eğer son karakter \0 ise string'e dahil etme.
-    // llama_chat_apply_template null dahil boyutu döndürür.
-    if (written > 0 && buffer[written - 1] == '\0') {
-        return std::string(buffer.data(), written - 1);
-    }
-
-    return std::string(buffer.data(), written);
+    return ss.str();
 }

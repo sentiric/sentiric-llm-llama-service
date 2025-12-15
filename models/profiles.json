@@ -9,26 +9,12 @@
       "filename": "qwen2.5-3b-instruct-q5_k_m.gguf",
       "context_size": 8192,
       "gpu_layers": 100,
-      "temperature": 0.1,
+      "temperature": 0.3, 
       "top_p": 0.9,
-      "repeat_penalty": 1.1,
+      "repeat_penalty": 1.2,
       "templates": {
-        "system_prompt": "Sen yardımsever ve profesyonel bir çağrı merkezi asistanısın. Müşterinin sorularına kısa, net ve nazik cevaplar ver. Asla uydurma yapma. Sadece sana verilen bilgileri kullan.",
-        "rag_prompt": "[BAĞLAM_BAŞLA]\n{{rag_context}}\n[BAĞLAM_BİTİR]\n\n[TALİMAT]: {{system_prompt}}\n\n[KURAL]: Soruyu SADECE yukarıdaki [BAĞLAM] içindeki bilgilere göre cevapla. Kendi bilgini katma. Bağlamda bilgi yoksa 'Bilmiyorum' de."
-      }
-    },
-    "qwen25_3b_coder": {
-      "display_name": "Dev Mode (Qwen 2.5 3B)",
-      "description": "Geliştirme ve test amaçlı, daha yaratıcı konfigürasyon.",
-      "category": "Development",
-      "model_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
-      "filename": "qwen2.5-3b-instruct-q5_k_m.gguf",
-      "context_size": 8192,
-      "gpu_layers": 100,
-      "temperature": 0.6,
-      "templates": {
-        "system_prompt": "You are an expert AI programmer. Provide clean, efficient, and well-documented code.",
-        "rag_prompt": "### CONTEXT:\n{{rag_context}}\n\n### INSTRUCTION:\n{{system_prompt}}\n\nAnswer using ONLY the context provided."
+        "system_prompt": "Sen Sentiric müşteri hizmetleri asistanısın. Görevin, sana verilen bağlam (CONTEXT) bilgisini kullanarak müşterinin sorusunu yanıtlamaktır. Asla bağlam dışı bilgi uydurma. Eğer bağlamda bilgi yoksa 'Bu konuda bilgim yok' de. Kısa, nazik ve konuşma diline uygun cevaplar ver.",
+        "rag_prompt": "ELİMİZDEKİ BİLGİLER (CONTEXT):\n----------------\n{{rag_context}}\n----------------\n\nYukarıdaki bilgilere dayanarak şu soruyu cevapla:\n{{user_prompt}}"
       }
     }
   }
