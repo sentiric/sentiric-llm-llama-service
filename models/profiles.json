@@ -14,7 +14,7 @@
       "repeat_penalty": 1.1,
       "templates": {
         "system_prompt": "Sen yardımsever ve profesyonel bir çağrı merkezi asistanısın. Müşterinin sorularına kısa, net ve nazik cevaplar ver. Asla uydurma yapma. Sadece sana verilen bilgileri kullan.",
-        "rag_prompt": "### CONTEXT / BILGI NOTU:\n{{rag_context}}\n\n### YONERGE:\nKullanicinin sorusunu SADECE yukaridaki Context bilgilerini kullanarak cevapla. Bilgi context icinde yoksa 'Bilmiyorum' de. Asla uydurma."
+        "rag_prompt": "### CRM / MÜŞTERİ BİLGİ EKRANI:\n{{rag_context}}\n\n### GÖREV:\nSen müşteri temsilcisisin. Ekranındaki (yukarıdaki) bilgileri kullanarak müşterinin sorusunu yanıtla. Bilgiyi doğrudan ve emin bir şekilde ver. Bilgi ekranda yoksa 'Sistemde bu bilgiye ulaşamıyorum' de."
       }
     },
     "qwen25_3b_coder": {

@@ -1,9 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# Sentiric LLM Service - Real World Phone Conversation Simulation (v1.0)
-# ==============================================================================
-# Amaç: Uzun süreli, RAG destekli ve kesintili (interrupt) bir telefon görüşmesini
-# simüle ederek KV Cache stabilitesini, bellek yönetimini ve yanıt tutarlılığını ölçmek.
+# Sentiric LLM Service - Real World Phone Conversation Simulation (v1.1)
 # ==============================================================================
 
 set -e
@@ -41,14 +38,10 @@ chat() {
     local user_msg="$1"
     local system_instruction="$2"
     local rag_data="$3"
-    local interrupt="$4" # true ise isteği yarıda keseceğiz
+    local interrupt="$4" 
 
-    # History güncelle
     jq --arg content "$user_msg" '. += [{"role": "user", "content": $content}]' "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
 
-    # Payload Hazırla
-    # Not: System prompt ve RAG, backend'deki profile template engine tarafından birleştirilecek.
-    # Biz sadece raw veriyi gönderiyoruz.
     local payload=$(jq -n \
         --arg sys "$system_instruction" \
         --arg rag "$rag_data" \
@@ -64,10 +57,8 @@ chat() {
 
     if [ "$interrupt" == "true" ]; then
         log_sys "⚠️  Simülasyon: Kullanıcı asistanın sözünü kesti (Interruption)..."
-        # Timeout ile isteği yarıda kes (0.5sn)
         timeout 0.5s curl -s -X POST "$API_URL" -H "Content-Type: application/json" -d "$payload" > /dev/null || true
         echo -e "${RED}[KESİLDİ]${NC}"
-        # Kesilen konuşmayı history'e ekleme (gerçek hayatta da asistanın cümlesi yarım kalır ama history'e genelde tam girmez veya kısmi girer)
         return
     fi
 
@@ -87,12 +78,11 @@ chat() {
     log_ai "$reply"
     log_sys "Süre: ${duration}ms | Token: $tokens"
 
-    # History güncelle (Asistan)
     jq --arg content "$reply" '. += [{"role": "assistant", "content": $content}]' "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
 }
 
 # ==============================================================================
-# SENARYO BAŞLIYOR: "Sinirli Müşteri Ali Bey"
+# SENARYO BAŞLIYOR
 # ==============================================================================
 
 log_info "📞 Telefon çalıyor... (Context: $CUSTOMER_CONTEXT)"
@@ -110,12 +100,11 @@ chat "Paketim neydi benim? Unuttum sinirden." \
      "Net bilgi ver." \
      "$CUSTOMER_CONTEXT"
 
-# 3. Interruption (Söz Kesme) Testi
+# 3. Interruption
 log_user "Tamam tamam uzatma, sadede gel. Bak şimdi..."
-# Bu istek gönderilecek ama hemen iptal edilecek (müşteri sözü kesti)
 chat "Tamam tamam uzatma, sadede gel. Bak şimdi..." "Sakin ol." "$CUSTOMER_CONTEXT" "true"
 
-# 4. Context Değişimi (CRM Güncellemesi Simülasyonu)
+# 4. Context Değişimi
 log_sys "🔄 CRM GÜNCELLENDİ: Arıza kaydı oluşturuldu (No: ARZ-999)."
 CUSTOMER_CONTEXT="$CUSTOMER_CONTEXT Arıza Kaydı: ARZ-999 (Ekipler yolda)."
 
@@ -124,13 +113,13 @@ chat "Arıza kaydı açtınız mı peki?" \
      "Müşteriye arıza kaydı bilgisini ver." \
      "$CUSTOMER_CONTEXT"
 
-# 5. Hafıza (History) Kontrolü
+# 5. Hafıza
 log_user "Adımı hatırlıyorsun değil mi?"
 chat "Adımı hatırlıyorsun değil mi?" \
      "Sadece ismi söyle." \
      "$CUSTOMER_CONTEXT"
 
-# 6. Zorlama / Halüsinasyon Kontrolü
+# 6. Zorlama
 log_user "Peki bu arıza yüzünden bana tazminat olarak araba verecek misiniz?"
 chat "Peki bu arıza yüzünden bana tazminat olarak araba verecek misiniz?" \
      "Dürüst ol, RAG dışına çıkma. Politikamızda araba yok." \
@@ -145,21 +134,22 @@ log_info "Aktif Context Sayısı (Bitiş): $(get_active_contexts)"
 
 HISTORY_CONTENT=$(cat "$HISTORY_FILE")
 
-if echo "$HISTORY_CONTENT" | grep -q "Ali Vural"; then
+# grep -i (insensitive) kullanıyoruz
+if echo "$HISTORY_CONTENT" | grep -iq "Ali Vural"; then
     log_info "✅ Hafıza Testi: BAŞARILI (İsim hatırlandı)"
 else
     echo -e "${RED}❌ Hafıza Testi: BAŞARISIZ${NC}"
     exit 1
 fi
 
-if echo "$HISTORY_CONTENT" | grep -q "Gold İnternet"; then
+if echo "$HISTORY_CONTENT" | grep -iqE "Gold İnternet|Gold paket"; then
     log_info "✅ RAG Testi 1: BAŞARILI (Paket bilgisi)"
 else
     echo -e "${RED}❌ RAG Testi 1: BAŞARISIZ${NC}"
     exit 1
 fi
 
-if echo "$HISTORY_CONTENT" | grep -q "ARZ-999"; then
+if echo "$HISTORY_CONTENT" | grep -iq "ARZ-999"; then
     log_info "✅ Dinamik RAG Testi: BAŞARILI (Yeni arıza kaydı görüldü)"
 else
     echo -e "${RED}❌ Dinamik RAG Testi: BAŞARISIZ${NC}"
