@@ -19,8 +19,8 @@ struct Settings {
     int metrics_port = 16072;
 
     // Model & Profiles
-    // VARSAYILAN PROFİL DEĞİŞTİRİLDİ -> Qwen 2.5 3B
-    std::string profile_name = "qwen25_3b_instruct"; 
+    // GÜNCELLENDİ: Yeni profil ismi
+    std::string profile_name = "qwen25_3b_phone_assistant"; 
     std::string model_dir = "/models";
     std::string model_id = "";
     std::string model_filename = "";

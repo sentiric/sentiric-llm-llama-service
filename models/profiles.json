@@ -1,49 +1,29 @@
 {
-  "active_profile": "qwen25_3b_instruct",
+  "active_profile": "qwen25_3b_phone_assistant",
   "profiles": {
-    "qwen25_3b_instruct": {
-      "display_name": "Qwen 2.5 (3B Instruct) - 🏆 ÖNERİLEN",
-      "description": "~2.4 GB VRAM. Şu an piyasadaki en iyi küçük model. Türkçe ve RAG performansı mükemmel.",
+    "qwen25_3b_phone_assistant": {
+      "display_name": "Sentiric Phone Agent (Qwen 2.5 3B)",
+      "description": "Telefon görüşmeleri için optimize edilmiş, düşük gecikmeli, Türkçe ve RAG yetenekli motor.",
       "category": "Production",
       "model_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
       "filename": "qwen2.5-3b-instruct-q5_k_m.gguf",
       "context_size": 8192,
       "gpu_layers": 100,
-      "temperature": 0.3,
-      "system_prompt": "Sen yardımsever bir müşteri hizmetleri asistanısın. Verilen bilgilere sadık kal."
+      "temperature": 0.2,
+      "top_p": 0.9,
+      "repeat_penalty": 1.1,
+      "system_prompt": "Sen yardımsever ve profesyonel bir çağrı merkezi asistanısın. Müşterinin sorularına kısa, net ve nazik cevaplar ver. Asla uydurma yapma. Sadece sana verilen bilgileri kullan."
     },
-    "llama32_3b_instruct": {
-      "display_name": "Llama 3.2 (3B Instruct)",
-      "description": "~2.2 GB VRAM. Meta'nın en son küçük modeli. Hızlı ve dengeli.",
-      "category": "Balanced",
-      "model_id": "bartowski/Llama-3.2-3B-Instruct-GGUF",
-      "filename": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+    "qwen25_3b_coder": {
+      "display_name": "Dev Mode (Qwen 2.5 3B)",
+      "description": "Geliştirme ve test amaçlı, daha yaratıcı konfigürasyon.",
+      "category": "Development",
+      "model_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+      "filename": "qwen2.5-3b-instruct-q5_k_m.gguf",
       "context_size": 8192,
       "gpu_layers": 100,
-      "temperature": 0.5,
-      "system_prompt": "Sen yardımsever bir asistansın."
-    },
-    "phi35_mini_instruct": {
-      "display_name": "Phi-3.5 Mini (3.8B)",
-      "description": "~2.5 GB VRAM. Microsoft'un mantık ve RAG canavarı. Biraz robotik konuşabilir.",
-      "category": "Reasoning",
-      "model_id": "bartowski/Phi-3.5-mini-instruct-GGUF",
-      "filename": "Phi-3.5-mini-instruct-Q4_K_M.gguf",
-      "context_size": 4096,
-      "gpu_layers": 100,
-      "temperature": 0.1,
-      "system_prompt": "You are a helpful assistant."
-    },
-    "mistral_nemo_minitron": {
-      "display_name": "Minitron 4B",
-      "description": "~2.8 GB VRAM. Nvidia tarafından optimize edilmiş RAG modeli.",
-      "category": "Experimental",
-      "model_id": "bartowski/Minitron-4B-Base-GGUF",
-      "filename": "Minitron-4B-Base-Q5_K_M.gguf",
-      "context_size": 4096,
-      "gpu_layers": 100,
-      "temperature": 0.5,
-      "system_prompt": "Sen bir asistansın."
+      "temperature": 0.6,
+      "system_prompt": "Sen uzman bir yapay zeka asistanısın."
     }
   }
 }
