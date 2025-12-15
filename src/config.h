@@ -19,7 +19,6 @@ struct Settings {
     int metrics_port = 16072;
 
     // Model & Profiles
-    // GÜNCELLENDİ: Yeni profil ismi
     std::string profile_name = "qwen25_3b_phone_assistant"; 
     std::string model_dir = "/models";
     std::string model_id = "";
@@ -28,12 +27,10 @@ struct Settings {
     std::string legacy_model_path = "";
     std::string model_url_template = "https://huggingface.co/{model_id}/resolve/main/{filename}";
     
-    // --- PROMPT CONFIGURATION ---
-    std::string default_system_prompt = "You are a helpful assistant."; 
+    // --- TEMPLATE CONFIGURATION ---
+    std::string template_system_prompt = "You are a helpful assistant.";
+    std::string template_rag_prompt = "Use the following context to answer the question:\nContext: {{rag_context}}\n\nQuestion: {{user_prompt}}";
     
-    std::string reasoning_prompt_low = "\n[INSTRUCTION]: Think briefly before answering. Enclose thoughts in <think> tags.";
-    std::string reasoning_prompt_high = "\n[INSTRUCTION]: This is a complex task. Think deeply step-by-step. Analyze the problem, check for edge cases, and enclose your full reasoning process in <think> tags before answering.";
-
     // Engine & Performance
     int n_gpu_layers = 0;
     uint32_t context_size = 4096;
@@ -78,7 +75,7 @@ struct Settings {
             {"physical_batch_size", physical_batch_size},
             {"kv_offload", kv_offload},
             {"use_mmap", use_mmap},
-            {"default_system_prompt", default_system_prompt}
+            {"template_system_prompt", template_system_prompt}
         };
     }
 };
@@ -118,7 +115,12 @@ inline bool apply_profile(Settings& s, const std::string& profile_name_override)
             if(p.contains("gpu_layers")) s.n_gpu_layers = p["gpu_layers"];
             if(p.contains("temperature")) s.default_temperature = p["temperature"];
             
-            if(p.contains("system_prompt")) s.default_system_prompt = p["system_prompt"];
+            // --- YENİ: TEMPLATE OKUMA ---
+            if (p.contains("templates")) {
+                const auto& templates = p["templates"];
+                s.template_system_prompt = templates.value("system_prompt", s.template_system_prompt);
+                s.template_rag_prompt = templates.value("rag_prompt", s.template_rag_prompt);
+            }
             
             if(p.contains("use_mmap")) s.use_mmap = p["use_mmap"];
             if(p.contains("kv_offload")) s.kv_offload = p["kv_offload"];
@@ -185,7 +187,8 @@ inline Settings load_settings() {
     s.default_top_p = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_TOP_P", s.default_top_p);
     s.default_repeat_penalty = get_env_var_as_float("LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY", s.default_repeat_penalty);
     
-    s.default_system_prompt = get_env_var("LLM_LLAMA_SERVICE_DEFAULT_SYSTEM_PROMPT", s.default_system_prompt);
+    // Yorumlandı: Artık profilden geliyor.
+    // s.default_system_prompt = get_env_var("LLM_LLAMA_SERVICE_DEFAULT_SYSTEM_PROMPT", s.default_system_prompt);
 
     s.grpc_ca_path = get_env_var("GRPC_TLS_CA_PATH", s.grpc_ca_path);
     s.grpc_cert_path = get_env_var("LLM_LLAMA_SERVICE_CERT_PATH", s.grpc_cert_path);
@@ -210,7 +213,12 @@ inline Settings load_settings() {
         s.model_filename = p.filename().string();
     }
 
+    // Önce profili uygula
     apply_profile(s, ""); 
+    
+    // Sonra .env override etsin (istenirse)
+    s.template_system_prompt = get_env_var("LLM_LLAMA_SERVICE_DEFAULT_SYSTEM_PROMPT", s.template_system_prompt);
+
 
     return s;
 };

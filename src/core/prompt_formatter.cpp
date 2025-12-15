@@ -2,8 +2,6 @@
 #include "spdlog/spdlog.h"
 #include <vector>
 #include <cstring>
-#include <sstream>
-#include <iostream>
 #include <list> 
 
 std::unique_ptr<PromptFormatter> create_formatter() {
@@ -11,7 +9,17 @@ std::unique_ptr<PromptFormatter> create_formatter() {
     return std::make_unique<NativeTemplateFormatter>();
 }
 
-std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model) const {
+// Helper function for simple string replacement
+void replace_all(std::string& str, const std::string& from, const std::string& to) {
+    if(from.empty()) return;
+    size_t start_pos = 0;
+    while((start_pos = str.find(from, start_pos)) != std::string::npos) {
+        str.replace(start_pos, from.length(), to);
+        start_pos += to.length();
+    }
+}
+
+std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
     if (!model) return "";
 
     std::vector<char> tmpl_buf(4096); 
@@ -28,32 +36,27 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
     std::list<std::string> content_storage; 
     std::vector<llama_chat_message> messages;
     
-    // --- System Prompt & RAG Logic ---
-    std::string base_system = request.system_prompt();
-    std::string final_system_content;
+    // --- System Prompt & RAG Logic (Template-driven) ---
+    // 1. İstekten gelen system prompt, profilin varsayılanını ezer.
+    std::string base_system_prompt = request.has_system_prompt() && !request.system_prompt().empty() 
+                                     ? request.system_prompt() 
+                                     : settings.template_system_prompt;
 
-    // RAG varsa daha katı ve yapılandırılmış bir prompt kullan
+    // 2. RAG varsa, RAG şablonunu uygula
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        std::stringstream ss;
-        if (!base_system.empty()) {
-            ss << base_system << "\n\n";
-        }
+        std::string rag_template = settings.template_rag_prompt;
+        replace_all(rag_template, "{{rag_context}}", request.rag_context());
+        // RAG şablonu, base_system_prompt'u içerebilir veya içermeyebilir.
+        // Bu, {{system_prompt}} placeholder'ı ile kontrol edilir.
+        replace_all(rag_template, "{{system_prompt}}", base_system_prompt);
         
-        // Bu yapı, Qwen ve Llama 3 için RAG performansını artırır
-        ss << "### CONTEXT / BILGI NOTU:\n" 
-           << request.rag_context() 
-           << "\n\n### YONERGE:\n"
-           << "Kullanicinin sorusunu SADECE yukaridaki Context bilgilerini kullanarak cevapla. "
-           << "Bilgi context icinde yoksa 'Bilmiyorum' de. Asla uydurma.";
-           
-        final_system_content = ss.str();
+        content_storage.push_back(rag_template);
     } else {
-        // RAG yoksa, sadece varsa system prompt'u kullan
-        final_system_content = base_system;
+        content_storage.push_back(base_system_prompt);
     }
 
-    if (!final_system_content.empty()) {
-        content_storage.push_back(final_system_content);
+    // Nihai system prompt'u ekle (boş değilse)
+    if (!content_storage.back().empty()) {
         messages.push_back({"system", content_storage.back().c_str()});
     }
 
@@ -81,11 +84,8 @@ std::string NativeTemplateFormatter::format(const sentiric::llm::v1::GenerateStr
     );
 
     if (required_size < 0) {
-        // Hata durumunda fallback
-        std::ostringstream oss;
-        if(!final_system_content.empty()) oss << final_system_content << "\n";
-        oss << request.user_prompt();
-        return oss.str();
+        spdlog::error("Failed to apply chat template. required_size={}", required_size);
+        return request.user_prompt(); // Fallback to raw prompt
     }
 
     std::string formatted_output;

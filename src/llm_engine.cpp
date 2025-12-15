@@ -310,7 +310,8 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
 
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
     try {
-        std::string formatted_prompt = formatter_->format(req_ptr->request, model_);
+        // GÜNCELLEME: format fonksiyonuna 'settings_' parametresi eklendi.
+        std::string formatted_prompt = formatter_->format(req_ptr->request, model_, settings_);
         std::vector<llama_token> prompt_tokens = tokenize_and_truncate(req_ptr, formatted_prompt);
         ContextGuard guard = context_pool_->acquire(prompt_tokens);
         llama_context* ctx = guard.get();
