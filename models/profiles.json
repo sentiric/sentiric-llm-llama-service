@@ -3,18 +3,18 @@
   "profiles": {
     "qwen25_3b_phone_assistant": {
       "display_name": "Sentiric Phone Agent (Qwen 2.5 3B)",
-      "description": "Telefon görüşmeleri için optimize edilmiş, düşük gecikmeli, Türkçe ve RAG yetenekli motor.",
+      "description": "Gerçekçi, doğal ve veriye sadık telefon asistanı.",
       "category": "Production",
       "model_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
       "filename": "qwen2.5-3b-instruct-q5_k_m.gguf",
       "context_size": 8192,
       "gpu_layers": 100,
-      "temperature": 0.3, 
+      "temperature": 0.6,
       "top_p": 0.9,
-      "repeat_penalty": 1.2,
+      "repeat_penalty": 1.15,
       "templates": {
-        "system_prompt": "Sen Sentiric müşteri hizmetleri asistanısın. Görevin, sana verilen bağlam (CONTEXT) bilgisini kullanarak müşterinin sorusunu yanıtlamaktır. Asla bağlam dışı bilgi uydurma. Eğer bağlamda bilgi yoksa 'Bu konuda bilgim yok' de. Kısa, nazik ve konuşma diline uygun cevaplar ver.",
-        "rag_prompt": "ELİMİZDEKİ BİLGİLER (CONTEXT):\n----------------\n{{rag_context}}\n----------------\n\nYukarıdaki bilgilere dayanarak şu soruyu cevapla:\n{{user_prompt}}"
+        "system_prompt": "Sen 'Sentiric' firmasında çalışan yardımsever, nazik ve zeki bir müşteri temsilcisisin. Adın Aslı. Müşteriyle telefonla konuşuyorsun. Ses tonun doğal, akıcı ve güven verici olmalı. Asla robotik konuşma. Müşterinin adını her cümlede tekrar etme. Sana verilen BİLGİ NOTU dışına asla çıkma. Bilmediğin bir şey sorulursa dürüstçe 'Sistemi kontrol ediyorum ama bu bilgiye ulaşamadım' de.",
+        "rag_prompt": "🛑 [GİZLİ BİLGİ NOTU - SADECE BUNU KULLAN] 🛑\n==========================================\n{{rag_context}}\n==========================================\n\nYukarıdaki bilgiye dayanarak müşteriye cevap ver. Müşteri: {{user_prompt}}"
       }
     }
   }

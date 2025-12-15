@@ -4,12 +4,9 @@
 #include <algorithm>
 
 std::unique_ptr<PromptFormatter> create_formatter() {
-    // Production'da model metadata'sı riskli olabilir. 
-    // Qwen 2.5 ve Llama 3 için Explicit Formatter kullanıyoruz.
     return std::make_unique<ExplicitChatMLFormatter>();
 }
 
-// Helper: String replace
 void replace_all(std::string& str, const std::string& from, const std::string& to) {
     if(from.empty()) return;
     size_t start_pos = 0;
@@ -22,43 +19,39 @@ void replace_all(std::string& str, const std::string& from, const std::string& t
 std::string ExplicitChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
     std::stringstream ss;
 
-    // 1. SYSTEM PROMPT İNŞASI
+    // 1. SYSTEM IDENTITY (KİMLİK)
+    // Modelin kim olduğunu ve nasıl davranması gerektiğini buraya koyuyoruz.
     std::string system_prompt = !request.system_prompt().empty() 
                                 ? request.system_prompt() 
                                 : settings.template_system_prompt;
 
-    // ChatML Format: <|im_start|>system\n...<|im_end|>\n
     ss << "<|im_start|>system\n" << system_prompt << "<|im_end|>\n";
 
-    // 2. GEÇMİŞ (HISTORY) İŞLEME
+    // 2. CONVERSATION HISTORY (HAFIZA)
     for (const auto& turn : request.history()) {
         std::string role = (turn.role() == "user") ? "user" : "assistant";
         ss << "<|im_start|>" << role << "\n" << turn.content() << "<|im_end|>\n";
     }
 
-    // 3. RAG CONTEXT VE USER PROMPT BİRLEŞTİRME (KRİTİK STRATEJİ)
-    // RAG verisini System Prompt yerine User Prompt'un hemen üstüne koyuyoruz.
-    // Bu, modelin dikkatini (attention mechanism) context'e daha çok vermesini sağlar.
-    
+    // 3. CURRENT TURN (ŞİMDİKİ SORU + RAG)
     ss << "<|im_start|>user\n";
     
+    // Eğer RAG verisi varsa, bunu kullanıcının sorusuyla "Physical Binding" yapıyoruz.
+    // Yani model soruyu okurken mecburen cevabı da okumuş oluyor.
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        // Profildeki RAG şablonunu kullan
-        std::string rag_block = settings.template_rag_prompt;
+        std::string final_msg = settings.template_rag_prompt;
         
-        // Yer tutucuları değiştir
-        // Not: system_prompt burada tekrar kullanılmaz, yukarıda tanımlandı.
-        replace_all(rag_block, "{{rag_context}}", request.rag_context());
-        replace_all(rag_block, "{{user_prompt}}", request.user_prompt()); 
+        // Şablondaki yer tutucuları doldur
+        replace_all(final_msg, "{{rag_context}}", request.rag_context());
+        replace_all(final_msg, "{{user_prompt}}", request.user_prompt());
         
-        // Eğer şablonda {{user_prompt}} yoksa, biz manuel ekleriz.
-        if (rag_block.find(request.user_prompt()) == std::string::npos) {
-             ss << rag_block << "\n\nSORU: " << request.user_prompt();
-        } else {
-             ss << rag_block;
+        // Eğer şablonda user_prompt yoksa manuel ekle (Güvenlik)
+        if (final_msg.find(request.user_prompt()) == std::string::npos) {
+            final_msg += "\n\n" + request.user_prompt();
         }
+        
+        ss << final_msg;
     } else {
-        // RAG yoksa direkt soruyu bas
         ss << request.user_prompt();
     }
     
