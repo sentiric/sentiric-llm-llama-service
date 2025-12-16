@@ -11,6 +11,7 @@
 #include <atomic>
 #include <memory>
 #include <shared_mutex>
+#include <map>
 #include "sentiric/llm/v1/llama.pb.h"
 #include <prometheus/gauge.h>
 
@@ -26,8 +27,12 @@ public:
     
     bool update_hardware_config(int gpu_layers, int context_size, bool kv_offload);
 
-    // [YENİ] LoRA adaptörünü global olarak uygular
-    void apply_lora(const std::string& lora_adapter_id);
+    // [GÜNCELLENDİ] LoRA adaptörünü Context seviyesinde uygular
+    // Dönüş değeri: Adaptör başarıyla uygulandıysa true, hata varsa false
+    bool apply_lora_to_context(llama_context* ctx, const std::string& lora_adapter_id);
+
+    // [YENİ] Context üzerindeki tüm adaptörleri temizler
+    void clear_lora_from_context(llama_context* ctx);
 
     DynamicBatcher* get_batcher() const { return batcher_.get(); }
     bool is_batching_enabled() const { return batcher_ != nullptr; }
@@ -44,13 +49,18 @@ private:
     bool decode_prompt(llama_context* ctx, ContextGuard& guard, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr);
     void generate_response(llama_context* ctx, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr);
 
+    // [YENİ] LoRA Adapter Cache Yönetimi
+    struct llama_adapter_lora* get_or_load_adapter(const std::string& lora_id);
+    void clear_adapter_cache();
+
     Settings settings_;
     llama_model* model_ = nullptr;
     std::atomic<bool> model_loaded_{false};
     
-    // [YENİ] LoRA durumu yönetimi
-    std::string active_lora_adapter_;
-    std::string base_model_path_for_lora_;
+    // [GÜNCELLENDİ] LoRA Cache
+    // Adapter ID -> Pointer mapping. Pointer'lar model_ free edildiğinde otomatik geçersiz kalır,
+    // ancak manuel free gerekirse burada tutuyoruz.
+    std::map<std::string, struct llama_adapter_lora*> lora_cache_;
     std::mutex lora_mutex_;
 
     std::unique_ptr<LlamaContextPool> context_pool_;
