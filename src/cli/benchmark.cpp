@@ -5,9 +5,10 @@
 #include <future>
 #include <atomic>
 #include <vector>
+#include <mutex> // EKLENDİ
 #include "benchmark.h"
 #include "spdlog/spdlog.h"
-#include "grpc_client.h" // GRPCClient'ı dahil et
+#include "grpc_client.h" 
 
 namespace sentiric_llm_cli {
 
@@ -15,6 +16,69 @@ Benchmark::Benchmark(const std::string& grpc_endpoint)
     : grpc_endpoint_(grpc_endpoint),
       client_(std::make_unique<CLIClient>(grpc_endpoint)) {}
 
+
+void Benchmark::run_interrupt_test(const std::string& initial_prompt, const std::string& interrupt_prompt) {
+    spdlog::info("🎤 Voice Gateway Interruption Test Başlatılıyor...");
+
+    auto client1 = std::make_unique<sentiric_llm_cli::GRPCClient>(grpc_endpoint_);
+    auto client2 = std::make_unique<sentiric_llm_cli::GRPCClient>(grpc_endpoint_);
+
+    std::string partial_response;
+    std::mutex response_mutex; // EKLENDİ
+
+    sentiric::llm::v1::GenerateStreamRequest req1;
+    req1.set_user_prompt(initial_prompt);
+    // [EKSTRA] RAG verisini ekleyerek testi daha gerçekçi yapalım
+    req1.set_rag_context("Sipariş No: #ABC-123. Durum: Kargoya verildi. Kargo Takip No: TRK-987654321.");
+
+    std::cout << "\n\033[1;34m🙍‍♂️ KULLANICI:\033[0m " << initial_prompt << std::endl;
+    spdlog::info("⚡ GATEWAY: LLM'e istek gönderiliyor...");
+    std::cout << "\033[1;32m🤖 ASİSTAN:\033[0m " << std::flush;
+
+    auto llm_future = std::async(std::launch::async, [&]() {
+        client1->generate_stream_with_cancellation(req1, [&](const std::string& token) {
+            std::lock_guard<std::mutex> lock(response_mutex); // KİLİTLE
+            std::cout << token << std::flush;
+            partial_response += token;
+        });
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500)); // 1.5 saniye bekle
+    spdlog::info("\n⚡ GATEWAY: !!! KULLANICI KONUŞMAYA BAŞLADI - STREAM KESİLİYOR !!!");
+    client1->cancel_stream();
+    llm_future.wait();
+    
+    {
+        std::lock_guard<std::mutex> lock(response_mutex); // KİLİTLE
+        spdlog::info("⚡ GATEWAY: AI'ın yarım cümlesi: \"" + partial_response + "...\"");
+    }
+
+    sentiric::llm::v1::GenerateStreamRequest req2;
+    req2.set_user_prompt(interrupt_prompt);
+    // RAG verisini ikinci isteğe de ekle
+    req2.set_rag_context("Sipariş No: #ABC-123. Durum: Kargoya verildi. Kargo Takip No: TRK-987654321.");
+    
+    auto* turn1 = req2.add_history();
+    turn1->set_role("user");
+    turn1->set_content(initial_prompt);
+    
+    auto* turn2 = req2.add_history();
+    turn2->set_role("assistant");
+    turn2->set_content(partial_response);
+
+    std::cout << "\n\033[1;34m🙍‍♂️ KULLANICI:\033[0m " << interrupt_prompt << std::endl;
+    spdlog::info("⚡ GATEWAY: LLM'e yeni istek gönderiliyor...");
+    std::cout << "\033[1;32m🤖 ASİSTAN:\033[0m " << std::flush;
+    
+    client2->generate_stream(req2, [](const std::string& token) {
+        std::cout << token << std::flush;
+    });
+    std::cout << std::endl;
+    spdlog::info("✅ Simülasyon Tamamlandı.");
+}
+
+// ... (Kalan fonksiyonlar aynı) ...
+// generate_report, run_performance_test, run_concurrent_test
 BenchmarkResult Benchmark::run_performance_test(int iterations, const std::string& prompt) {
     spdlog::info("🎯 Performans testi başlıyor ({} iterasyon)...", iterations);
 
@@ -134,58 +198,6 @@ BenchmarkResult Benchmark::run_concurrent_test(int concurrent_connections, int r
     return result;
 }
 
-void Benchmark::run_interrupt_test(const std::string& initial_prompt, const std::string& interrupt_prompt) {
-    spdlog::info("🎤 Voice Gateway Interruption Test Başlatılıyor...");
-
-    auto client1 = std::make_unique<sentiric_llm_cli::GRPCClient>(grpc_endpoint_);
-    auto client2 = std::make_unique<sentiric_llm_cli::GRPCClient>(grpc_endpoint_);
-
-    std::string partial_response;
-    std::atomic<bool> interrupted(false);
-
-    sentiric::llm::v1::GenerateStreamRequest req1;
-    req1.set_user_prompt(initial_prompt);
-
-    std::cout << "\n\033[1;34m🙍‍♂️ KULLANICI:\033[0m " << initial_prompt << std::endl;
-    spdlog::info("⚡ GATEWAY: LLM'e istek gönderiliyor...");
-    std::cout << "\033[1;32m🤖 ASİSTAN:\033[0m " << std::flush;
-
-    auto llm_future = std::async(std::launch::async, [&]() {
-        client1->generate_stream_with_cancellation(req1, [&](const std::string& token) {
-            std::cout << token << std::flush;
-            partial_response += token;
-        });
-    });
-
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    spdlog::info("\n⚡ GATEWAY: !!! KULLANICI KONUŞMAYA BAŞLADI - STREAM KESİLİYOR !!!");
-    client1->cancel_stream();
-    llm_future.wait();
-    interrupted = true;
-    spdlog::info("⚡ GATEWAY: AI'ın yarım cümlesi: \"" + partial_response + "...\"");
-
-    sentiric::llm::v1::GenerateStreamRequest req2;
-    req2.set_user_prompt(interrupt_prompt);
-    
-    auto* turn1 = req2.add_history();
-    turn1->set_role("user");
-    turn1->set_content(initial_prompt);
-    
-    auto* turn2 = req2.add_history();
-    turn2->set_role("assistant");
-    turn2->set_content(partial_response);
-
-    std::cout << "\n\033[1;34m🙍‍♂️ KULLANICI:\033[0m " << interrupt_prompt << std::endl;
-    spdlog::info("⚡ GATEWAY: LLM'e yeni istek gönderiliyor...");
-    std::cout << "\033[1;32m🤖 ASİSTAN:\033[0m " << std::flush;
-    
-    client2->generate_stream(req2, [](const std::string& token) {
-        std::cout << token << std::flush;
-    });
-    std::cout << std::endl;
-    spdlog::info("✅ Simülasyon Tamamlandı.");
-}
-
 void Benchmark::generate_report(const BenchmarkResult& result, const std::string& filename) {
     std::ostream* output = &std::cout;
     std::ofstream file;
@@ -217,5 +229,4 @@ void Benchmark::generate_report(const BenchmarkResult& result, const std::string
         spdlog::info("Rapor dosyaya kaydedildi: {}", filename);
     }
 }
-
 } // namespace sentiric_llm_cli
