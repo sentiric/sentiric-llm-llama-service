@@ -1,36 +1,6 @@
 {
-  "active_profile": "qwen25_3b_voice_optimized",
+  "active_profile": "qwen2_3B",
   "profiles": {
-    "qwen25_3b_voice_optimized": {
-      "display_name": "Sentiric Voice Agent (Qwen 2.5 3B)",
-      "category": "Voice",
-      "model_id": "ggml-org/Qwen2.5-Coder-3B-Instruct-Q8_0-GGUF",
-      "filename": "qwen2.5-coder-3b-instruct-q8_0.gguf",
-      "context_size": 4096,
-      "gpu_layers": 100,
-      "temperature": 0.1,
-      "top_p": 0.85,
-      "repeat_penalty": 1.25,
-      "templates": {
-        "system_prompt": "Sen Sentiric Çağrı Merkezi asistanısın. Görevin, müşterinin sorusuna en kısa, en doğal ve en yardımsever şekilde cevap vermektir. ASLA uzun paragraflar kurma. Tek cümle veya en fazla iki cümle ile cevap ver. ASLA 'belgeye göre' gibi ifadeler kullanma, doğal konuş. Eğer bilgiyi bilmiyorsan kibarca bilmediğini söyle.",
-        "rag_prompt": "### MÜŞTERİ BİLGİSİ:\n{{rag_context}}\n\n### MÜŞTERİ SORUSU:\n{{user_prompt}}\n\n### TALİMAT:\nYukarıdaki bilgiyi kullanarak müşteriye ÇOK KISA ve DOĞAL bir cevap ver. Sadece sorulanı cevapla. Ekstra bilgi verme.\n\n### ASİSTAN:"
-      }
-    },
-    "qwen3_4b_agent": {
-      "display_name": "Sentiric Phone Agent (Qwen 3 4B)",
-      "category": "Production",
-      "model_id": "ggml-org/Qwen3-4B-GGUF",
-      "filename": "Qwen3-4B-Q4_K_M.gguf",
-      "context_size": 8192,
-      "gpu_layers": 100,
-      "temperature": 0.1,
-      "top_p": 0.9,
-      "repeat_penalty": 1.1,
-      "templates": {
-        "system_prompt": "Sen bir müşteri temsilcisisin. Sadece BELGE'deki veriyi oku. Yorum yapma. Kısa ve net cevap ver.",
-        "rag_prompt": "### BELGE:\n{{rag_context}}\n\n### SORU:\n{{user_prompt}}\n\n### YÖNERGE:\nYukarıdaki soruyu SADECE yukarıdaki BELGE'yi kullanarak cevapla. Yorum yapma. Kısa cevap ver.\n\n### CEVAP:"
-      }
-    },
     "qwen2_3B": {
       "display_name": "Sentiric Phone Agent (Qwen 2.5 3B)",
       "category": "Production",
@@ -41,50 +11,8 @@
       "temperature": 0.1,
       "repeat_penalty": 1.1,
       "templates": {
-        "system_prompt": "Sen bir asistansın. Sadece verilen belgeyi kullan. Asla yorum yapma.",
-        "rag_prompt": "### BELGE:\n{{rag_context}}\n\n### SORU:\n{{user_prompt}}\n\n### YÖNERGE:\nYukarıdaki soruyu SADECE yukarıdaki BELGE'yi kullanarak cevapla. Yorum yapma.\n\n### CEVAP:"
-      }
-    },
-    "ministral_3b_realtime": {
-      "display_name": "Sentiric Realtime (Ministral 3B)",
-      "category": "Realtime",
-      "model_id": "ggml-org/Ministral-3-3B-Instruct-2512-GGUF",
-      "filename": "Ministral-3-3B-Instruct-2512-Q8_0.gguf",
-      "context_size": 8192,
-      "gpu_layers": 100,
-      "temperature": 0.1,
-      "repeat_penalty": 1.15,
-      "templates": {
-        "system_prompt": "Sadece aşağıdaki belgeye göre cevap ver. Asla uydurma. Kısa ol.",
-        "rag_prompt": "### BELGE:\n{{rag_context}}\n\n### SORU:\n{{user_prompt}}\n\n### YÖNERGE:\nYukarıdaki soruyu SADECE yukarıdaki BELGE'yi kullanarak cevapla.\n\n### CEVAP:"
-      }
-    },
-    "gemma_1b_ultrafast": {
-      "display_name": "Sentiric Edge (Gemma 1B)",
-      "category": "Fallback",
-      "model_id": "ggml-org/gemma-3-1b-it-GGUF",
-      "filename": "gemma-3-1b-it-Q4_K_M.gguf",
-      "context_size": 2048,
-      "gpu_layers": 100,
-      "temperature": 0.2, 
-      "repeat_penalty": 1.3, 
-      "templates": {
-        "system_prompt": "Sadece veriyi oku. Çok kısa ol.",
-        "rag_prompt": "### BELGE:\n{{rag_context}}\n\n### SORU:\n{{user_prompt}}\n\n### YÖNERGE:\nYukarıdaki soruyu SADECE yukarıdaki BELGE'yi kullanarak cevapla. Çok kısa ol.\n\n### CEVAP:"
-      }
-    },
-    "gemma_4b": {
-      "display_name": "Sentiric Edge (Gemma 4B)",
-      "category": "Fallback",
-      "model_id": "ggml-org/gemma-3-4b-it-GGUF",
-      "filename": "gemma-3-4b-it-Q4_K_M.gguf",
-      "context_size": 2048,
-      "gpu_layers": 100,
-      "temperature": 0.2,
-      "repeat_penalty": 1.3,
-      "templates": {
-        "system_prompt": "Sadece veriyi oku. Kısa ol.",
-        "rag_prompt": "### BELGE:\n{{rag_context}}\n\n### SORU:\n{{user_prompt}}\n\n### YÖNERGE:\nYukarıdaki soruyu SADECE yukarıdaki BELGE'yi kullanarak cevapla. Kısa ol.\n\n### CEVAP:"
+        "system_prompt": "Sen profesyonel bir çağrı merkezi asistanısın. Müşteriye kısa, net ve nazik cevaplar ver. Yorum yapma.",
+        "rag_prompt": "### BELGE:\n{{rag_context}}\n\n### SORU:\n{{user_prompt}}\n\n### YÖNERGE:\nYukarıdaki soruyu SADECE yukarıdaki BELGE'yi kullanarak cevapla. Yorum yapma. Kısa cevap ver.\n\n### CEVAP:"
       }
     }
   }
