@@ -83,6 +83,11 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
         grpc_request.set_rag_context(body["rag_context"]);
     }
 
+    // [YENİ] LoRA adaptörünü ekle
+    if (body.contains("lora_adapter") && body["lora_adapter"].is_string()) {
+        grpc_request.set_lora_adapter_id(body["lora_adapter"]);
+    }
+
     if (!reasoning_prompt.empty()) {
         system_prompt += reasoning_prompt;
     }
@@ -205,9 +210,6 @@ void ChatController::handle_chat_completions(const httplib::Request &req, httpli
         auto batched_request = std::make_shared<BatchedRequest>();
         batched_request->request = grpc_request;
 
-        // [FIX] HIGHLY PERMISSIVE JSON GRAMMAR
-        // Eski gramer, llama.cpp'nin parser'ı ile uyumsuzluk yaşıyordu.
-        // Bu versiyon, whitespace ve object/array yapılarında daha esnek.
         if (body.contains("response_format") && body["response_format"].value("type", "") == "json_object") {
              batched_request->grammar = R"(
 root   ::= object

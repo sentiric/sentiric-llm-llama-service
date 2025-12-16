@@ -8,6 +8,8 @@
 #include <vector>
 #include <thread>
 #include <future>
+#include <filesystem>
+#include <regex>
 
 // --- RAII HELPERS ---
 
@@ -128,6 +130,10 @@ bool LLMEngine::internal_reload_model() {
         spdlog::info("⚙️ Loading model from: {}", settings_.model_path);
         model_ = llama_model_load_from_file(settings_.model_path.c_str(), model_params);
         if (!model_) throw std::runtime_error("Failed to load model file.");
+        
+        // [YENİ] LoRA için temel model yolunu sakla ve aktif adaptörü sıfırla
+        base_model_path_for_lora_ = settings_.model_path;
+        active_lora_adapter_ = "";
 
         char arch_buffer[64] = {0};
         llama_model_meta_val_str(model_, "general.architecture", arch_buffer, sizeof(arch_buffer));
@@ -149,6 +155,50 @@ bool LLMEngine::is_model_loaded() const {
     std::shared_lock<std::shared_mutex> lock(model_mutex_);
     return model_loaded_.load(); 
 }
+
+// --- LORA MANAGEMENT ---
+void LLMEngine::apply_lora(const std::string& lora_adapter_id) {
+    if (lora_adapter_id.empty() || lora_adapter_id == active_lora_adapter_) {
+        return;
+    }
+    
+    std::unique_lock<std::mutex> lock(lora_mutex_);
+    // Kilit alındıktan sonra tekrar kontrol et
+    if (lora_adapter_id == active_lora_adapter_) {
+        return;
+    }
+
+    // [GÜVENLİK] Path Traversal Koruması
+    std::string sanitized_id = lora_adapter_id;
+    sanitized_id.erase(std::remove(sanitized_id.begin(), sanitized_id.end(), '/'), sanitized_id.end());
+    sanitized_id.erase(std::remove(sanitized_id.begin(), sanitized_id.end(), '\\'), sanitized_id.end());
+    if (sanitized_id.find("..") != std::string::npos) {
+        spdlog::error("🚨 Security Violation: Path traversal detected in LoRA adapter ID '{}'. Request denied.", lora_adapter_id);
+        return;
+    }
+
+    namespace fs = std::filesystem;
+    fs::path lora_path = fs::path(settings_.lora_dir) / (sanitized_id + ".bin");
+
+    if (!fs::exists(lora_path)) {
+        spdlog::error("LoRA adapter not found at path: {}", lora_path.string());
+        return;
+    }
+    
+    spdlog::warn("🎨 Applying LoRA adapter: {}", sanitized_id);
+    int result = llama_model_apply_lora_from_file(model_, lora_path.c_str(), 1.0f, base_model_path_for_lora_.c_str(), settings_.n_threads);
+
+    if (result == 0) {
+        active_lora_adapter_ = sanitized_id;
+        spdlog::info("✅ Successfully applied LoRA: {}", sanitized_id);
+    } else {
+        spdlog::error("❌ Failed to apply LoRA adapter '{}'. Error code: {}", sanitized_id, result);
+        // Başarısızlık durumunda aktif LoRA'yı boşaltarak temel modele dönüldüğünü varsayıyoruz.
+        // Not: llama.cpp'nin bu davranışı garanti etmediğini varsayarak en güvenli state'e geçiyoruz.
+        active_lora_adapter_ = "";
+    }
+}
+
 
 // --- REQUEST PROCESSING ---
 
@@ -205,11 +255,9 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
     spdlog::debug("📝 Token Usage Analysis: Input={} | Context Capacity={} | Safe Limit={}", 
                   tokens.size(), max_context, safe_prompt_limit);
 
-    // [FIX 1] Head-Preservation Truncation
     if (safe_prompt_limit > 0 && tokens.size() > safe_prompt_limit) {
         spdlog::warn("⚠️ Prompt truncated: {} -> {} tokens. (Applying Head+Tail strategy)", tokens.size(), safe_prompt_limit);
         
-        // System Prompt'u korumak için ilk 256 token (Head)
         const size_t HEAD_SIZE = 256;
         
         if (safe_prompt_limit > HEAD_SIZE) {
@@ -218,15 +266,12 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
              std::vector<llama_token> smart_tokens;
              smart_tokens.reserve(safe_prompt_limit);
              
-             // 1. Head (System Prompt) kopyala
              smart_tokens.insert(smart_tokens.end(), tokens.begin(), tokens.begin() + HEAD_SIZE);
              
-             // 2. Tail (Son kullanıcı mesajları) kopyala
              smart_tokens.insert(smart_tokens.end(), tokens.end() - tail_size, tokens.end());
              
              tokens = std::move(smart_tokens);
         } else {
-             // Limit çok düşükse sadece sondan al (Fallback)
              std::vector<llama_token> truncated_tokens(tokens.begin() + (tokens.size() - safe_prompt_limit), tokens.end());
              tokens = std::move(truncated_tokens);
         }
@@ -246,10 +291,6 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
 bool LLMEngine::decode_prompt(llama_context* ctx, ContextGuard& guard, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr) {
     size_t matched_len = guard.get_matched_tokens();
 
-    // [FIX 2] Unconditional KV Cache Rewind
-    // Eşleşme noktasından sonra gelen her şeyi (önceki üretimler, hayalet tokenlar) SİL.
-    // Bu işlem, Smart Cache tam eşleşse bile yapılmalıdır.
-    // Parametreler: (mem, seq_id=-1, start=matched_len, end=-1)
     llama_memory_seq_rm(llama_get_memory(ctx), -1, matched_len, -1);
     
     size_t tokens_to_process = prompt_tokens.size() - matched_len;
@@ -267,7 +308,6 @@ bool LLMEngine::decode_prompt(llama_context* ctx, ContextGuard& guard, const std
             }
             
             if (i + n_eval == tokens_to_process) {
-                // Son batch ise logit hesapla
                 batch_scope.batch.logits[n_eval - 1] = true;
             }
             
@@ -290,13 +330,11 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     LlamaSamplerGuard sampler_guard(llama_sampler_chain_default_params());
     llama_sampler* chain = sampler_guard.sampler;
 
-    // 1. Grammar Sampling
     if (!req_ptr->grammar.empty()) {
         llama_sampler* g = llama_sampler_init_grammar(vocab, req_ptr->grammar.c_str(), "root");
         if (g) llama_sampler_chain_add(chain, g);
     }
     
-    // 2. Penalties & Distribution
     float repeat_penalty = params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty;
     llama_sampler_chain_add(chain, llama_sampler_init_penalties(llama_n_ctx(ctx), repeat_penalty, 0.0f, 0.0f));
     llama_sampler_chain_add(chain, llama_sampler_init_top_k(params.has_top_k() ? params.top_k() : settings_.default_top_k));
@@ -314,7 +352,6 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     int n_decoded = 0;
     llama_pos n_past = prompt_tokens.size();
     
-    // Güvenlik limiti kontrolü
     uint32_t ctx_limit = settings_.context_size;
     if (n_past + req_max_gen > ctx_limit) {
         req_max_gen = ctx_limit - n_past - 1;
@@ -323,16 +360,13 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     LlamaBatchScope token_batch(1, 0, 1);
     
     while (n_decoded < (int)req_max_gen) {
-        // İptal Kontrolü
         if (req_ptr->should_stop_callback && req_ptr->should_stop_callback()) {
             req_ptr->finish_reason = "cancelled"; break;
         }
         
-        // Sampling
         llama_token new_token_id = llama_sampler_sample(chain, ctx, -1);
         llama_sampler_accept(chain, new_token_id);
         
-        // EOS Kontrolü
         if (llama_vocab_is_eog(vocab, new_token_id)) {
             req_ptr->finish_reason = "stop"; break;
         }
@@ -343,7 +377,6 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
         int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true); 
         std::string token_str(buf, n);
         
-        // Stop Sequence Kontrolü
         bool stop_found = false;
         for (const auto& seq : dynamic_stop_sequences) {
             if (token_str.find(seq) != std::string::npos) {
@@ -358,13 +391,11 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
             break;
         }
 
-        // Token Emit
         if (!is_control) {
             if(req_ptr->on_token_callback) req_ptr->on_token_callback(token_str);
             req_ptr->token_queue.push(token_str);
         }
         
-        // Next Token Decode
         token_batch.clear();
         common_batch_add(token_batch.batch, new_token_id, n_past, {0}, true);
         
@@ -382,6 +413,11 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
 
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
     try {
+        // [YENİ] LoRA adaptörünü uygula
+        if (req_ptr->request.has_lora_adapter_id()) {
+            apply_lora(req_ptr->request.lora_adapter_id());
+        }
+
         std::string formatted_prompt = formatter_->format(req_ptr->request, settings_);
         std::vector<llama_token> prompt_tokens = tokenize_and_truncate(req_ptr, formatted_prompt);
         

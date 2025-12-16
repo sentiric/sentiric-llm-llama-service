@@ -1,5 +1,3 @@
-
-
 networks:
   sentiric-net:
     name: "${NETWORK_NAME:-sentiric.cloud}"
@@ -17,6 +15,7 @@ volumes:
 
   # [capability-llm]
   llm-llama-models:
+  llm-llama-loras: # [YENİ] LoRA adaptörleri için volume
   llm-llama-cache: 
 
 
@@ -38,6 +37,7 @@ services:
     volumes:
       - "${CERTIFICATES_REPO_PATH}:/sentiric-certificates:ro"
       - llm-llama-models:/models
+      - llm-llama-loras:/lora_adapters # [YENİ] LoRA dizinini mount et
     ports:
       - "${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}:${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}"
       - "${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}:${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}"
@@ -64,5 +64,4 @@ services:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu]   
-
+              capabilities: [gpu]

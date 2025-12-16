@@ -36,3 +36,23 @@ if echo "$RES" | jq . >/dev/null 2>&1; then
 else
     log_fail "Bozuk JSON: $RES"
 fi
+
+# --- TEST 3: LoRA Adapter Switching ---
+log_info "Test: LoRA Adapter (Hukukçu Modu)"
+# Bu testin çalışması için 'lora_adapters/legal_expert.bin' dosyasının olması gerekir.
+# Testin amacı API'nin LoRA parametresini kabul edip etmediğini görmektir.
+PAYLOAD='{
+    "messages": [{"role": "user", "content": "Bir sözleşme maddesi önerir misin?"}],
+    "lora_adapter": "legal_expert",
+    "system_prompt": "Sen bir hukuk danışmanısın.",
+    "max_tokens": 100
+}'
+RES=$(send_chat "$PAYLOAD" | jq -r '.choices[0].message.content')
+# Not: Gerçek LoRA dosyası olmadan içerik doğrulaması zor.
+# "Müvekkil", "tazminat", "hüküm" gibi anahtar kelimelerle kontrol edilebilir.
+# Şimdilik API'nin çökmediğini ve bir yanıt verdiğini kontrol ediyoruz.
+if [ -n "$RES" ]; then
+    log_pass "LoRA adaptörlü istek başarıyla yanıtlandı: '$RES'"
+else
+    log_fail "LoRA adaptörlü istek başarısız oldu veya boş yanıt döndü."
+fi

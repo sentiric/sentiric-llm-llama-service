@@ -21,7 +21,9 @@ grpc::Status GrpcServer::GenerateStream(
         trace_id = std::string(it->second.begin(), it->second.end());
     }
     
-    spdlog::info("[gRPC][TraceID:{}] New GenerateStream request received.", trace_id);
+    // [YENİ] LoRA bilgisini logla
+    spdlog::info("[gRPC][TraceID:{}] New GenerateStream request. LoRA: '{}'", 
+                 trace_id, request->has_lora_adapter_id() ? request->lora_adapter_id() : "none");
 
     if (!engine_->is_model_loaded()) {
         return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Model is not ready yet.");
@@ -32,20 +34,17 @@ grpc::Status GrpcServer::GenerateStream(
     
     auto batched_request = std::make_shared<BatchedRequest>();
     batched_request->request = *request;
-    batched_request->creation_time = start_time; // Explicitly sync creation time
+    batched_request->creation_time = start_time;
     
     batched_request->on_token_callback = [batched_request, writer, trace_id](const std::string& token) -> bool {
-        // --- TTFT CALCULATION ---
         if (!batched_request->first_token_emitted.exchange(true)) {
             auto now = std::chrono::steady_clock::now();
             std::chrono::duration<double, std::milli> ttft = now - batched_request->creation_time;
             batched_request->ttft_ms = ttft.count();
             spdlog::debug("[gRPC][TraceID:{}] ⚡ TTFT: {:.2f} ms", trace_id, batched_request->ttft_ms.load());
         }
-        // ------------------------
 
         sentiric::llm::v1::GenerateStreamResponse response; 
-        // TEMİZ KOD: Artık sanitizer yok. Veri kaynağından temiz geliyor.
         response.set_token(token);
         return writer->Write(response);
     };

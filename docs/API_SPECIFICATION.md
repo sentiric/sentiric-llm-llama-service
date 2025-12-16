@@ -22,6 +22,10 @@ message GenerateStreamRequest {
   
   repeated ConversationTurn history = 4; // Konuşma geçmişi.
   optional GenerationParams params = 5;  // Sıcaklık, Max Token vb.
+
+  // [YENİ] LoRA Adaptörünü belirtir. Sadece dosya adı, uzantısız.
+  // Örn: "customer_service_finetune"
+  optional string lora_adapter_id = 6;
 }
 ```
 
@@ -37,7 +41,8 @@ Stream ve unary (tek seferde) yanıtları destekleyen ana metin üretim endpoint
     { "role": "system", "content": "Sen bir asistansın." },
     { "role": "user", "content": "Merhaba, nasılsın?" }
   ],
-  "rag_context": "Müşteri: Ayşe Yılmaz. Bakiye: 500 TL.", // [YENİ] RAG için bu alan kullanılır
+  "rag_context": "Müşteri: Ayşe Yılmaz. Bakiye: 500 TL.",
+  "lora_adapter": "customer_service_finetune", // [YENİ] LoRA adaptörünü belirtir
   "temperature": 0.7,
   "max_tokens": 1024,
   "stream": false
@@ -47,8 +52,7 @@ Stream ve unary (tek seferde) yanıtları destekleyen ana metin üretim endpoint
 ### 2.2. Donanım Yapılandırması (`POST /v1/hardware/config`)
 Servisi yeniden başlatmadan donanım ayarlarını günceller (Model reload tetikler).
 
-**İstek:**
-```json
+**İstek:**```json
 {
   "gpu_layers": 100,
   "context_size": 8192,
@@ -72,5 +76,4 @@ Gateway ve Load Balancer için durum bilgisi.
   }
 }
 ```
-
 ---

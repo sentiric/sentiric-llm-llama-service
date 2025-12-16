@@ -22,6 +22,7 @@ struct Settings {
     // Model & Profiles
     std::string profile_name = "qwen25_3b_phone_assistant"; 
     std::string model_dir = "/models";
+    std::string lora_dir = "/lora_adapters"; // [YENİ]
     std::string model_id = "";
     std::string model_filename = "";
     std::string model_path = "";
@@ -177,6 +178,7 @@ inline Settings load_settings() {
     s.http_threads = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_THREADS", s.http_threads);
 
     s.model_dir = get_env_var("LLM_LLAMA_SERVICE_MODEL_DIR", s.model_dir);
+    s.lora_dir = get_env_var("LLM_LLAMA_SERVICE_LORA_DIR", s.lora_dir); // [YENİ]
     
     s.model_id = get_env_var("LLM_LLAMA_SERVICE_MODEL_ID", s.model_id);
     s.model_filename = get_env_var("LLM_LLAMA_SERVICE_MODEL_FILENAME", s.model_filename);

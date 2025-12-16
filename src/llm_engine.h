@@ -24,8 +24,10 @@ public:
     void process_single_request(std::shared_ptr<BatchedRequest> batched_request);
     bool reload_model(const std::string& profile_name);
     
-    // [YENİ] Donanım ayarlarını güncelle ve modeli yeniden yükle
     bool update_hardware_config(int gpu_layers, int context_size, bool kv_offload);
+
+    // [YENİ] LoRA adaptörünü global olarak uygular
+    void apply_lora(const std::string& lora_adapter_id);
 
     DynamicBatcher* get_batcher() const { return batcher_.get(); }
     bool is_batching_enabled() const { return batcher_ != nullptr; }
@@ -36,7 +38,7 @@ public:
 private:
     void process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batch);
     void execute_single_request(std::shared_ptr<BatchedRequest> req_ptr);
-    bool internal_reload_model(); // Kod tekrarını önlemek için
+    bool internal_reload_model(); 
 
     std::vector<llama_token> tokenize_and_truncate(std::shared_ptr<BatchedRequest> req_ptr, const std::string& formatted_prompt);
     bool decode_prompt(llama_context* ctx, ContextGuard& guard, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr);
@@ -46,6 +48,11 @@ private:
     llama_model* model_ = nullptr;
     std::atomic<bool> model_loaded_{false};
     
+    // [YENİ] LoRA durumu yönetimi
+    std::string active_lora_adapter_;
+    std::string base_model_path_for_lora_;
+    std::mutex lora_mutex_;
+
     std::unique_ptr<LlamaContextPool> context_pool_;
     std::unique_ptr<PromptFormatter> formatter_;
     std::unique_ptr<DynamicBatcher> batcher_;
