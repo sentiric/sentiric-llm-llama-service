@@ -50,7 +50,6 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
     sentiric::llm::v1::GenerateStreamRequest grpc_request;
     const auto& settings = engine_->get_settings();
 
-    // [FIX] default_system_prompt yerine template_system_prompt kullanılıyor
     std::string system_prompt = settings.template_system_prompt;
 
     if (body.contains("messages") && body["messages"].is_array()) {
@@ -62,7 +61,6 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
             std::string content = msg.value("content", "");
             
             if (role == "system") {
-                 // Eğer request içinde sistem mesajı varsa, varsayılanı ezer.
                  system_prompt = content;
             } else if (role == "user" && !first_user_message_found) {
                 grpc_request.set_user_prompt(content);
@@ -76,12 +74,16 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
         }
     }
 
-    // Reasoning varsa system prompt'a ekle
+    // **[KRİTİK HATA DÜZELTMESİ]**
+    // Gelen JSON gövdesinden 'rag_context' alanını oku ve protobuf'a ekle.
+    if (body.contains("rag_context") && body["rag_context"].is_string()) {
+        grpc_request.set_rag_context(body["rag_context"]);
+    }
+
     if (!reasoning_prompt.empty()) {
         system_prompt += reasoning_prompt;
     }
 
-    // Nihai system prompt'u ata
     if (!system_prompt.empty()) {
         grpc_request.set_system_prompt(system_prompt);
     }

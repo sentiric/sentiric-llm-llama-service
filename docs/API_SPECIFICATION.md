@@ -27,7 +27,24 @@ message GenerateStreamRequest {
 
 ## 2. HTTP Endpoint'leri (Yönetim ve UI)
 
-### 2.1. Donanım Yapılandırması (`POST /v1/hardware/config`)
+### 2.1. OpenAI Uyumlu Chat Endpoint'i (`POST /v1/chat/completions`)
+Stream ve unary (tek seferde) yanıtları destekleyen ana metin üretim endpoint'i.
+
+**İstek Gövdesi (JSON):**
+```json
+{
+  "messages": [
+    { "role": "system", "content": "Sen bir asistansın." },
+    { "role": "user", "content": "Merhaba, nasılsın?" }
+  ],
+  "rag_context": "Müşteri: Ayşe Yılmaz. Bakiye: 500 TL.", // [YENİ] RAG için bu alan kullanılır
+  "temperature": 0.7,
+  "max_tokens": 1024,
+  "stream": false
+}
+```
+
+### 2.2. Donanım Yapılandırması (`POST /v1/hardware/config`)
 Servisi yeniden başlatmadan donanım ayarlarını günceller (Model reload tetikler).
 
 **İstek:**
@@ -39,7 +56,7 @@ Servisi yeniden başlatmadan donanım ayarlarını günceller (Model reload teti
 }
 ```
 
-### 2.2. Sağlık Durumu (`GET /health`)
+### 2.3. Sağlık Durumu (`GET /health`)
 Gateway ve Load Balancer için durum bilgisi.
 
 **Yanıt:**
@@ -55,3 +72,5 @@ Gateway ve Load Balancer için durum bilgisi.
   }
 }
 ```
+
+---
