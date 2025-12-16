@@ -1,15 +1,20 @@
-# --- Derleme Aşaması ---
+# --- Derleme Aşaması (CPU) ---
 FROM ubuntu:24.04 AS builder
 
-# 1. Temel bağımlılıkları kur
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 1️⃣ Temel bağımlılıkları kur + ccache
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential curl zip unzip tar \
-    pkg-config ninja-build ca-certificates python3
+    pkg-config ninja-build ca-certificates python3 ccache && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. Vcpkg'yi kur (Robust Kurulum)
+ENV CC="ccache gcc"
+ENV CXX="ccache g++"
+
+# 2️⃣ vcpkg kurulumu
 ARG VCPKG_VERSION=2024.05.24
-# VCPKG_FORCE_SYSTEM_BINARIES=1: vcpkg'nin kendi araçlarını indirmesini engeller, sistemdekileri kullanır.
-ENV VCPKG_FORCE_SYSTEM_BINARIES=1 
+ENV VCPKG_FORCE_SYSTEM_BINARIES=1
 
 RUN curl -fL --retry 5 --retry-delay 5 "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSION}.tar.gz" -o vcpkg.tar.gz && \
     mkdir -p /opt/vcpkg && \
@@ -19,34 +24,29 @@ RUN curl -fL --retry 5 --retry-delay 5 "https://github.com/microsoft/vcpkg/archi
 
 WORKDIR /app
 
-# 3. Bağımlılık manifest'ini kopyala ve kur
+# 3️⃣ Bağımlılık manifest
 COPY vcpkg.json .
-
-# [KRİTİK DÜZELTME] GitHub Rate Limit Engelini Aşmak İçin Mirror Kullanımı
 ENV X_VCPKG_ASSET_SOURCES="clear;x-azurl,https://asset-store.vcpkg.org/;"
-
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# 4. llama.cpp'yi klonla ve belirli bir versiyona sabitle
+# 4️⃣ llama.cpp sabit commit + shallow clone
 ARG LLAMA_CPP_VERSION=b7415
-RUN git clone https://github.com/ggml-org/llama.cpp.git llama.cpp && \
-    cd llama.cpp && \
-    git checkout ${LLAMA_CPP_VERSION}
+RUN git clone --branch ${LLAMA_CPP_VERSION} --depth 1 https://github.com/ggml-org/llama.cpp.git llama.cpp
 
-# 5. Proje kaynak kodunu ve build script'ini kopyala
+# 5️⃣ Kaynakları kopyala
 COPY src ./src
 COPY CMakeLists.txt .
 
-# 6. Projeyi derle
-RUN cmake -B build \
+# 6️⃣ Derleme (ccache + BuildKit cache)
+RUN --mount=type=cache,target=/root/.ccache \
+    cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -DLLAMA_CURL=OFF \
-    -DGGML_NATIVE=OFF
-    
-RUN cmake --build build --target all -j $(nproc)
+    -DGGML_NATIVE=OFF && \
+    cmake --build build --target all -j $(nproc)
 
-# --- Çalışma Aşaması ---
+# --- Çalışma Aşaması (CPU) ---
 FROM ubuntu:24.04 AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -62,11 +62,9 @@ RUN ldconfig
 
 COPY studio-v2 /app/studio-v2
 COPY examples /app/examples
-
 COPY models/profiles.json /app/profiles.json
 
 WORKDIR /app
-    
 RUN mkdir -p /models
 
 EXPOSE 16070 16071 16072

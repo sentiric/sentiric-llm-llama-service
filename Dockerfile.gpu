@@ -1,17 +1,19 @@
 # --- Derleme Aşaması (GPU) ---
 FROM nvcr.io/nvidia/cuda:13.0.2-cudnn-devel-ubuntu24.04 AS builder
 
-# Etkileşimsiz kurulum için
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1. Temel bağımlılıkları kur
+# 1️⃣ Temel bağımlılıkları kur
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential curl zip unzip tar \
-    pkg-config ninja-build ca-certificates python3
+    pkg-config ninja-build ca-certificates python3 ccache && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. Vcpkg'yi kur (Robust Kurulum)
+ENV CC="ccache gcc"
+ENV CXX="ccache g++"
+
+# 2️⃣ vcpkg kurulumu
 ARG VCPKG_VERSION=2024.05.24
-# VCPKG_FORCE_SYSTEM_BINARIES=1: vcpkg'nin kendi araçlarını indirmesini engeller, sistemdekileri kullanır.
 ENV VCPKG_FORCE_SYSTEM_BINARIES=1
 
 RUN curl -fL --retry 5 --retry-delay 5 "https://github.com/microsoft/vcpkg/archive/refs/tags/${VCPKG_VERSION}.tar.gz" -o vcpkg.tar.gz && \
@@ -22,33 +24,29 @@ RUN curl -fL --retry 5 --retry-delay 5 "https://github.com/microsoft/vcpkg/archi
 
 WORKDIR /app
 
-# 3. Bağımlılık manifest'ini kopyala ve kur
+# 3️⃣ Bağımlılık manifest
 COPY vcpkg.json .
-
-# [KRİTİK DÜZELTME] GitHub Rate Limit Engelini Aşmak İçin Mirror Kullanımı
 ENV X_VCPKG_ASSET_SOURCES="clear;x-azurl,https://asset-store.vcpkg.org/;"
-
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# 4. llama.cpp'yi klonla (Sabit Commit)
+# 4️⃣ llama.cpp sabit commit + shallow clone
 ARG LLAMA_CPP_VERSION=b7415
-RUN git clone https://github.com/ggml-org/llama.cpp.git llama.cpp && \
-    cd llama.cpp && \
-    git checkout ${LLAMA_CPP_VERSION}
+RUN git clone --branch ${LLAMA_CPP_VERSION} --depth 1 https://github.com/ggml-org/llama.cpp.git llama.cpp
 
-# 5. Kaynakları kopyala
+# 5️⃣ Kaynakları kopyala
 COPY src ./src
 COPY CMakeLists.txt .
 
-# 6. Derle (CUDA Aktif)
-RUN cmake -B build \
+# 6️⃣ Derleme (BuildKit cache ile)
+# BuildKit cache için RUN --mount=type=cache,target=/root/.ccache aktif edilmeli
+RUN --mount=type=cache,target=/root/.ccache \
+    cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -DGGML_CUDA=ON \
     -DLLAMA_CURL=OFF \
-    -DGGML_NATIVE=OFF
-
-RUN cmake --build build --target all -j $(nproc)
+    -DGGML_NATIVE=OFF && \
+    cmake --build build --target all -j $(nproc)
 
 # --- Çalışma Aşaması (GPU) ---
 FROM nvcr.io/nvidia/cuda:13.0.2-cudnn-runtime-ubuntu24.04 AS runtime
@@ -60,7 +58,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/build/llm_service /usr/local/bin/
 COPY --from=builder /app/build/llm_cli /usr/local/bin/
 
-# Dinamik kütüphaneleri kopyala (CUDA runtime container'ında bazıları eksik olabilir)
+# Dinamik kütüphaneleri kopyala
 COPY --from=builder /app/vcpkg_installed/x64-linux/lib/*.so* /usr/local/lib/
 COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 RUN ldconfig
