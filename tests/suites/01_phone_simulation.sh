@@ -31,8 +31,8 @@ talk() {
     
     RAW_CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content')
     
-    # GÜÇLENDİRİLMİŞ TEMİZLİK: <think>...</think> bloklarını (multiline dahil) ve diğer potansiyel artıkları sil
-    CLEAN_CONTENT=$(echo "$RAW_CONTENT" | perl -0777 -pe 's/<think>.*?<\/think>//gs' | sed 's/<[^>]*>//g' | tr -s ' ' | xargs)
+    # GÜÇLENDİRİLMİŞ TEMİZLİK: <think> bloklarını, HTML etiketlerini siler, boşlukları normalize eder. xargs kaldırıldı.
+    CLEAN_CONTENT=$(echo "$RAW_CONTENT" | perl -0777 -pe 's/<think>.*?<\/think>//gs' | sed 's/<[^>]*>//g' | tr -s ' ' | sed 's/^[ \t]*//;s/[ \t]*$//')
 
     echo -e "👤 User: $user_msg"
     echo -e "🤖 AI (Clean): $CLEAN_CONTENT"

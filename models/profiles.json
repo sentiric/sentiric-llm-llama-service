@@ -13,7 +13,7 @@
       "repeat_penalty": 1.1,
       "templates": {
         "system_prompt": "Sen bir çağrı merkezi asistanısın. Kısa, net ve sadece sana verilen belgedeki bilgileri kullanarak cevap ver. Asla yorum yapma veya ek bilgi uydurma.",
-        "rag_prompt": "### CONTEXT / BILGI NOTU:\n{{rag_context}}\n\n### YONERGE:\nKullanicinin sorusunu SADECE yukaridaki Context bilgilerini kullanarak cevapla. Disaridan bilgi ekleme."
+        "rag_prompt": "### BELGE:\n{{rag_context}}\n\n### SORU:\n{{user_prompt}}\n\n### YÖNERGE:\nYukarıdaki soruyu SADECE yukarıdaki BELGE'yi kullanarak cevapla. Yorum yapma. Kısa cevap ver.\n\n### CEVAP:"
       }
     },
     "qwen2_3B": {
@@ -27,7 +27,7 @@
       "repeat_penalty": 1.1,
       "templates": {
         "system_prompt": "Sen bir asistansın. Sadece verilen belgeyi kullan.",
-        "rag_prompt": "### CONTEXT / BILGI NOTU:\n{{rag_context}}\n\n### YONERGE:\nKullanicinin sorusunu SADECE yukaridaki Context bilgilerini kullanarak cevapla. Disaridan bilgi ekleme."
+        "rag_prompt": "### BELGE:\n{{rag_context}}\n\n### SORU:\n{{user_prompt}}\n\n### YÖNERGE:\nYukarıdaki soruyu SADECE yukarıdaki BELGE'yi kullanarak cevapla. Yorum yapma.\n\n### CEVAP:"
       }
     },
     "ministral_3b_realtime": {
@@ -41,7 +41,7 @@
       "repeat_penalty": 1.15,
       "templates": {
         "system_prompt": "Sadece aşağıdaki belgeye göre cevap ver. Asla uydurma.",
-        "rag_prompt": "### CONTEXT / BILGI NOTU:\n{{rag_context}}\n\n### YONERGE:\nKullanicinin sorusunu SADECE yukaridaki Context bilgilerini kullanarak cevapla. Disaridan bilgi ekleme."
+        "rag_prompt": "### BELGE:\n{{rag_context}}\n\n### SORU:\n{{user_prompt}}\n\n### YÖNERGE:\nYukarıdaki soruyu SADECE yukarıdaki BELGE'yi kullanarak cevapla.\n\n### CEVAP:"
       }
     },
     "gemma_1b_ultrafast": {
@@ -55,7 +55,7 @@
       "repeat_penalty": 1.3, 
       "templates": {
         "system_prompt": "Sadece veriyi oku. Kısa ol.",
-        "rag_prompt": "### CONTEXT / BILGI NOTU:\n{{rag_context}}\n\n### YONERGE:\nKullanicinin sorusunu SADECE yukaridaki Context bilgilerini kullanarak cevapla. Disaridan bilgi ekleme."
+        "rag_prompt": "### BELGE:\n{{rag_context}}\n\n### SORU:\n{{user_prompt}}\n\n### YÖNERGE:\nYukarıdaki soruyu SADECE yukarıdaki BELGE'yi kullanarak cevapla. Kısa ol.\n\n### CEVAP:"
       }
     },
     "gemma_4b": {
@@ -69,7 +69,7 @@
       "repeat_penalty": 1.3,
       "templates": {
         "system_prompt": "Sadece veriyi oku. Kısa ol.",
-        "rag_prompt": "### CONTEXT / BILGI NOTU:\n{{rag_context}}\n\n### YONERGE:\nKullanicinin sorusunu SADECE yukaridaki Context bilgilerini kullanarak cevapla. Disaridan bilgi ekleme."
+        "rag_prompt": "### BELGE:\n{{rag_context}}\n\n### SORU:\n{{user_prompt}}\n\n### YÖNERGE:\nYukarıdaki soruyu SADECE yukarıdaki BELGE'yi kullanarak cevapla. Kısa ol.\n\n### CEVAP:"
       }
     }
   }
