@@ -8,7 +8,12 @@ std::unique_ptr<PromptFormatter> create_formatter(const std::string& model_id) {
     std::string id_lower = model_id;
     std::transform(id_lower.begin(), id_lower.end(), id_lower.begin(), ::tolower);
 
-    if (id_lower.find("llama-3") != std::string::npos || id_lower.find("llama3") != std::string::npos) {
+    // Ministral / Mistral Ailesi
+    if (id_lower.find("ministral") != std::string::npos || id_lower.find("mistral") != std::string::npos) {
+        spdlog::info("🎨 Formatter Selected: Mistral/Ministral (Inst)");
+        return std::make_unique<MistralFormatter>();
+    }
+    else if (id_lower.find("llama-3") != std::string::npos || id_lower.find("llama3") != std::string::npos) {
         spdlog::info("🎨 Formatter Selected: Llama 3 (Instruct)");
         return std::make_unique<Llama3Formatter>();
     } 
@@ -41,17 +46,11 @@ std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamR
 
     // User + RAG
     ss << "<|im_start|>user\n";
-    // [CLEANUP] Removed hardcoded /no_think directive. 
-    // This should be managed via system prompt if needed.
-
+    
     if (request.has_rag_context() && !request.rag_context().empty()) {
         std::string content = settings.template_rag_prompt;
         PromptFormatter::replace_all(content, "{{rag_context}}", request.rag_context());
         PromptFormatter::replace_all(content, "{{user_prompt}}", request.user_prompt());
-        // Fallback for missing placeholder
-        if (content.find(request.user_prompt()) == std::string::npos) {
-            content += "\n\nQUERY: " + request.user_prompt();
-        }
         ss << content;
     } else {
         ss << request.user_prompt();
@@ -65,17 +64,14 @@ std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamR
 std::string Llama3Formatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
     std::stringstream ss;
     
-    // System: <|start_header_id|>system<|end_header_id|>\n\n...<|eot_id|>
     std::string system_prompt = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     ss << "<|start_header_id|>system<|end_header_id|>\n\n" << system_prompt << "<|eot_id|>";
 
-    // History
     for (const auto& turn : request.history()) {
         std::string role = (turn.role() == "user") ? "user" : "assistant";
         ss << "<|start_header_id|>" << role << "<|end_header_id|>\n\n" << turn.content() << "<|eot_id|>";
     }
 
-    // User
     ss << "<|start_header_id|>user<|end_header_id|>\n\n";
     if (request.has_rag_context() && !request.rag_context().empty()) {
         std::string content = settings.template_rag_prompt;
@@ -86,21 +82,60 @@ std::string Llama3Formatter::format(const sentiric::llm::v1::GenerateStreamReque
         ss << request.user_prompt();
     }
     ss << "<|eot_id|>";
-
-    // Generation Prompt
     ss << "<|start_header_id|>assistant<|end_header_id|>\n\n";
     return ss.str();
 }
 
-// --- 3. Gemma ---
+// --- 3. Mistral / Ministral (YENİ) ---
+// Format: <s>[INST] System + User [/INST] Model </s> [INST] User [/INST] ...
+std::string MistralFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
+    std::stringstream ss;
+    std::string system_prompt = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
+    
+    // Mistral usually combines System into the first User instruction
+    bool first = true;
+    
+    for (const auto& turn : request.history()) {
+        if (turn.role() == "user") {
+            ss << "[INST] ";
+            if (first) {
+                ss << system_prompt << "\n\n";
+                first = false;
+            }
+            ss << turn.content() << " [/INST]";
+        } else {
+            ss << " " << turn.content() << "</s> ";
+        }
+    }
+    
+    ss << "[INST] ";
+    if (first) { // No history
+        ss << system_prompt << "\n\n";
+    }
+
+    if (request.has_rag_context() && !request.rag_context().empty()) {
+        std::string content = settings.template_rag_prompt;
+        PromptFormatter::replace_all(content, "{{rag_context}}", request.rag_context());
+        PromptFormatter::replace_all(content, "{{user_prompt}}", request.user_prompt());
+        ss << content;
+    } else {
+        ss << request.user_prompt();
+    }
+    ss << " [/INST]";
+
+    return ss.str();
+}
+
+// --- 4. Gemma ---
 std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
     std::stringstream ss;
     
-    // System (Gemma official instruction format often embeds system in user turn)
     std::string system_prompt = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
+    // Gemma doesn't strictly have a system role in official template, usually mapped to user turn
+    // <start_of_turn>user\nSystem info...\nUser msg<end_of_turn><start_of_turn>model\n
+    
     bool first_msg = true;
-
     for (const auto& turn : request.history()) {
         std::string role = (turn.role() == "user") ? "user" : "model";
         ss << "<start_of_turn>" << role << "\n";
@@ -111,9 +146,8 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamReques
         ss << turn.content() << "<end_of_turn>\n";
     }
 
-    // Current Turn
     ss << "<start_of_turn>user\n";
-    if (first_msg) { // No history
+    if (first_msg) { 
          ss << "System: " << system_prompt << "\n\n";
     }
 
@@ -130,7 +164,7 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamReques
     return ss.str();
 }
 
-// --- 4. Raw/Template (Fallback) ---
+// --- 5. Raw/Template ---
 std::string RawTemplateFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
     std::stringstream ss;
     std::string system_prompt = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
