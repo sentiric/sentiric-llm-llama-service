@@ -3,7 +3,7 @@ FROM nvcr.io/nvidia/cuda:13.0.2-cudnn-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1️⃣ Temel bağımlılıkları kur
+# 1️⃣ Temel bağımlılıkları kur + ccache
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential curl zip unzip tar \
     pkg-config ninja-build ca-certificates python3 ccache && \
@@ -29,16 +29,18 @@ COPY vcpkg.json .
 ENV X_VCPKG_ASSET_SOURCES="clear;x-azurl,https://asset-store.vcpkg.org/;"
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# 4️⃣ llama.cpp sabit commit + shallow clone
+# 4️⃣ llama.cpp sabit commit + shallow clone [GÜNCELLENDİ]
 ARG LLAMA_CPP_VERSION=b7415
-RUN git clone --branch ${LLAMA_CPP_VERSION} --depth 1 https://github.com/ggml-org/llama.cpp.git llama.cpp
+RUN git clone --branch master --single-branch https://github.com/ggml-org/llama.cpp.git && \
+    cd llama.cpp && \
+    git checkout ${LLAMA_CPP_VERSION} && \
+    cd ..
 
 # 5️⃣ Kaynakları kopyala
 COPY src ./src
 COPY CMakeLists.txt .
 
-# 6️⃣ Derleme (BuildKit cache ile)
-# BuildKit cache için RUN --mount=type=cache,target=/root/.ccache aktif edilmeli
+# 6️⃣ Derleme (ccache + BuildKit cache)
 RUN --mount=type=cache,target=/root/.ccache \
     cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
@@ -58,7 +60,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/build/llm_service /usr/local/bin/
 COPY --from=builder /app/build/llm_cli /usr/local/bin/
 
-# Dinamik kütüphaneleri kopyala
 COPY --from=builder /app/vcpkg_installed/x64-linux/lib/*.so* /usr/local/lib/
 COPY --from=builder /app/build/bin/*.so /usr/local/lib/
 RUN ldconfig
@@ -68,7 +69,7 @@ COPY examples /app/examples
 COPY models/profiles.json /app/profiles.json
 
 WORKDIR /app
-RUN mkdir -p /models
+RUN mkdir -p /models /lora_adapters
 
 EXPOSE 16070 16071 16072
 

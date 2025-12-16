@@ -29,9 +29,12 @@ COPY vcpkg.json .
 ENV X_VCPKG_ASSET_SOURCES="clear;x-azurl,https://asset-store.vcpkg.org/;"
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
-# 4️⃣ llama.cpp sabit commit + shallow clone
+# 4️⃣ llama.cpp sabit commit + shallow clone [GÜNCELLENDİ]
 ARG LLAMA_CPP_VERSION=b7415
-RUN git clone --branch ${LLAMA_CPP_VERSION} --depth 1 https://github.com/ggml-org/llama.cpp.git llama.cpp
+RUN git clone --branch master --single-branch https://github.com/ggml-org/llama.cpp.git && \
+    cd llama.cpp && \
+    git checkout ${LLAMA_CPP_VERSION} && \
+    cd ..
 
 # 5️⃣ Kaynakları kopyala
 COPY src ./src
@@ -65,7 +68,7 @@ COPY examples /app/examples
 COPY models/profiles.json /app/profiles.json
 
 WORKDIR /app
-RUN mkdir -p /models
+RUN mkdir -p /models /lora_adapters
 
 EXPOSE 16070 16071 16072
 

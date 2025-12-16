@@ -1,55 +1,93 @@
-# 💡 KB-05: llama.cpp API Hızlı Referans Kılavuzu
+ 💡 KB-05: llama.cpp API Hızlı Referans Kılavuzu (vB7415)
 
-**AMAÇ:** Bu doküman, `sentiric-llm-llama-service` projesinde sıkça kullanılan `llama.cpp` API fonksiyonlarının kategorize edilmiş bir listesini sunar. Geliştirme sırasında hızlı bir başvuru kaynağı olarak tasarlanmıştır. API'nin bağlayıcı kontratı ve spesifik kullanım desenleri için her zaman **[KB-04: Proje İçi API Bağlayıcı Kontratı](./04_LLAMA_CPP_API_BINDING.md)** belgesine başvurulmalıdır.
+**Kapsam:** `llama.h` ve `common.h` dosyalarındaki en kritik fonksiyonların, projemizdeki kullanım amaçlarına göre kategorize edilmiş listesidir.
 
 ---
 
-### Kategori 1: Başlatma ve Yönetim (Initialization & Management)
+### 1. Kurulum ve Yükleme (Setup)
+
+| Fonksiyon | Kaynak | Açıklama |
+| :--- | :--- | :--- |
+| `llama_backend_init` | `llama.h` | Global arka ucu başlatır (NUMA vb.). |
+| `llama_model_default_params` | `llama.h` | Varsayılan model parametrelerini döndürür. |
+| `llama_model_load_from_file` | `llama.h` | GGUF dosyasından modeli yükler. |
+| `llama_context_default_params` | `llama.h` | Varsayılan context parametrelerini döndürür. |
+| **`llama_init_from_model`** | `llama.h` | Yüklü modelden bir çıkarım oturumu (context) oluşturur. |
+| `llama_model_get_vocab` | `llama.h` | Modelin kelime dağarcığına (`llama_vocab`) pointer döner. |
+
+### 2. Kelime Dağarcığı ve Tokenizasyon (Vocab)
+
+*Not: Bu fonksiyonlar artık `llama_vocab*` parametresi alır.*
 
 | Fonksiyon | Açıklama |
 | :--- | :--- |
-| `llama_backend_init()` | `llama.cpp` altyapısını program başında bir kez başlatır. |
-| `llama_model_load_from_file()` | Bir `.gguf` model dosyasını diskten yükler ve bir model nesnesi oluşturur. |
-| `llama_init_from_model()` | Yüklenmiş bir modelden, asıl çıkarım işlemlerinin yapılacağı `context`'i oluşturur. |
-| `llama_model_free()` | Model tarafından kullanılan belleği serbest bırakır. |
-| `llama_free()` | Context tarafından kullanılan belleği serbest bırakır. |
-| `llama_backend_free()` | Program sonunda altyapıyı kapatır. |
+| **`llama_tokenize`** | Metni token ID listesine çevirir. `add_special` parametresi önemlidir. |
+| **`llama_token_to_piece`** | Token ID'yi metin parçasına (string) çevirir. |
+| `llama_vocab_n_tokens` | Toplam token sayısını döner. |
+| `llama_vocab_is_eog` | Token'ın bitiş (End-Of-Generation/EOS/EOT) tokenı olup olmadığını döner. |
+| `llama_vocab_is_control` | Kontrol tokenı olup olmadığını döner. |
+| `llama_vocab_bos` / `eos` | Özel tokenların ID'lerini döner. |
 
-### Kategori 2: Bellek ve KV Cache Yönetimi
+### 3. İş Yığını (Batching) ve Çıkarım (Inference)
 
-| Fonksiyon | Açıklama |
-| :--- | :--- |
-| **`llama_get_memory(ctx)`** | Bir context'in bellek yöneticisi nesnesini (`llama_memory_t`) döndürür. |
-| **`llama_memory_seq_rm()`** | **(KRİTİK)** Belirtilen bir sequence'in KV cache'inin bir kısmını veya tamamını temizler. "Context Shifting" ve havuz temizliği için bu kullanılır. |
-| **`llama_memory_seq_add()`** | Temizlenmiş bir KV cache'e pozisyonel bir ofset ekler. "Context Shifting" için gereklidir. |
-| `llama_memory_seq_cp()` | Bir sequence'in KV cache'ini başka bir sequence'e kopyalar (İleri seviye dallanma/forking senaryoları için). |
+| Fonksiyon | Kaynak | Açıklama |
+| :--- | :--- | :--- |
+| `llama_batch_init` | `llama.h` | Verilen kapasitede boş bir batch oluşturur. |
+| **`common_batch_add`** | `common.h` | Batch'e token ekleyen yardımcı fonksiyondur (pos, seq_id, logits ayarlarını yapar). |
+| `common_batch_clear` | `common.h` | Batch'i sıfırlar (tekrar kullanım için). |
+| **`llama_decode`** | `llama.h` | Batch'teki tokenları modele işler (Forward pass). KV Cache güncellenir. |
+| `llama_get_logits_ith` | `llama.h` | Decode sonrası, belirtilen indexteki tokenın logit vektörünü döner. |
+| `llama_get_embeddings` | `llama.h` | (Eğer aktifse) Embedding vektörünü döner. |
 
-### Kategori 3: Çıkarım (Inference)
+### 4. Bellek Yönetimi (KV Cache)
 
-| Fonksiyon | Açıklama |
-| :--- | :--- |
-| `llama_batch_init()` | Token'ları ve pozisyonlarını içeren bir "batch" (iş yığını) nesnesi oluşturur. |
-| `llama_decode(ctx, batch)` | Verilen "batch"i işler, modelin durumunu günceller ve logit'leri (bir sonraki token tahminleri) hesaplar. |
-| `llama_get_logits_ith(ctx, i)` | Son `llama_decode` çağrısından sonra, belirtilen `i`. pozisyondaki token için logit'leri döndürür. |
-| `llama_batch_free()` | Oluşturulan "batch" nesnesini serbest bırakır. |
-
-### Kategori 4: Tokenizasyon (Tokenization)
+*Not: Tüm işlemler `llama_get_memory(ctx)` ile alınan nesne üzerinden yapılır.*
 
 | Fonksiyon | Açıklama |
 | :--- | :--- |
-| `llama_model_get_vocab()` | Modelin kelime dağarcığı (`vocab`) nesnesini döndürür. |
-| `llama_tokenize()` | Bir metin parçasını (`char*`) bir token dizisine (`llama_token[]`) çevirir. |
-| `llama_token_to_piece()` | Tek bir token'ı, okunabilir bir metin parçasına (`char*`) çevirir. |
+| **`llama_get_memory`** | Context'in bellek kontrolcüsünü (`llama_memory_t`) döner. |
+| **`llama_memory_seq_rm`** | Belirtilen aralıktaki tokenları bellekten siler. |
+| `llama_memory_seq_add` | Belirtilen aralıktaki tokenların pozisyonlarını kaydırır (Context shifting). |
+| `llama_memory_seq_cp` | Bir sequence'i kopyalar (Beam search veya parallel decoding için). |
+| `llama_memory_clear` | Tüm belleği tamamen temizler. |
 
-### Kategori 5: Örnekleme (Sampling)
+### 5. Örnekleme (Sampling)
+
+*Not: `llama_sampler` yapısı kullanılır.*
 
 | Fonksiyon | Açıklama |
 | :--- | :--- |
-| `llama_sampler_chain_init()` | Birden fazla örnekleme kuralını (top-k, top-p, sıcaklık vb.) bir araya getiren bir zincir oluşturur. |
-| `llama_sampler_chain_add()` | Örnekleme zincirine yeni bir kural ekler (örn: `llama_sampler_init_top_k()`). |
-| `llama_sampler_sample()` | Verilen logit'lere, zincirdeki tüm kuralları uygulayarak nihai bir token seçer. |
-| `llama_sampler_accept()` | Seçilen token'ı zincire "kabul ettirir". Bu, tekrarlama cezası gibi durumları günceller. |
-| `llama_sampler_free()` | Örnekleme zincirini bellekten temizler. |
+| `llama_sampler_chain_init` | Yeni bir örnekleme zinciri oluşturur. |
+| `llama_sampler_chain_add` | Zincire bir kural (sampler) ekler. |
+| `llama_sampler_init_top_k` | Top-K örnekleyici oluşturur. |
+| `llama_sampler_init_top_p` | Top-P (Nucleus) örnekleyici oluşturur. |
+| `llama_sampler_init_temp` | Sıcaklık (Temperature) örnekleyici oluşturur. |
+| `llama_sampler_init_penalties` | Tekrar cezası (Repetition penalty) örnekleyicisi oluşturur. |
+| **`llama_sampler_init_dist`** | Olasılık dağılımına göre rastgele seçim yapan nihai örnekleyici (Seed alır). |
+| **`llama_sampler_init_greedy`** | En yüksek olasılıklı tokenı seçen nihai örnekleyici. |
+| **`llama_sampler_sample`** | Logitleri işleyip zincir kurallarına göre bir token seçer. |
+| **`llama_sampler_accept`** | Seçilen tokenı zincire bildirir (Internal state güncellemesi için). |
 
-llama_sampler_init_dist()	(KRİTİK) Olasılık dağılımına göre nihai token seçimini yapan temel örnekleyici. Zincirin sonunda bulunmalıdır.
----
+### 6. LoRA Adaptörleri (Adapters)
+
+*LoRA'lar modelin ağırlıklarını değiştirmeden ince ayar (fine-tune) yeteneği ekler.*
+
+| Fonksiyon | Kaynak | Açıklama |
+| :--- | :--- | :--- |
+| **`llama_adapter_lora_init`** | `llama.h` | Verilen yoldan (`.gguf`) bir LoRA adaptörü yükler ve `model` ile ilişkilendirir. Pointer döner. |
+| **`llama_set_adapter_lora`** | `llama.h` | Yüklenmiş bir adaptörü, belirtilen `scale` (güç) faktörü ile `ctx` (context)'e uygular. |
+| `llama_rm_adapter_lora` | `llama.h` | Belirtilen adaptörü context'ten çıkarır (etkisizleştirir). |
+| `llama_clear_adapter_lora` | `llama.h` | Context üzerindeki **tüm** adaptörleri temizler. |
+| `llama_adapter_lora_free` | `llama.h` | Adaptörü manuel olarak bellekten siler. (Çağrılmazsa `llama_model_free` otomatik siler). |
+| `common_adapter_lora_info` | `common.h` | Adaptör path'i ve scale değerini tutan yardımcı struct. |
+
+### 7. Kaynak Serbest Bırakma (Cleanup)
+
+| Fonksiyon | Açıklama |
+| :--- | :--- |
+| `llama_batch_free` | Batch belleğini temizler. |
+| `llama_sampler_free` | Sampler zincirini temizler. |
+| `llama_free` | Context belleğini temizler. |
+| `llama_model_free` | Model belleğini (ve bağlı LoRA'ları) temizler. |
+| `llama_backend_free` | Kütüphaneyi kapatır. |
+```
