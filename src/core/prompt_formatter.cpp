@@ -22,8 +22,8 @@ std::unique_ptr<PromptFormatter> create_formatter(const std::string& model_id) {
     return std::make_unique<RawTemplateFormatter>();
 }
 
-// --- RAG ve Normal Prompt Üretimi için Ortak Mantık ---
-std::string build_final_prompt(const sentiric::llm::v1::GenerateStreamRequest& request, const Settings& settings) {
+// YENİ YARDIMCI FONKSİYON: Sadece son kullanıcı girdisini RAG ile zenginleştirir.
+std::string build_final_user_content(const sentiric::llm::v1::GenerateStreamRequest& request, const Settings& settings) {
     if (request.has_rag_context() && !request.rag_context().empty()) {
         std::string final_prompt = settings.template_rag_prompt;
         PromptFormatter::replace_all(final_prompt, "{{rag_context}}", request.rag_context());
@@ -32,7 +32,6 @@ std::string build_final_prompt(const sentiric::llm::v1::GenerateStreamRequest& r
     }
     return request.user_prompt();
 }
-
 
 // --- 1. Qwen ChatML ---
 std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const Settings& settings) const {
@@ -46,7 +45,7 @@ std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamR
         ss << "<|im_start|>" << role << "\n" << turn.content() << "<|im_end|>\n";
     }
 
-    std::string user_content = build_final_prompt(request, settings);
+    std::string user_content = build_final_user_content(request, settings);
 
     ss << "<|im_start|>user\n" << user_content << "<|im_end|>\n<|im_start|>assistant\n";
     return ss.str();
@@ -64,7 +63,7 @@ std::string Llama3Formatter::format(const sentiric::llm::v1::GenerateStreamReque
         ss << "<|start_header_id|>" << role << "<|end_header_id|>\n\n" << turn.content() << "<|eot_id|>";
     }
 
-    std::string user_content = build_final_prompt(request, settings);
+    std::string user_content = build_final_user_content(request, settings);
 
     ss << "<|start_header_id|>user<|end_header_id|>\n\n" << user_content << "<|eot_id|>";
     ss << "<|start_header_id|>assistant<|end_header_id|>\n\n";
@@ -76,22 +75,23 @@ std::string MistralFormatter::format(const sentiric::llm::v1::GenerateStreamRequ
     std::stringstream ss;
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
+    // Mistral'de ilk kullanıcı mesajı sistem prompt'u ile birleşir.
+    bool history_exists = request.history_size() > 0;
+
     ss << "[INST] ";
-    
-    if (!request.history().empty()) {
-        ss << sys << "\n\n";
-        for (const auto& turn : request.history()) {
-            if (turn.role() == "user") {
-                ss << turn.content() << " [/INST]";
-            } else {
-                ss << " " << turn.content() << "</s> [INST] ";
-            }
-        }
-    } else {
+    if (!history_exists) {
         ss << sys << "\n\n";
     }
 
-    std::string user_content = build_final_prompt(request, settings);
+    for (const auto& turn : request.history()) {
+        if (turn.role() == "user") {
+            ss << turn.content() << " [/INST]";
+        } else {
+            ss << " " << turn.content() << "</s> [INST] ";
+        }
+    }
+
+    std::string user_content = build_final_user_content(request, settings);
 
     ss << user_content << " [/INST]";
     return ss.str();
@@ -102,25 +102,21 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamReques
     std::stringstream ss;
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
-    bool first_msg = true;
+    // Gemma'da sistem prompt'u desteklenmez, bu yüzden onu ilk kullanıcı mesajına ekleriz.
+    bool history_exists = request.history_size() > 0;
+
     for (const auto& turn : request.history()) {
         std::string role = (turn.role() == "user") ? "user" : "model";
         ss << "<start_of_turn>" << role << "\n";
-        
-        if (first_msg && role == "user") {
-            ss << sys << "\n\n";
-            first_msg = false;
-        }
-        
         ss << turn.content() << "<end_of_turn>\n";
     }
 
     ss << "<start_of_turn>user\n";
-    if (first_msg) {
+    if (!history_exists) {
         ss << sys << "\n\n";
     }
 
-    std::string user_content = build_final_prompt(request, settings);
+    std::string user_content = build_final_user_content(request, settings);
     
     ss << user_content << "<end_of_turn>\n<start_of_turn>model\n";
     return ss.str();
@@ -136,7 +132,7 @@ std::string RawTemplateFormatter::format(const sentiric::llm::v1::GenerateStream
         ss << turn.role() << ": " << turn.content() << "\n";
     }
     
-    std::string user_content = build_final_prompt(request, settings);
+    std::string user_content = build_final_user_content(request, settings);
     
     ss << "User: " << user_content << "\nAssistant:";
     return ss.str();
