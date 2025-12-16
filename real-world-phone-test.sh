@@ -3,77 +3,59 @@ set -e
 
 # Renkler
 GREEN='\033[0;32m'
-BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
 NC='\033[0m'
 
 API_URL="http://localhost:16070/v1/chat/completions"
 HISTORY_FILE="/tmp/phone_history.json"
 
-log_ai() { echo -e "${GREEN}🤖 Asistan: $1${NC}"; }
-log_user() { echo -e "\n${YELLOW}👤 Müşteri: $1${NC}"; }
-
-# Hazırlık
+# Dosyayı sıfırla
 echo "[]" > "$HISTORY_FILE"
 
-# CRM'den gelen dinamik veri (Knowledge Base + CRM)
-# Burada "Context Injection" yapıyoruz. Modelin bilmesi gereken TEK gerçek bu.
-CUSTOMER_CONTEXT="Müşteri Kimliği: Ali Vural. 
-Mevcut Paket: Gold İnternet (100Mbps Fiber).
-Fatura Durumu: Ödenmiş, borç yok.
-Bölgesel Durum: İstanbul/Kadıköy bölgesinde genel bir fiber altyapı çalışması var. Tahmini bitiş saati: 18:00.
-Müşteri Duygu Durumu (STT'den): Gergin, hızlı konuşuyor."
+# CRM VERİSİ
+CUSTOMER_CONTEXT="Müşteri: Ali Vural. 
+Paket: Gold İnternet (100Mbps).
+Durum: Bölgesel arıza var, saat 20:00'de düzelecek.
+Fatura: Ödenmiş."
 
 chat() {
     local user_msg="$1"
-    local system_instruction="$2" # Özel instruction (örn: sakinleştir)
-    local rag_data="$3"
+    
+    # 1. History'ye User Mesajını Ekle
+    # Temp dosyası kullanarak race condition'ı önle
+    jq --arg content "$user_msg" '. += [{"role": "user", "content": $content}]' "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
 
-    # History güncelle
-    temp_hist=$(jq --arg content "$user_msg" '. += [{"role": "user", "content": $content}]' "$HISTORY_FILE")
-    echo "$temp_hist" > "$HISTORY_FILE"
-
-    # Request Payload
+    # 2. Payload Oluştur
     payload=$(jq -n \
-        --arg sys "$system_instruction" \
-        --arg rag "$rag_data" \
+        --arg rag "$CUSTOMER_CONTEXT" \
         --slurpfile hist "$HISTORY_FILE" \
         '{
             messages: $hist[0],
-            system_prompt: $sys, 
             rag_context: $rag,
-            temperature: 0.6, 
-            max_tokens: 300
+            temperature: 0.3, 
+            max_tokens: 150
         }')
 
-    # İstek Gönder
+    # 3. İstek Gönder
+    echo -e "\n${YELLOW}👤 Müşteri: $user_msg${NC}"
     response=$(curl -s -X POST "$API_URL" -H "Content-Type: application/json" -d "$payload")
+    
+    # Cevabı al
     reply=$(echo "$response" | jq -r '.choices[0].message.content')
     
-    log_ai "$reply"
+    if [ "$reply" == "null" ]; then
+        echo "HATA: Cevap alınamadı. Ham yanıt: $response"
+        exit 1
+    fi
 
-    # History güncelle (Asistan)
-    temp_hist_ai=$(jq --arg content "$reply" '. += [{"role": "assistant", "content": $content}]' "$HISTORY_FILE")
-    echo "$temp_hist_ai" > "$HISTORY_FILE"
+    echo -e "${GREEN}🤖 Asistan: $reply${NC}"
+
+    # 4. History'ye Asistan Mesajını Ekle
+    jq --arg content "$reply" '. += [{"role": "assistant", "content": $content}]' "$HISTORY_FILE" > "$HISTORY_FILE.tmp" && mv "$HISTORY_FILE.tmp" "$HISTORY_FILE"
 }
 
-echo -e "${CYAN}--- ÇAĞRI BAŞLADI (CRM + KB ENTEGRASYONU) ---${NC}"
+echo "--- KESİN SONUÇ TESTİ ---"
 
-# 1. Sahne: Müşteri şikayetle geliyor
-log_user "Alo! Kardeşim ben Ali Vural. İnternetim yine gitti, ne oluyor ya?"
-chat "Alo! Kardeşim ben Ali Vural. İnternetim yine gitti, ne oluyor ya?" \
-     "Müşteri gergin. Onu sakinleştir ve adıyla hitap et. Sorunu anladığını belirt." \
-     "$CUSTOMER_CONTEXT"
-
-# 2. Sahne: RAG Kontrolü (Paket ve Altyapı bilgisi)
-log_user "Paketim neydi benim? Niye kesilip duruyor?"
-chat "Paketim neydi benim? Niye kesilip duruyor?" \
-     "CRM bilgisindeki paket adını ve bölgesel çalışma bilgisini ver." \
-     "$CUSTOMER_CONTEXT"
-
-# 3. Sahne: Israr ve Çözüm
-log_user "Ne zaman gelecek peki? İşlerim var benim."
-chat "Ne zaman gelecek peki? İşlerim var benim." \
-     "Bölgesel çalışma notundaki saati söyle." \
-     "$CUSTOMER_CONTEXT"
+chat "Alo, Ali Vural ben. İnternetim yok!"
+chat "Hangi paketi kullanıyorum ben? Unuttum."
+chat "Ne zaman düzelir peki?"

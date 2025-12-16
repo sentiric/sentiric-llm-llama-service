@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <vector>
 #include <thread>
+#include <future>
 
 // RAII Helpers
 struct LlamaBatchGuard {
@@ -28,7 +29,9 @@ LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gaug
     
     spdlog::info("🚀 Initializing LLM Engine...");
     
-    formatter_ = create_formatter();
+    // Formatter model yüklendikten sonra oluşturulmalı veya profile göre seçilmeli.
+    // İlk başta default ayarlarla başlatıyoruz.
+    formatter_ = create_formatter(settings_.model_id);
 
     if (!reload_model(settings_.profile_name)) {
         throw std::runtime_error("Critical: Initial model load failed.");
@@ -69,6 +72,10 @@ bool LLMEngine::reload_model(const std::string& profile_name) {
     }
 
     settings_ = temp_settings;
+    
+    // Model ID değiştiyse Formatter'ı da güncelle
+    formatter_ = create_formatter(settings_.model_id);
+
     return internal_reload_model();
 }
 
@@ -145,14 +152,21 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
     std::shared_lock<std::shared_mutex> lock(model_mutex_);
     if (!model_loaded_) return;
     
-    std::vector<std::thread> threads;
-    threads.reserve(batch.size());
+    // [OPTIMIZATION] Thread Creation Overhead Reduced
+    // std::thread yerine std::async kullanımı daha hafiftir ve pooling yapabilir.
+    std::vector<std::future<void>> futures;
+    futures.reserve(batch.size());
+
     for (auto& req_ptr : batch) {
-        threads.emplace_back([this, req_ptr]() {
+        futures.push_back(std::async(std::launch::async, [this, req_ptr]() {
             this->execute_single_request(req_ptr);
-        });
+        }));
     }
-    for (auto& t : threads) { if (t.joinable()) t.join(); }
+    
+    // Tüm görevlerin bitmesini bekle
+    for (auto& f : futures) {
+        f.get();
+    }
 }
 
 std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<BatchedRequest> req_ptr, const std::string& formatted_prompt) {
@@ -260,13 +274,10 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
         }
 
         // 2. Control Token Kontrolü (NATIVE FIX)
-        // Eğer token bir kontrol karakteriyse (örn: <pad>, 0x00, vb.) ve EOG değilse,
-        // bunu kullanıcıya göndermemeliyiz. Sadece context'e ekleyip devam etmeliyiz.
-        // Bu, string manipülasyonu yapmadan "Görünmez" tokenları filtreler.
         bool is_control = llama_vocab_is_control(vocab, new_token_id);
 
         char buf[256] = {0};
-        int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true); // true = special tokens allowed
+        int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true); 
         std::string token_str(buf, n);
         
         // Dynamic Stop Sequence Kontrolü
@@ -284,14 +295,10 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
             break;
         }
 
-        // 3. Token'ı Gönder (Eğer kontrol karakteri değilse)
-        // Control karakterleri context'e girer (aşağıda) ama kullanıcıya gitmez.
+        // 3. Token'ı Gönder
         if (!is_control) {
             if(req_ptr->on_token_callback) req_ptr->on_token_callback(token_str);
             req_ptr->token_queue.push(token_str);
-        } else {
-            // Loglamak iyi olabilir (Debug seviyesinde)
-            // spdlog::debug("Skipping control token ID: {}", new_token_id);
         }
         
         LlamaBatchGuard next_token_batch(1, 0, 1);
@@ -310,7 +317,6 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
 
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
     try {
-        // GÜNCELLEME: format fonksiyonuna 'settings_' parametresi eklendi.
         std::string formatted_prompt = formatter_->format(req_ptr->request, model_, settings_);
         std::vector<llama_token> prompt_tokens = tokenize_and_truncate(req_ptr, formatted_prompt);
         ContextGuard guard = context_pool_->acquire(prompt_tokens);

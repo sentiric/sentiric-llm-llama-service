@@ -1,20 +1,52 @@
 {
-  "active_profile": "qwen25_3b_phone_assistant",
+  "active_profile": "qwen3_4b_agent",
   "profiles": {
-    "qwen25_3b_phone_assistant": {
-      "display_name": "Sentiric Phone Agent (Qwen 2.5 3B)",
-      "description": "Gerçekçi, doğal ve veriye sadık telefon asistanı.",
+    "qwen3_4b_agent": {
+      "display_name": "Sentiric Agent (Qwen 3 4B)",
+      "description": "Fast, intelligent, real-time capable. Best balance for 6GB VRAM.",
       "category": "Production",
-      "model_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
-      "filename": "qwen2.5-3b-instruct-q5_k_m.gguf",
+      "model_id": "ggml-org/Qwen3-4B-GGUF",
+      "filename": "Qwen3-4B-Q4_K_M.gguf",
       "context_size": 8192,
       "gpu_layers": 100,
+      "temperature": 0.4,
+      "top_p": 0.9,
+      "repeat_penalty": 1.1,
+      "templates": {
+        "system_prompt": "Sen Aslı. Sentiric firmasının Türkçe konuşan müşteri temsilcisisin. Görevin: [CRM EKRANI] verilerini okuyarak müşteriye yardım etmek. Kurallar: 1. Asla uydurma. 2. Kısa ve net konuş. 3. Müşterinin adını sadece gerekirse kullan.",
+        "rag_prompt": "CRM EKRANI:\n----------------\n{{rag_context}}\n----------------\n\nBu bilgilere göre cevapla:\n{{user_prompt}}"
+      }
+    },
+    "ministral_3b_realtime": {
+      "display_name": "Sentiric Realtime (Ministral 3B)",
+      "description": "Ultra-stable, low-latency conversational agent.",
+      "category": "Realtime",
+      "model_id": "ggml-org/Ministral-3B-GGUF",
+      "filename": "Ministral-3B-Q4_K_M.gguf",
+      "context_size": 8192,
+      "gpu_layers": 80,
+      "temperature": 0.45,
+      "top_p": 0.9,
+      "repeat_penalty": 1.1,
+      "templates": {
+        "system_prompt": "Sen Aslı. Gerçek zamanlı konuşan, sakin ve net bir Türkçe asistansın. Cevapların kısa, doğal ve konuşma diline uygun olmalı.",
+        "rag_prompt": "{{rag_context}}\n\nSoru:\n{{user_prompt}}"
+      }
+    },
+    "gemma_1b_ultrafast": {
+      "display_name": "Sentiric Edge (Gemma 1B)",
+      "description": "Ultra-fast fallback model. Minimum VRAM usage.",
+      "category": "Fallback",
+      "model_id": "ggml-org/Gemma-3-1B-GGUF",
+      "filename": "Gemma-3-1B-Q4_K_M.gguf",
+      "context_size": 4096,
+      "gpu_layers": 60,
       "temperature": 0.6,
       "top_p": 0.9,
-      "repeat_penalty": 1.15,
+      "repeat_penalty": 1.05,
       "templates": {
-        "system_prompt": "Sen 'Sentiric' firmasında çalışan yardımsever, nazik ve zeki bir müşteri temsilcisisin. Adın Aslı. Müşteriyle telefonla konuşuyorsun. Ses tonun doğal, akıcı ve güven verici olmalı. Asla robotik konuşma. Müşterinin adını her cümlede tekrar etme. Sana verilen BİLGİ NOTU dışına asla çıkma. Bilmediğin bir şey sorulursa dürüstçe 'Sistemi kontrol ediyorum ama bu bilgiye ulaşamadım' de.",
-        "rag_prompt": "🛑 [GİZLİ BİLGİ NOTU - SADECE BUNU KULLAN] 🛑\n==========================================\n{{rag_context}}\n==========================================\n\nYukarıdaki bilgiye dayanarak müşteriye cevap ver. Müşteri: {{user_prompt}}"
+        "system_prompt": "Sen Aslı. Çok hızlı cevap veren, kısa ve net konuşan bir asistansın.",
+        "rag_prompt": "{{user_prompt}}"
       }
     }
   }
