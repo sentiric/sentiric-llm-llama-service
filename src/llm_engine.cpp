@@ -10,11 +10,21 @@
 #include <future>
 
 // RAII Helpers
-struct LlamaBatchGuard {
+// Optimize edilmiş: Tekrar kullanılabilir batch guard (yalnızca init/free yönetimi)
+struct LlamaBatchScope {
     llama_batch batch;
-    LlamaBatchGuard(int32_t n_tokens, int32_t embd, int32_t n_seq_max) 
+    
+    LlamaBatchScope(int32_t n_tokens, int32_t embd, int32_t n_seq_max) 
         : batch(llama_batch_init(n_tokens, embd, n_seq_max)) {}
-    ~LlamaBatchGuard() { if (batch.token) llama_batch_free(batch); }
+    
+    ~LlamaBatchScope() { 
+        if (batch.token) llama_batch_free(batch); 
+    }
+
+    // Batch'i sıfırlamadan verileri temizle (Reuse için)
+    void clear() {
+        batch.n_tokens = 0;
+    }
 };
 
 struct LlamaSamplerGuard {
@@ -29,8 +39,6 @@ LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gaug
     
     spdlog::info("🚀 Initializing LLM Engine...");
     
-    // Formatter model yüklendikten sonra oluşturulmalı veya profile göre seçilmeli.
-    // İlk başta default ayarlarla başlatıyoruz.
     formatter_ = create_formatter(settings_.model_id);
 
     if (!reload_model(settings_.profile_name)) {
@@ -72,8 +80,6 @@ bool LLMEngine::reload_model(const std::string& profile_name) {
     }
 
     settings_ = temp_settings;
-    
-    // Model ID değiştiyse Formatter'ı da güncelle
     formatter_ = create_formatter(settings_.model_id);
 
     return internal_reload_model();
@@ -152,8 +158,6 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
     std::shared_lock<std::shared_mutex> lock(model_mutex_);
     if (!model_loaded_) return;
     
-    // [OPTIMIZATION] Thread Creation Overhead Reduced
-    // std::thread yerine std::async kullanımı daha hafiftir ve pooling yapabilir.
     std::vector<std::future<void>> futures;
     futures.reserve(batch.size());
 
@@ -163,7 +167,6 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
         }));
     }
     
-    // Tüm görevlerin bitmesini bekle
     for (auto& f : futures) {
         f.get();
     }
@@ -191,7 +194,8 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
     uint32_t safe_prompt_limit = (max_context > effective_max_gen + buffer) ? (max_context - effective_max_gen - buffer) : 0;
     
     if (safe_prompt_limit > 0 && tokens.size() > safe_prompt_limit) {
-        spdlog::warn("⚠️ Prompt truncated: {} -> {} tokens", tokens.size(), safe_prompt_limit);
+        // [WARNING] System prompt loss risk here.
+        spdlog::warn("⚠️ Prompt truncated: {} -> {} tokens. (System prompt might be lost)", tokens.size(), safe_prompt_limit);
         std::vector<llama_token> truncated_tokens(tokens.begin() + (tokens.size() - safe_prompt_limit), tokens.end());
         tokens = std::move(truncated_tokens);
     } else if (safe_prompt_limit == 0) {
@@ -210,16 +214,25 @@ bool LLMEngine::decode_prompt(llama_context* ctx, ContextGuard& guard, const std
         llama_memory_seq_rm(llama_get_memory(ctx), -1, matched_len, -1);
     }
     size_t tokens_to_process = prompt_tokens.size() - matched_len;
+    
     if (tokens_to_process > 0) {
         int32_t n_batch = llama_n_batch(ctx);
+        // Optimize: Batch reuse
+        LlamaBatchScope batch_scope(n_batch, 0, 1);
+        
         for (size_t i = 0; i < tokens_to_process; i += n_batch) {
+            batch_scope.clear();
             int32_t n_eval = std::min((int32_t)(tokens_to_process - i), n_batch);
-            LlamaBatchGuard batch_guard(n_eval, 0, 1);
+            
             for(int j = 0; j < n_eval; ++j) {
-                common_batch_add(batch_guard.batch, prompt_tokens[matched_len + i + j], matched_len + i + j, {0}, false);
+                common_batch_add(batch_scope.batch, prompt_tokens[matched_len + i + j], matched_len + i + j, {0}, false);
             }
-            if (i + n_eval == tokens_to_process) batch_guard.batch.logits[n_eval - 1] = true;
-            if (llama_decode(ctx, batch_guard.batch) != 0) {
+            
+            if (i + n_eval == tokens_to_process) {
+                batch_scope.batch.logits[n_eval - 1] = true;
+            }
+            
+            if (llama_decode(ctx, batch_scope.batch) != 0) {
                 spdlog::error("Prompt decode failed. Context full.");
                 req_ptr->finish_reason = "length_error";
                 return false;
@@ -260,6 +273,9 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     uint32_t ctx_limit = settings_.context_size;
     if (n_past + req_max_gen > ctx_limit) req_max_gen = ctx_limit - n_past - 1;
 
+    // [OPTIMIZATION] Batch allocation moved outside loop
+    LlamaBatchScope token_batch(1, 0, 1);
+    
     while (n_decoded < (int)req_max_gen) {
         if (req_ptr->should_stop_callback && req_ptr->should_stop_callback()) {
             req_ptr->finish_reason = "cancelled"; break;
@@ -268,19 +284,16 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
         llama_token new_token_id = llama_sampler_sample(chain, ctx, -1);
         llama_sampler_accept(chain, new_token_id);
         
-        // 1. EOG (End of Generation) Kontrolü
         if (llama_vocab_is_eog(vocab, new_token_id)) {
             req_ptr->finish_reason = "stop"; break;
         }
 
-        // 2. Control Token Kontrolü (NATIVE FIX)
         bool is_control = llama_vocab_is_control(vocab, new_token_id);
 
         char buf[256] = {0};
         int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true); 
         std::string token_str(buf, n);
         
-        // Dynamic Stop Sequence Kontrolü
         bool stop_found = false;
         for (const auto& seq : dynamic_stop_sequences) {
             if (token_str.find(seq) != std::string::npos) {
@@ -295,15 +308,16 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
             break;
         }
 
-        // 3. Token'ı Gönder
         if (!is_control) {
             if(req_ptr->on_token_callback) req_ptr->on_token_callback(token_str);
             req_ptr->token_queue.push(token_str);
         }
         
-        LlamaBatchGuard next_token_batch(1, 0, 1);
-        common_batch_add(next_token_batch.batch, new_token_id, n_past, {0}, true);
-        if(llama_decode(ctx, next_token_batch.batch) != 0) {
+        // Batch Reuse
+        token_batch.clear();
+        common_batch_add(token_batch.batch, new_token_id, n_past, {0}, true);
+        
+        if(llama_decode(ctx, token_batch.batch) != 0) {
             req_ptr->finish_reason = "context_full"; break;
         }
         n_past++;

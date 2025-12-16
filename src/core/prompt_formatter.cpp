@@ -25,9 +25,6 @@ std::unique_ptr<PromptFormatter> create_formatter(const std::string& model_id) {
     return std::make_unique<RawTemplateFormatter>();
 }
 
-// --- Common Helper ---
-// (Moved to header/static but kept helper logic here if needed or inline)
-
 // --- 1. Qwen ChatML ---
 std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
     std::stringstream ss;
@@ -44,7 +41,8 @@ std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamR
 
     // User + RAG
     ss << "<|im_start|>user\n";
-    ss << "/no_think\n"; // Qwen 3 specific optimization
+    // [CLEANUP] Removed hardcoded /no_think directive. 
+    // This should be managed via system prompt if needed.
 
     if (request.has_rag_context() && !request.rag_context().empty()) {
         std::string content = settings.template_rag_prompt;
@@ -98,13 +96,8 @@ std::string Llama3Formatter::format(const sentiric::llm::v1::GenerateStreamReque
 std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
     std::stringstream ss;
     
-    // System (Gemma often puts system inside user turn or implicit)
-    // But official instruct format: <start_of_turn>user\n...<end_of_turn>
+    // System (Gemma official instruction format often embeds system in user turn)
     std::string system_prompt = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
-    
-    // History (Assuming history includes system logic if needed, or prepending system to first user msg)
-    // Here we treat system as a context block for the first user message if separate system role isn't strictly supported by tokenizer
-    // But for consistency:
     
     bool first_msg = true;
 
@@ -140,7 +133,6 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamReques
 // --- 4. Raw/Template (Fallback) ---
 std::string RawTemplateFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
     std::stringstream ss;
-    // Fallback: Just dump system + user. Very basic.
     std::string system_prompt = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
     ss << "System: " << system_prompt << "\n\n";
