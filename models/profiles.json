@@ -9,11 +9,8 @@
       "context_size": 8192,
       "gpu_layers": 100,
       "temperature": 0.0,
-      "top_p": 0.9,
-      "repeat_penalty": 1.1,
       "templates": {
-        "system_prompt": "Sen Sentiric müşteri hizmetlerisin. Görevin: Sadece [CRM VERİSİ] içindeki bilgiyi okumak. Asla yorum yapma. Asla uydurma. Markdown kullanma. Çok kısa konuş.",
-        "rag_prompt": "[CRM VERİSİ BAŞLANGIÇ]\n{{rag_context}}\n[CRM VERİSİ BİTİŞ]\n\nSORU: {{user_prompt}}\nCEVAP:"
+        "system_prompt": "Sen bir veri okuma asistanısın. Sohbet etme. Yorum yapma. Sadece verilen metindeki bilgiyi bul ve söyle."
       }
     },
     "qwen2_3B": {
@@ -25,8 +22,7 @@
       "gpu_layers": 100,
       "temperature": 0.0,
       "templates": {
-        "system_prompt": "Verilen veriyi kullanarak cevap ver. Kısa ol. Markdown yok.",
-        "rag_prompt": "VERİ: {{rag_context}}\nSORU: {{user_prompt}}\nCEVAP:"
+        "system_prompt": "Sadece veriyi oku ve cevap ver. Uydurma."
       }
     },
     "ministral_3b_realtime": {
@@ -38,8 +34,7 @@
       "gpu_layers": 100,
       "temperature": 0.0,
       "templates": {
-        "system_prompt": "Sadece aşağıdaki veriyi kullan. Asla kendi fikrini söyleme.",
-        "rag_prompt": "CRM Bilgisi: {{rag_context}}\n\nMüşteri Sorusu: {{user_prompt}}"
+        "system_prompt": "Verilen bilgiyi kullanarak soruyu cevapla. Asla yorum yapma."
       }
     },
     "gemma_1b_ultrafast": {
@@ -51,8 +46,7 @@
       "gpu_layers": 100,
       "temperature": 0.0,
       "templates": {
-        "system_prompt": "Sadece veriyi oku.",
-        "rag_prompt": "Veri: {{rag_context}}\nSoru: {{user_prompt}}"
+        "system_prompt": "Sadece veriyi oku."
       }
     },
     "gemma_4b": {
@@ -64,8 +58,7 @@
       "gpu_layers": 100,
       "temperature": 0.0,
       "templates": {
-        "system_prompt": "Sadece veriyi oku.",
-        "rag_prompt": "Veri: {{rag_context}}\nSoru: {{user_prompt}}"
+        "system_prompt": "Sadece veriyi oku."
       }
     }
   }

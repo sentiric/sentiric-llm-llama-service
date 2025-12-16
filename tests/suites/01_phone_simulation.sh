@@ -31,32 +31,33 @@ talk() {
     
     RAW_CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content')
     
-    # 1. <think> bloklarını tamamen sil (Multiline dahil)
-    # sed -z, tüm metni tek satır gibi işler
-    CLEAN_CONTENT=$(echo "$RAW_CONTENT" | sed -z 's/<think>.*<\/think>//g')
+    # Gelişmiş temizlik: <think>...</think> bloklarını (multiline dahil) sil
+    # perl -0777 tüm dosyayı tek satır gibi okur
+    CLEAN_CONTENT=$(echo "$RAW_CONTENT" | perl -0777 -pe 's/<think>.*?<\/think>//gs')
     
-    # 2. Eğer hala boşluk varsa veya think tagi kalmışsa temizle
-    CLEAN_CONTENT=$(echo "$CLEAN_CONTENT" | tr -d '\n' | sed 's/  */ /g')
+    # Extra whitespace temizliği
+    CLEAN_CONTENT=$(echo "$CLEAN_CONTENT" | tr -s ' ' | sed 's/^[ \t]*//;s/[ \t]*$//')
 
     echo -e "👤 User: $user_msg"
-    echo -e "🤖 AI (Raw): ${RAW_CONTENT:0:100}..." 
     echo -e "🤖 AI (Clean): $CLEAN_CONTENT"
     echo -e "⏱️  TTFT/Latency: ${LATENCY}ms"
 
-    # Kontrolü RAW content üzerinden yapıyoruz çünkü bazen bilgi think içine sızabiliyor (fallback olarak)
-    # Ama ideali Clean content içinde olmasıdır.
+    # Kontrol: -i (case insensitive)
+    # NOT: 1500'ü 15000 olarak görmesin diye grep kontrolünü gevşek tutuyoruz ama içeriğe bakıyoruz.
+    # Gerçek RAG başarısı için modelin "1500" kelimesini geçirmesi yeterli.
+    
     if echo "$CLEAN_CONTENT" | grep -iq "$expect_keyword"; then
         log_pass "Cevap doğrulandı ('$expect_keyword' bulundu)."
-    elif echo "$RAW_CONTENT" | grep -iq "$expect_keyword"; then
-        log_pass "Cevap doğrulandı (Fakat bilgi <think> bloğunda bulundu, yine de geçerli)."
     else
         log_fail "Beklenen bilgi eksik: '$expect_keyword'"
         return 1
     fi
 
-    # History'ye temizlenmiş cevabı ekle
     jq --arg msg "$CLEAN_CONTENT" '. += [{"role":"assistant", "content":$msg}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
 }
 
+# 1. Aşama: Borç Sorgusu
 talk "Merhaba, borcum ne kadar?" "1500" || exit 1
+
+# 2. Aşama: Tarih Sorgusu
 talk "Son ödeme tarihi ne zaman peki?" "Yarın" || exit 1
