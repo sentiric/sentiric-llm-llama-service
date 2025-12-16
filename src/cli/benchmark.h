@@ -28,7 +28,6 @@ public:
     BenchmarkResult run_concurrent_test(int concurrent_connections = 5,
                                       int requests_per_connection = 10);
     
-    // YENİ FONKSİYON
     void run_interrupt_test(const std::string& initial_prompt, const std::string& interrupt_prompt);
 
     void generate_report(const BenchmarkResult& result, const std::string& filename = "");

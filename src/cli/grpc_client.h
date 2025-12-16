@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <functional>
+#include <mutex>
 #include <grpcpp/grpcpp.h>
 #include "sentiric/llm/v1/llama.grpc.pb.h"
 
@@ -20,7 +21,6 @@ public:
         std::function<void(const std::string&)> on_token
     );
     
-    // YENİ: İptal edilebilir versiyon
     bool generate_stream_with_cancellation(
         const sentiric::llm::v1::GenerateStreamRequest& request,
         std::function<void(const std::string&)> on_token
@@ -36,9 +36,8 @@ private:
     std::unique_ptr<sentiric::llm::v1::LlamaService::Stub> stub_;
     std::shared_ptr<grpc::Channel> channel_;
     
-    // YENİ: İptal için context pointer'ı
     std::shared_ptr<grpc::ClientContext> cancellable_context_;
-    std::mutex context_mutex_; // Context'e erişimi korumak için
+    std::mutex context_mutex_;
 };
 
 } // namespace sentiric_llm_cli
