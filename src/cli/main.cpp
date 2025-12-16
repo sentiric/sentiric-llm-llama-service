@@ -1,4 +1,3 @@
-// src/cli/main.cpp
 #include <iostream>
 #include <string>
 #include <vector>
@@ -12,7 +11,7 @@
 
 void print_usage() {
     std::cout << R"(
-🧠 Sentiric LLM CLI v2.2
+🧠 Sentiric LLM CLI v2.5
 
 Kullanım:
   llm_cli [seçenekler] <komut> [argümanlar]
@@ -22,6 +21,7 @@ Komutlar:
   health                   - Sistem sağlık durumunu kontrol eder.
   wait-for-ready           - Servis hazır olana kadar bekler.
   benchmark                - Performans ve eşzamanlılık testi çalıştırır.
+  interrupt-test           - Voice Gateway söz kesme (interruption) senaryosunu simüle eder.
 
 Seçenekler:
   --system-prompt <text>   - (Opsiyonel) AI'nın kişiliğini belirleyen sistem talimatı.
@@ -36,11 +36,11 @@ Seçenekler:
   --output <file>          - Benchmark raporu için çıktı dosyası.
 
 Örnekler:
-  # Basit Performans Testi
-  llm_cli benchmark --iterations 5
+  # Basit metin üretme
+  llm_cli generate "Türkiye'nin başkenti neresidir?"
 
-  # Eşzamanlılık ve Batching Testi
-  llm_cli benchmark --concurrent 4 --requests 2
+  # Söz kesme testi (C++ ile)
+  llm_cli interrupt-test
 )";
 }
 
@@ -84,7 +84,6 @@ int main(int argc, char** argv) {
             for (const auto& arg : command_args) { user_prompt += arg + " "; }
             user_prompt.pop_back();
 
-            // DÜZELTME: GenerateStreamRequest
             sentiric::llm::v1::GenerateStreamRequest request;
             request.set_user_prompt(user_prompt);
             
@@ -93,14 +92,10 @@ int main(int argc, char** argv) {
             if (options.count("history")) {
                 try {
                     auto history_json = nlohmann::json::parse(options["history"]);
-                    if (history_json.is_array()) {
-                        for (const auto& item : history_json) {
-                            if (item.is_object() && item.contains("role") && item.contains("content")) {
-                                auto* turn = request.add_history();
-                                turn->set_role(item["role"]);
-                                turn->set_content(item["content"]);
-                            }
-                        }
+                    for (const auto& item : history_json) {
+                        auto* turn = request.add_history();
+                        turn->set_role(item["role"]);
+                        turn->set_content(item["content"]);
                     }
                 } catch (const nlohmann::json::parse_error& e) {
                     spdlog::error("--history argümanı geçerli bir JSON değil: {}", e.what());
@@ -146,7 +141,13 @@ int main(int argc, char** argv) {
                  result = benchmark.run_performance_test(iterations);
              }
              benchmark.generate_report(result, output_file);
-        } else {
+        } else if (command == "interrupt-test") {
+            sentiric_llm_cli::Benchmark benchmark(grpc_endpoint);
+            std::string initial = "Merhaba, siparişim ne alemde? Kargoya verildi mi, kargo takip numarasını ve teslimat adresini öğrenebilir miyim?";
+            std::string interrupt = "Pardon sözünü kestim, sadece kargo numarasını alabilir miyim?";
+            benchmark.run_interrupt_test(initial, interrupt);
+        }
+        else {
             spdlog::error("Geçersiz komut: '{}'", command);
             print_usage();
             return 1;

@@ -15,21 +15,30 @@ public:
     
     bool is_connected();
     
-    // DÜZELTME: GenerateStreamRequest (Eski: LlamaGenerateStreamRequest)
     bool generate_stream(
         const sentiric::llm::v1::GenerateStreamRequest& request,
         std::function<void(const std::string&)> on_token
     );
     
+    // YENİ: İptal edilebilir versiyon
+    bool generate_stream_with_cancellation(
+        const sentiric::llm::v1::GenerateStreamRequest& request,
+        std::function<void(const std::string&)> on_token
+    );
+    void cancel_stream();
+
     void set_timeout(int seconds);
 
 private:
     void ensure_channel_is_ready();
     std::string endpoint_;
     int timeout_seconds_ = 120;
-    // DÜZELTME: LlamaService (Eski: LLMLocalService)
     std::unique_ptr<sentiric::llm::v1::LlamaService::Stub> stub_;
     std::shared_ptr<grpc::Channel> channel_;
+    
+    // YENİ: İptal için context pointer'ı
+    std::shared_ptr<grpc::ClientContext> cancellable_context_;
+    std::mutex context_mutex_; // Context'e erişimi korumak için
 };
 
 } // namespace sentiric_llm_cli

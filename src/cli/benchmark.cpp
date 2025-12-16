@@ -7,6 +7,7 @@
 #include <vector>
 #include "benchmark.h"
 #include "spdlog/spdlog.h"
+#include "grpc_client.h" // GRPCClient'ı dahil et
 
 namespace sentiric_llm_cli {
 
@@ -45,7 +46,6 @@ BenchmarkResult Benchmark::run_performance_test(int iterations, const std::strin
         if (success) {
             result.successful_requests++;
         }
-        // Kısa bekleme
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
@@ -54,7 +54,6 @@ BenchmarkResult Benchmark::run_performance_test(int iterations, const std::strin
 
     result.average_response_time_ms = iterations > 0 ? total_response_time_ms / iterations : 0;
     
-    // TPS = Total Tokens / Total Duration (sec)
     double duration_sec = std::chrono::duration<double>(total_end - total_start).count();
     if (duration_sec > 0) {
         result.tokens_per_second = total_tokens_generated / duration_sec;
@@ -76,7 +75,6 @@ BenchmarkResult Benchmark::run_concurrent_test(int concurrent_connections, int r
     BenchmarkResult result;
     result.total_requests = concurrent_connections * requests_per_connection;
     
-    // Atomik sayaçlar (Thread-Safe)
     std::atomic<int> success_count{0};
     std::atomic<long long> total_tokens{0};
     std::atomic<double> total_latency_sum{0.0};
@@ -86,7 +84,6 @@ BenchmarkResult Benchmark::run_concurrent_test(int concurrent_connections, int r
     std::vector<std::future<void>> futures;
     for (int i = 0; i < concurrent_connections; i++) {
         futures.push_back(std::async(std::launch::async, [this, requests_per_connection, &success_count, &total_tokens, &total_latency_sum]() {
-            // Her thread kendi client'ını oluşturmalı (gRPC kanalı thread-safe olsa da client nesnesi olmayabilir)
             auto client = std::make_unique<CLIClient>(this->grpc_endpoint_);
             
             for (int j = 0; j < requests_per_connection; j++) {
@@ -104,9 +101,6 @@ BenchmarkResult Benchmark::run_concurrent_test(int concurrent_connections, int r
                 if (success) {
                     success_count++;
                     total_tokens += tokens_in_req;
-                    // Atomik double toplama olmadığı için memory order relaxed ile basit döngü yapılabilir 
-                    // veya yaklaşık değer yeterliyse bu şekilde kabul edilebilir (fakat double atomic standart değilse cast gerekebilir).
-                    // Basitleştirme:
                     total_latency_sum = total_latency_sum.load() + latency; 
                 }
             }
@@ -138,6 +132,58 @@ BenchmarkResult Benchmark::run_concurrent_test(int concurrent_connections, int r
 
     spdlog::info("✅ Eşzamanlı test tamamlandı");
     return result;
+}
+
+void Benchmark::run_interrupt_test(const std::string& initial_prompt, const std::string& interrupt_prompt) {
+    spdlog::info("🎤 Voice Gateway Interruption Test Başlatılıyor...");
+
+    auto client1 = std::make_unique<sentiric_llm_cli::GRPCClient>(grpc_endpoint_);
+    auto client2 = std::make_unique<sentiric_llm_cli::GRPCClient>(grpc_endpoint_);
+
+    std::string partial_response;
+    std::atomic<bool> interrupted(false);
+
+    sentiric::llm::v1::GenerateStreamRequest req1;
+    req1.set_user_prompt(initial_prompt);
+
+    std::cout << "\n\033[1;34m🙍‍♂️ KULLANICI:\033[0m " << initial_prompt << std::endl;
+    spdlog::info("⚡ GATEWAY: LLM'e istek gönderiliyor...");
+    std::cout << "\033[1;32m🤖 ASİSTAN:\033[0m " << std::flush;
+
+    auto llm_future = std::async(std::launch::async, [&]() {
+        client1->generate_stream_with_cancellation(req1, [&](const std::string& token) {
+            std::cout << token << std::flush;
+            partial_response += token;
+        });
+    });
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    spdlog::info("\n⚡ GATEWAY: !!! KULLANICI KONUŞMAYA BAŞLADI - STREAM KESİLİYOR !!!");
+    client1->cancel_stream();
+    llm_future.wait();
+    interrupted = true;
+    spdlog::info("⚡ GATEWAY: AI'ın yarım cümlesi: \"" + partial_response + "...\"");
+
+    sentiric::llm::v1::GenerateStreamRequest req2;
+    req2.set_user_prompt(interrupt_prompt);
+    
+    auto* turn1 = req2.add_history();
+    turn1->set_role("user");
+    turn1->set_content(initial_prompt);
+    
+    auto* turn2 = req2.add_history();
+    turn2->set_role("assistant");
+    turn2->set_content(partial_response);
+
+    std::cout << "\n\033[1;34m🙍‍♂️ KULLANICI:\033[0m " << interrupt_prompt << std::endl;
+    spdlog::info("⚡ GATEWAY: LLM'e yeni istek gönderiliyor...");
+    std::cout << "\033[1;32m🤖 ASİSTAN:\033[0m " << std::flush;
+    
+    client2->generate_stream(req2, [](const std::string& token) {
+        std::cout << token << std::flush;
+    });
+    std::cout << std::endl;
+    spdlog::info("✅ Simülasyon Tamamlandı.");
 }
 
 void Benchmark::generate_report(const BenchmarkResult& result, const std::string& filename) {
