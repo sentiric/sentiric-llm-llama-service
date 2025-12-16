@@ -1,5 +1,4 @@
-PHONY: help up down logs build clean setup test-long
-
+PHONY: help up down logs build clean setup test
 help:
 	@echo "🎨 "
 	@echo "-------------------------------------------------------"
@@ -27,6 +26,6 @@ logs:
 	docker compose -f docker-compose.yml logs -f
 
 # YENİ
-test-real:
-	@chmod +x real-world-phone-test.sh
-	@./real-world-phone-test.sh
+test:
+	@chmod +x tests/matrix_runner.sh tests/suites/*.sh tests/lib/*.sh
+	@./tests/matrix_runner.sh

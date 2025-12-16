@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# Renkler
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+API_URL="http://localhost:16070"
+
+log_header() { echo -e "\n${CYAN}>>> $1${NC}"; }
+log_info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
+log_pass() { echo -e "${GREEN}✅ PASS: $1${NC}"; }
+log_fail() { echo -e "${RED}❌ FAIL: $1${NC}"; return 1; }
+
+# Servis Sağlık Kontrolü
+wait_for_service() {
+    local max_retries=60
+    local count=0
+    log_info "Servis ve Model Hazırlığı Bekleniyor..."
+    
+    while [ $count -lt $max_retries ]; do
+        status=$(curl -s -m 2 "$API_URL/health" | jq -r '.model_ready' 2>/dev/null)
+        if [ "$status" == "true" ]; then
+            return 0
+        fi
+        echo -n "."
+        sleep 2
+        ((count++))
+    done
+    echo ""
+    log_fail "Timeout: Servis ayağa kalkamadı."
+    exit 1
+}
+
+# Profil Değiştirme
+switch_profile() {
+    local profile=$1
+    log_info "Model Değiştiriliyor: $profile"
+    
+    res=$(curl -s -X POST "$API_URL/v1/models/switch" \
+        -H "Content-Type: application/json" \
+        -d "{\"profile\": \"$profile\"}")
+        
+    if echo "$res" | jq -e '.status == "success"' >/dev/null; then
+        wait_for_service
+        log_pass "Profil Aktif: $profile"
+    else
+        log_fail "Model değişimi başarısız: $res"
+        exit 1
+    fi
+}
+
+# Chat İsteği (Helper)
+send_chat() {
+    local payload=$1
+    curl -s -X POST "$API_URL/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -d "$payload"
+}
