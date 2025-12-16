@@ -9,6 +9,7 @@
 #include <thread>
 #include <future>
 
+// ... (Önceki struct tanımları ve Constructor/Destructor aynen kalır) ...
 // RAII Helpers
 struct LlamaBatchScope {
     llama_batch batch;
@@ -191,18 +192,15 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
     if (effective_max_gen == 0) effective_max_gen = buffer;
     uint32_t safe_prompt_limit = (max_context > effective_max_gen + buffer) ? (max_context - effective_max_gen - buffer) : 0;
     
-    // [YENİ] Token kullanım detaylarını logla
     spdlog::debug("📝 Token Usage Analysis: Input={} | Context Capacity={} | Safe Limit={}", 
                   tokens.size(), max_context, safe_prompt_limit);
 
-    // [SAFETY] Truncation logic with "Head Preservation" to keep System Prompt
     if (safe_prompt_limit > 0 && tokens.size() > safe_prompt_limit) {
         spdlog::warn("⚠️ Prompt truncated: {} -> {} tokens. (Applying Head+Tail strategy)", tokens.size(), safe_prompt_limit);
         
-        // System prompt usually resides in the first few tokens. 
-        // We preserve the first 64 tokens (Head) and the last (safe_limit - 64) tokens (Tail).
-        // This ensures instructions are kept, and recent history is kept, sacrificing the middle.
-        const size_t HEAD_SIZE = 64;
+        // [DEĞİŞİKLİK] HEAD_SIZE 256'ya yükseltildi.
+        // Bu, çoğu System Prompt + RAG Header'ını kapsar.
+        const size_t HEAD_SIZE = 256;
         
         if (safe_prompt_limit > HEAD_SIZE) {
              size_t tail_size = safe_prompt_limit - HEAD_SIZE;
@@ -218,12 +216,10 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
              
              tokens = std::move(smart_tokens);
         } else {
-             // Fallback to simple tail truncation if limit is extremely small
              std::vector<llama_token> truncated_tokens(tokens.begin() + (tokens.size() - safe_prompt_limit), tokens.end());
              tokens = std::move(truncated_tokens);
         }
     } else if (safe_prompt_limit == 0) {
-        // Emergency condition: Context completely full
         uint32_t emergency_limit = std::min((uint32_t)tokens.size(), buffer * 2);
         spdlog::warn("⚠️ Context full. Emergency truncation: {} -> {} tokens", tokens.size(), emergency_limit);
         std::vector<llama_token> truncated_tokens(tokens.end() - emergency_limit, tokens.end());
@@ -234,12 +230,10 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
     return tokens;
 }
 
+// ... (Kalan fonksiyonlar `decode_prompt`, `generate_response`, `execute_single_request` aynı kalır) ...
 bool LLMEngine::decode_prompt(llama_context* ctx, ContextGuard& guard, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr) {
     size_t matched_len = guard.get_matched_tokens();
 
-    // KRİTİK: State Sızıntısını Önleme
-    // Eğer önbellekteki token sayısı, şu anki eşleşen token sayısından fazlaysa,
-    // fazlalık KV önbelleğini temizle.
     if (matched_len < prompt_tokens.size()) {
         llama_memory_seq_rm(llama_get_memory(ctx), -1, matched_len, -1);
     }
@@ -359,7 +353,6 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
 
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
     try {
-        // format fonksiyonu artık 'model' parametresi almıyor.
         std::string formatted_prompt = formatter_->format(req_ptr->request, settings_);
         std::vector<llama_token> prompt_tokens = tokenize_and_truncate(req_ptr, formatted_prompt);
         
