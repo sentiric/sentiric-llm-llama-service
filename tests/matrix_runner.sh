@@ -16,21 +16,29 @@ log_info "Bulunan Profiller: $(echo $PROFILES | tr '\n' ' ')"
 
 FAILED_PROFILES=()
 
-# Servisi ayağa kaldır (Eğer kapalıysa)
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml up -d
+# 1. Önce Ağı Kontrol Et/Oluştur
+ensure_network
+
+# 2. Servisi ayağa kaldır
+# HATA KONTROLÜ EKLENDİ: Compose başarısız olursa testi durdur.
+if ! docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.gpu.override.yml up -d --remove-orphans; then
+    log_fail "Docker Compose başlatılamadı! Lütfen logları kontrol edin."
+    exit 1
+fi
+
 wait_for_service
 
 for profile in $PROFILES; do
     echo "----------------------------------------------------------------"
     log_header "TEST EDİLİYOR: $profile"
     
-    # 1. Modeli Değiştir
+    # Model Değiştir
     if ! switch_profile "$profile"; then
         FAILED_PROFILES+=("$profile (Load Failed)")
         continue
     fi
     
-    # 2. Test Suitlerini Çalıştır
+    # Test Suitlerini Çalıştır
     
     # Suit A: Telefon Simülasyonu
     if ./tests/suites/01_phone_simulation.sh; then
@@ -50,7 +58,7 @@ for profile in $PROFILES; do
          continue
     fi
 
-    # Suit C: Mini Stress (Opsiyonel - Hızlı test için comment out yapılabilir)
+    # Suit C: Mini Stress
     if ./tests/suites/03_stress_mini.sh; then
          log_pass "Suite 03: Stress"
     else

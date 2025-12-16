@@ -15,6 +15,29 @@ log_info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
 log_pass() { echo -e "${GREEN}✅ PASS: $1${NC}"; }
 log_fail() { echo -e "${RED}❌ FAIL: $1${NC}"; return 1; }
 
+# AĞ KONTROLÜ VE OLUŞTURMA (DÜZELTİLDİ)
+ensure_network() {
+    local net_name="sentiric.cloud"
+    # .env dosyasındaki değerlerle uyumlu olmalı
+    local subnet="10.88.0.0/16"
+    local gateway="10.88.0.1"
+
+    if ! docker network ls --format '{{.Name}}' | grep -q "^${net_name}$"; then
+        log_info "Ağ bulunamadı, oluşturuluyor: ${net_name} (Subnet: ${subnet})"
+        
+        docker network create \
+          --driver bridge \
+          --subnet ${subnet} \
+          --gateway ${gateway} \
+          ${net_name} || {
+            log_fail "Ağ oluşturulamadı!"
+            exit 1
+        }
+    else
+        log_info "Ağ mevcut: ${net_name}"
+    fi
+}
+
 # Servis Sağlık Kontrolü
 wait_for_service() {
     local max_retries=60
