@@ -3,6 +3,7 @@
 #include <sstream>
 #include <algorithm>
 
+// Factory
 std::unique_ptr<PromptFormatter> create_formatter(const std::string& model_id) {
     std::string id_lower = model_id;
     std::transform(id_lower.begin(), id_lower.end(), id_lower.begin(), ::tolower);
@@ -22,24 +23,27 @@ std::unique_ptr<PromptFormatter> create_formatter(const std::string& model_id) {
     return std::make_unique<RawTemplateFormatter>();
 }
 
-// --- Helper: RAG Enjeksiyonu ---
-// RAG verisini System prompt yerine User prompt içine gömmek için yardımcı fonksiyon.
-// Bu, küçük modellerin veriyi görmezden gelmesini engeller.
-std::string apply_rag_template(const std::string& template_str, const std::string& rag_context, const std::string& user_prompt) {
-    std::string content = template_str;
+// --- Helper ---
+std::string build_final_user_content(const Settings& settings, const std::string& rag_context, const std::string& user_prompt) {
+    std::string content = settings.template_rag_prompt;
     if (content.empty()) content = "CONTEXT:\n{{rag_context}}\n\nQUERY:\n{{user_prompt}}";
     
     PromptFormatter::replace_all(content, "{{rag_context}}", rag_context);
     PromptFormatter::replace_all(content, "{{user_prompt}}", user_prompt);
+    
+    // Güvenlik: Eğer template bozuksa ve placeholderlar silinmediyse, manuel ekle
+    if (content.find(user_prompt) == std::string::npos) {
+        content = "Context:\n" + rag_context + "\n\nQuestion: " + user_prompt;
+    }
     return content;
 }
 
 // --- 1. Qwen ChatML ---
 std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
     std::stringstream ss;
+    std::string system_prompt = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
     // System
-    std::string system_prompt = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     ss << "<|im_start|>system\n" << system_prompt << "<|im_end|>\n";
 
     // History
@@ -48,10 +52,10 @@ std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamR
         ss << "<|im_start|>" << role << "\n" << turn.content() << "<|im_end|>\n";
     }
 
-    // User (RAG Burada Enjekte Edilir)
+    // User Turn (RAG burada birleşir)
     ss << "<|im_start|>user\n";
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        ss << apply_rag_template(settings.template_rag_prompt, request.rag_context(), request.user_prompt());
+        ss << build_final_user_content(settings, request.rag_context(), request.user_prompt());
     } else {
         ss << request.user_prompt();
     }
@@ -73,12 +77,11 @@ std::string Llama3Formatter::format(const sentiric::llm::v1::GenerateStreamReque
 
     ss << "<|start_header_id|>user<|end_header_id|>\n\n";
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        ss << apply_rag_template(settings.template_rag_prompt, request.rag_context(), request.user_prompt());
+        ss << build_final_user_content(settings, request.rag_context(), request.user_prompt());
     } else {
         ss << request.user_prompt();
     }
-    ss << "<|eot_id|>";
-    ss << "<|start_header_id|>assistant<|end_header_id|>\n\n";
+    ss << "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
     return ss.str();
 }
 
@@ -87,71 +90,72 @@ std::string MistralFormatter::format(const sentiric::llm::v1::GenerateStreamRequ
     std::stringstream ss;
     std::string system_prompt = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
-    // Mistral System prompt'u desteklemez, genellikle ilk instruction içine gömülür.
-    // Ancak Ministral Instruct v3, System prompt'u destekleyebilir. Biz güvenli olan "User içine gömme" yöntemini kullanacağız.
-    
-    bool first = true;
-    for (const auto& turn : request.history()) {
-        if (turn.role() == "user") {
-            ss << "[INST] ";
-            if (first) {
-                // System prompt'u sadece ilk mesajda veriyoruz
-                ss << system_prompt << "\n\n";
-                first = false;
-            }
-            ss << turn.content() << " [/INST]";
-        } else {
-            ss << " " << turn.content() << "</s> ";
-        }
-    }
+    // Ministral için System prompt'u User mesajının en başına ekliyoruz.
+    // [INST] System + Context + Question [/INST]
     
     ss << "[INST] ";
-    if (first) {
+    
+    // System Prompt (Varsa sadece en başa)
+    if (request.history().empty()) {
         ss << system_prompt << "\n\n";
     }
 
+    // History
+    for (const auto& turn : request.history()) {
+        if (turn.role() == "user") {
+            // History içindeki user mesajları
+            ss << turn.content() << " [/INST]";
+        } else {
+            ss << " " << turn.content() << "</s> [INST] ";
+        }
+    }
+
+    // Current User Turn (RAG Dahil)
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        ss << apply_rag_template(settings.template_rag_prompt, request.rag_context(), request.user_prompt());
+        ss << build_final_user_content(settings, request.rag_context(), request.user_prompt());
     } else {
         ss << request.user_prompt();
     }
     ss << " [/INST]";
+    
     return ss.str();
 }
 
-// --- 4. Gemma (Strict) ---
+// --- 4. Gemma (Strict Fix) ---
 std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
     std::stringstream ss;
     std::string system_prompt = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
 
-    // Gemma System Prompt'u <start_of_turn>user içine gömülmelidir.
-    // Ayrı bir [SYSTEM] tag'i YOKTUR. Doğrudan metin olarak eklenmeli.
-
-    bool first_msg = true;
+    // Gemma System Prompt desteklemez. <start_of_turn>user bloğunun en başında düz metin olarak verilmelidir.
+    
+    // History Processing
+    bool is_first = true;
     for (const auto& turn : request.history()) {
         std::string role = (turn.role() == "user") ? "user" : "model";
         ss << "<start_of_turn>" << role << "\n";
         
-        if (first_msg && role == "user") {
+        // System prompt'u ilk user mesajının başına göm
+        if (is_first && role == "user") {
             ss << system_prompt << "\n\n";
-            first_msg = false;
+            is_first = false;
         }
         
         ss << turn.content() << "<end_of_turn>\n";
     }
 
+    // Current Turn
     ss << "<start_of_turn>user\n";
-    if (first_msg) { 
-         ss << system_prompt << "\n\n";
+    
+    if (is_first) { // Eğer history yoksa, system prompt buraya gelir
+        ss << system_prompt << "\n\n";
     }
 
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        ss << apply_rag_template(settings.template_rag_prompt, request.rag_context(), request.user_prompt());
+        ss << build_final_user_content(settings, request.rag_context(), request.user_prompt());
     } else {
         ss << request.user_prompt();
     }
     
-    // Prompt burada bitmeli, model kendisi tamamlayacak.
     ss << "<end_of_turn>\n<start_of_turn>model\n";
     return ss.str();
 }
@@ -162,14 +166,13 @@ std::string RawTemplateFormatter::format(const sentiric::llm::v1::GenerateStream
     std::string system_prompt = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
     ss << system_prompt << "\n\n";
-    
     for (const auto& turn : request.history()) {
-        ss << turn.role() << ": " << turn.content() << "\n\n";
+        ss << turn.role() << ": " << turn.content() << "\n";
     }
     
     ss << "User: ";
     if (request.has_rag_context() && !request.rag_context().empty()) {
-         ss << apply_rag_template(settings.template_rag_prompt, request.rag_context(), request.user_prompt());
+         ss << build_final_user_content(settings, request.rag_context(), request.user_prompt());
     } else {
          ss << request.user_prompt();
     }

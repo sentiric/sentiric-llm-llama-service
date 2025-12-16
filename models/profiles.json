@@ -8,10 +8,12 @@
       "filename": "Qwen3-4B-Q4_K_M.gguf",
       "context_size": 8192,
       "gpu_layers": 100,
-      "temperature": 0.1,
+      "temperature": 0.0,
+      "top_p": 0.9,
+      "repeat_penalty": 1.1,
       "templates": {
-        "system_prompt": "Sen Sentiric müşteri temsilcisisin. Önünde müşterinin ekranı açık. Sadece o ekrandaki veriye göre konuş. Markdown yok. Kısa cevap ver.",
-        "rag_prompt": "EKRAN GÖRÜNTÜSÜ:\n{{rag_context}}\n\nMÜŞTERİ SORUSU:\n{{user_prompt}}\n\nCEVAP (Sadece bilgi ver):"
+        "system_prompt": "Sen Sentiric müşteri hizmetlerisin. Görevin: Sadece [CRM VERİSİ] içindeki bilgiyi okumak. Asla yorum yapma. Asla uydurma. Markdown kullanma. Çok kısa konuş.",
+        "rag_prompt": "[CRM VERİSİ BAŞLANGIÇ]\n{{rag_context}}\n[CRM VERİSİ BİTİŞ]\n\nSORU: {{user_prompt}}\nCEVAP:"
       }
     },
     "qwen2_3B": {
@@ -21,10 +23,10 @@
       "filename": "qwen2.5-coder-3b-instruct-q8_0.gguf",
       "context_size": 8192,
       "gpu_layers": 100,
-      "temperature": 0.1,
+      "temperature": 0.0,
       "templates": {
-        "system_prompt": "Sen bir asistansın. Verilen bağlama göre kısa cevap ver.",
-        "rag_prompt": "Bağlam:\n{{rag_context}}\n\nSoru: {{user_prompt}}\nCevap:"
+        "system_prompt": "Verilen veriyi kullanarak cevap ver. Kısa ol. Markdown yok.",
+        "rag_prompt": "VERİ: {{rag_context}}\nSORU: {{user_prompt}}\nCEVAP:"
       }
     },
     "ministral_3b_realtime": {
@@ -34,10 +36,10 @@
       "filename": "Ministral-3-3B-Instruct-2512-Q8_0.gguf",
       "context_size": 8192,
       "gpu_layers": 100,
-      "temperature": 0.1,
+      "temperature": 0.0,
       "templates": {
-        "system_prompt": "Sen yardımsever bir asistansın. Aşağıdaki verileri kullanarak cevap ver.",
-        "rag_prompt": "Veri:\n{{rag_context}}\n\nSoru: {{user_prompt}}\nCevap:"
+        "system_prompt": "Sadece aşağıdaki veriyi kullan. Asla kendi fikrini söyleme.",
+        "rag_prompt": "CRM Bilgisi: {{rag_context}}\n\nMüşteri Sorusu: {{user_prompt}}"
       }
     },
     "gemma_1b_ultrafast": {
@@ -49,8 +51,8 @@
       "gpu_layers": 100,
       "temperature": 0.0,
       "templates": {
-        "system_prompt": "Aşağıdaki bilgilere göre kısa cevap ver.",
-        "rag_prompt": "Bilgi:\n{{rag_context}}\n\nSoru: {{user_prompt}}\nCevap:"
+        "system_prompt": "Sadece veriyi oku.",
+        "rag_prompt": "Veri: {{rag_context}}\nSoru: {{user_prompt}}"
       }
     },
     "gemma_4b": {
@@ -62,8 +64,8 @@
       "gpu_layers": 100,
       "temperature": 0.0,
       "templates": {
-        "system_prompt": "Aşağıdaki bilgilere göre kısa cevap ver.",
-        "rag_prompt": "Bilgi:\n{{rag_context}}\n\nSoru: {{user_prompt}}\nCevap:"
+        "system_prompt": "Sadece veriyi oku.",
+        "rag_prompt": "Veri: {{rag_context}}\nSoru: {{user_prompt}}"
       }
     }
   }
