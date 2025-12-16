@@ -28,7 +28,7 @@ ENV X_VCPKG_ASSET_SOURCES="clear;x-azurl,https://asset-store.vcpkg.org/;"
 RUN /opt/vcpkg/vcpkg install --triplet x64-linux
 
 # 4. llama.cpp'yi klonla ve belirli bir versiyona sabitle
-ARG LLAMA_CPP_VERSION=92bb442ad999a0d52df0af2730cd861012e8ac5c
+ARG LLAMA_CPP_VERSION=b7415
 RUN git clone https://github.com/ggml-org/llama.cpp.git llama.cpp && \
     cd llama.cpp && \
     git checkout ${LLAMA_CPP_VERSION}
