@@ -10,6 +10,7 @@
 #include <future>
 #include <filesystem>
 #include <regex>
+#include <optional> // [EKLENDİ]
 
 // --- RAII HELPERS ---
 
@@ -52,7 +53,7 @@ LLMEngine::~LLMEngine() {
     if (batcher_) batcher_->stop();
     {
         std::unique_lock<std::shared_mutex> lock(model_mutex_);
-        clear_adapter_cache(); // Önce adaptörleri temizle
+        clear_adapter_cache(); 
         context_pool_.reset();
         if (model_) llama_model_free(model_);
         llama_backend_free();
@@ -102,7 +103,7 @@ bool LLMEngine::internal_reload_model() {
     model_loaded_ = false;
 
     try {
-        clear_adapter_cache(); // Eski modelin adaptörlerini temizle
+        clear_adapter_cache(); 
         context_pool_.reset(); 
         if (model_) {
             llama_model_free(model_);
@@ -145,7 +146,7 @@ bool LLMEngine::is_model_loaded() const {
     return model_loaded_.load(); 
 }
 
-// --- LORA MANAGEMENT (REFACTORED for KB-04 Compliance) ---
+// --- LORA MANAGEMENT ---
 
 struct llama_adapter_lora* LLMEngine::get_or_load_adapter(const std::string& lora_id) {
     std::lock_guard<std::mutex> lock(lora_mutex_);
@@ -154,7 +155,6 @@ struct llama_adapter_lora* LLMEngine::get_or_load_adapter(const std::string& lor
         return lora_cache_[lora_id];
     }
 
-    // Path Traversal Protection
     std::string sanitized_id = lora_id;
     sanitized_id.erase(std::remove(sanitized_id.begin(), sanitized_id.end(), '/'), sanitized_id.end());
     sanitized_id.erase(std::remove(sanitized_id.begin(), sanitized_id.end(), '\\'), sanitized_id.end());
@@ -166,7 +166,6 @@ struct llama_adapter_lora* LLMEngine::get_or_load_adapter(const std::string& lor
     namespace fs = std::filesystem;
     fs::path lora_path = fs::path(settings_.lora_dir) / (sanitized_id + ".bin");
     
-    // GGUF uzantısı kontrolü (opsiyonel fallback)
     if (!fs::exists(lora_path)) {
         lora_path = fs::path(settings_.lora_dir) / (sanitized_id + ".gguf");
     }
@@ -194,7 +193,6 @@ bool LLMEngine::apply_lora_to_context(llama_context* ctx, const std::string& lor
     auto* adapter = get_or_load_adapter(lora_adapter_id);
     if (!adapter) return false;
 
-    // Scale 1.0f varsayılan güç
     int32_t err = llama_set_adapter_lora(ctx, adapter, 1.0f);
     if (err != 0) {
         spdlog::error("❌ Failed to apply LoRA to context. Error: {}", err);
@@ -249,8 +247,7 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
     }
 }
 
-// --- CORE LOGIC: TOKENIZATION & TRUNCATION ---
-// (Tokenize fonksiyonu önceki ile aynı, yer kazanmak için özetlenmiştir)
+// --- TOKENIZATION & TRUNCATION ---
 std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<BatchedRequest> req_ptr, const std::string& formatted_prompt) {
     const auto* vocab = llama_model_get_vocab(model_);
     bool add_special = false; 
@@ -272,7 +269,6 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
     uint32_t safe_prompt_limit = (max_context > effective_max_gen + buffer) ? (max_context - effective_max_gen - buffer) : 0;
     
     if (safe_prompt_limit > 0 && tokens.size() > safe_prompt_limit) {
-        // Head preservation truncation logic...
         const size_t HEAD_SIZE = 256;
         if (safe_prompt_limit > HEAD_SIZE) {
              size_t tail_size = safe_prompt_limit - HEAD_SIZE;
@@ -329,7 +325,6 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     LlamaSamplerGuard sampler_guard(llama_sampler_chain_default_params());
     llama_sampler* chain = sampler_guard.sampler;
 
-    // Grammar, Penalties, Samplers (Önceki kod ile aynı)
     if (!req_ptr->grammar.empty()) {
         llama_sampler* g = llama_sampler_init_grammar(vocab, req_ptr->grammar.c_str(), "root");
         if (g) llama_sampler_chain_add(chain, g);
@@ -382,43 +377,39 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
 }
 
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
-    ContextGuard guard = context_pool_->acquire(); // Default constructor for safety, assigned below
+    // [DEADLOCK FİX]: ContextGuard'ı burada başlatma! Optional kullan.
+    std::optional<ContextGuard> guard;
     llama_context* ctx = nullptr;
 
     try {
         std::string formatted_prompt = formatter_->format(req_ptr->request, settings_);
         std::vector<llama_token> prompt_tokens = tokenize_and_truncate(req_ptr, formatted_prompt);
         
-        // 1. Context Edin
-        guard = context_pool_->acquire(prompt_tokens);
-        ctx = guard.get();
+        // 1. Context'i SADECE tokenları hesapladıktan sonra edin
+        guard.emplace(context_pool_->acquire(prompt_tokens));
+        ctx = guard->get();
         
-        // 2. [KRİTİK] LoRA Adaptörünü Uygula (Context Seviyesinde)
+        // 2. LoRA Uygula
         bool lora_active = false;
         if (req_ptr->request.has_lora_adapter_id()) {
             lora_active = apply_lora_to_context(ctx, req_ptr->request.lora_adapter_id());
         }
 
-        // 3. Prompt Decode ve Generation
-        if (decode_prompt(ctx, guard, prompt_tokens, req_ptr)) {
+        // 3. İşlem
+        if (decode_prompt(ctx, *guard, prompt_tokens, req_ptr)) {
             generate_response(ctx, prompt_tokens, req_ptr);
         }
         
-        // 4. [TEMİZLİK] LoRA'yı Context'ten Kaldır
+        // 4. Temizlik
         if (lora_active) {
             clear_lora_from_context(ctx);
         }
 
-        guard.release_early(prompt_tokens);
+        guard->release_early(prompt_tokens);
 
     } catch (const std::exception& e) {
         spdlog::error("Error executing request: {}", e.what());
         req_ptr->finish_reason = "error";
-        // ContextGuard destructor will handle release, but if LoRA was applied, 
-        // we might leave the context dirty if we crash before clearing.
-        // However, ContextPool overwrites/resets context on re-acquire usually or 
-        // we should add clear logic in release. Since LoRA affects KV cache computation,
-        // clearing it is safer.
         if (ctx) clear_lora_from_context(ctx);
     }
 }
