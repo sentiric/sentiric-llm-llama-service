@@ -191,6 +191,10 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
     if (effective_max_gen == 0) effective_max_gen = buffer;
     uint32_t safe_prompt_limit = (max_context > effective_max_gen + buffer) ? (max_context - effective_max_gen - buffer) : 0;
     
+    // [YENİ] Token kullanım detaylarını logla
+    spdlog::debug("📝 Token Usage Analysis: Input={} | Context Capacity={} | Safe Limit={}", 
+                  tokens.size(), max_context, safe_prompt_limit);
+
     // [SAFETY] Truncation logic with "Head Preservation" to keep System Prompt
     if (safe_prompt_limit > 0 && tokens.size() > safe_prompt_limit) {
         spdlog::warn("⚠️ Prompt truncated: {} -> {} tokens. (Applying Head+Tail strategy)", tokens.size(), safe_prompt_limit);
@@ -206,10 +210,10 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
              std::vector<llama_token> smart_tokens;
              smart_tokens.reserve(safe_prompt_limit);
              
-             // Copy Head
+             // Copy Head (System Prompt Region)
              smart_tokens.insert(smart_tokens.end(), tokens.begin(), tokens.begin() + HEAD_SIZE);
              
-             // Copy Tail
+             // Copy Tail (Recent User Message)
              smart_tokens.insert(smart_tokens.end(), tokens.end() - tail_size, tokens.end());
              
              tokens = std::move(smart_tokens);
