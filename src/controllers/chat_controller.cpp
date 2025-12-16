@@ -52,10 +52,12 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
 
     std::string system_prompt = settings.template_system_prompt;
     
-    // [FIX] OpenAI Chat Format Logic Correction
-    // Kural: "messages" dizisindeki SON eleman aktif prompt'tur. Öncekiler history'dir.
-    // System mesajı her zaman system_prompt olarak ayarlanır.
-    
+    // [FIX 2] Top-level System Prompt Override
+    // OpenAI API uyumluluğu için, messages dizisinden bağımsız gönderilen system_prompt'u kabul et.
+    if (body.contains("system_prompt") && body["system_prompt"].is_string()) {
+        system_prompt = body["system_prompt"].get<std::string>();
+    }
+
     if (body.contains("messages") && body["messages"].is_array()) {
         const auto& messages = body["messages"];
         size_t total_msgs = messages.size();
@@ -66,11 +68,8 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
             std::string content = msg.value("content", "");
 
             if (role == "system") {
-                // System prompt override (son bulunan geçerlidir)
                 system_prompt = content;
             } else {
-                // Son mesaj ve rolü 'user' ise -> User Prompt (RAG buraya uygulanır)
-                // Diğer tüm durumlar -> History
                 if (i == total_msgs - 1 && role == "user") {
                     grpc_request.set_user_prompt(content);
                 } else {
@@ -82,17 +81,10 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
         }
     }
 
-    // Edge Case: Eğer messages dizisi yoksa veya son mesaj user değilse, prompt boş kalabilir.
-    // Ancak API contract gereği user_prompt dolu olmalı. Eğer boşsa hata vermemesi için
-    // basit bir koruma (Cli veya test araçları bazen direkt prompt gönderebilir, ama burada JSON body işliyoruz).
-    // Standart akışta son mesajın user olması beklenir.
-
-    // RAG Context Enjeksiyonu
     if (body.contains("rag_context") && body["rag_context"].is_string()) {
         grpc_request.set_rag_context(body["rag_context"]);
     }
 
-    // Reasoning Prompt Ekleme (System Prompt sonuna)
     if (!reasoning_prompt.empty()) {
         system_prompt += reasoning_prompt;
     }
@@ -215,8 +207,17 @@ void ChatController::handle_chat_completions(const httplib::Request &req, httpli
         auto batched_request = std::make_shared<BatchedRequest>();
         batched_request->request = grpc_request;
 
+        // [FIX 1] Correct GBNF Grammar Formatting
         if (body.contains("response_format") && body["response_format"].value("type", "") == "json_object") {
-             batched_request->grammar = R"(root ::= object; value ::= object | array | string | number | ("true" | "false" | "null") ws; object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws; array ::= "[" ws (value ("," ws value)*)? "]" ws; string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws; number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws; ws ::= [ \t\n\r]*)";
+             batched_request->grammar = R"(
+root   ::= object
+value  ::= object | array | string | number | ("true" | "false" | "null") ws
+object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws
+array  ::= "[" ws (value ("," ws value)*)? "]" ws
+string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws
+number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
+ws     ::= [ \t\n\r]*
+)";
         } else if (body.contains("grammar")) {
             batched_request->grammar = body["grammar"].get<std::string>();
         }
