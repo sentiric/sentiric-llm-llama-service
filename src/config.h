@@ -17,7 +17,6 @@ struct Settings {
     int http_port = 16070;
     int grpc_port = 16071;
     int metrics_port = 16072;
-    // [YENİ] HTTP Thread Pool Boyutu
     int http_threads = 50; 
 
     // Model & Profiles
@@ -77,7 +76,7 @@ struct Settings {
             {"context_size", context_size},
             {"threads", n_threads},
             {"batch_size", max_batch_size},
-            {"http_threads", http_threads}, // [YENİ]
+            {"http_threads", http_threads},
             {"physical_batch_size", physical_batch_size},
             {"kv_offload", kv_offload},
             {"use_mmap", use_mmap},
@@ -121,6 +120,7 @@ inline bool apply_profile(Settings& s, const std::string& profile_name_override)
             if(p.contains("gpu_layers")) s.n_gpu_layers = p["gpu_layers"];
             if(p.contains("temperature")) s.default_temperature = p["temperature"];
             
+            // YENİ: Şablonları yükle
             if (p.contains("templates")) {
                 const auto& templates = p["templates"];
                 s.template_system_prompt = templates.value("system_prompt", s.template_system_prompt);
@@ -174,7 +174,7 @@ inline Settings load_settings() {
     s.http_port = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_PORT", s.http_port);
     s.grpc_port = get_env_var_as_int("LLM_LLAMA_SERVICE_GRPC_PORT", s.grpc_port);
     s.metrics_port = get_env_var_as_int("LLM_LLAMA_SERVICE_METRICS_PORT", s.metrics_port);
-    s.http_threads = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_THREADS", s.http_threads); // [YENİ]
+    s.http_threads = get_env_var_as_int("LLM_LLAMA_SERVICE_HTTP_THREADS", s.http_threads);
 
     s.model_dir = get_env_var("LLM_LLAMA_SERVICE_MODEL_DIR", s.model_dir);
     
@@ -207,7 +207,7 @@ inline Settings load_settings() {
 
     s.enable_warm_up = get_env_var_as_bool("LLM_LLAMA_SERVICE_ENABLE_WARM_UP", s.enable_warm_up);
 
-    s.worker_id = get_env_var("LLM_WORKER_ID", "worker-" + std::to_string(std::rand()));
+    s.worker_id = get_env_var("LLM_WORKKER_ID", "worker-" + std::to_string(std::rand()));
     s.worker_group = get_env_var("LLM_WORKER_GROUP", "default");
     s.gateway_address = get_env_var("LLM_GATEWAY_ADDRESS", "");
     
@@ -217,8 +217,10 @@ inline Settings load_settings() {
         s.model_filename = p.filename().string();
     }
 
+    // Ortam değişkenlerinden sonra profili uygula (profil env'i ezer)
     apply_profile(s, ""); 
     
+    // Son olarak, env yine de en yüksek önceliğe sahip olsun diye system prompt'u tekrar oku
     s.template_system_prompt = get_env_var("LLM_LLAMA_SERVICE_DEFAULT_SYSTEM_PROMPT", s.template_system_prompt);
 
     return s;

@@ -330,20 +330,17 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
 
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
     try {
-        std::string formatted_prompt = formatter_->format(req_ptr->request, model_, settings_);
+        // format fonksiyonu artık 'model' parametresi almıyor.
+        std::string formatted_prompt = formatter_->format(req_ptr->request, settings_);
         std::vector<llama_token> prompt_tokens = tokenize_and_truncate(req_ptr, formatted_prompt);
         
-        // Yeni 'acquire' çağrısı ile akıllı context edinme
         ContextGuard guard = context_pool_->acquire(prompt_tokens);
         llama_context* ctx = guard.get();
         
-        // Eşleşen tokenları atlayarak prompt'u işle
         if (!decode_prompt(ctx, guard, prompt_tokens, req_ptr)) return;
         
-        // Yanıt üret
         generate_response(ctx, prompt_tokens, req_ptr);
         
-        // Context'i son token durumuyla havuza iade et
         guard.release_early(prompt_tokens);
     } catch (const std::exception& e) {
         spdlog::error("Error executing request: {}", e.what());

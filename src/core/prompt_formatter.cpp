@@ -22,20 +22,11 @@ std::unique_ptr<PromptFormatter> create_formatter(const std::string& model_id) {
     return std::make_unique<RawTemplateFormatter>();
 }
 
-// --- GÜÇLÜ RAG BİRLEŞTİRİCİ ---
-// Modellerin veriyi görmezden gelmesini engellemek için "BAĞLAM" bloğunu
-// sorunun hemen tepesine koyuyoruz.
-std::string inject_context(const std::string& rag, const std::string& query) {
-    if (rag.empty()) return query;
-    return "BELGE:\n" + rag + "\n\nSORU:\n" + query + "\n\nCEVAP (Sadece Belgeye Göre):";
-}
-
 // --- 1. Qwen ChatML ---
 // <|im_start|>user\nCONTENT<|im_end|>\n<|im_start|>assistant\n
-std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
+std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const Settings& settings) const {
     std::stringstream ss;
     
-    // System: Qwen System Prompt'a saygı duyar.
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     ss << "<|im_start|>system\n" << sys << "<|im_end|>\n";
 
@@ -46,7 +37,9 @@ std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamR
 
     std::string user_content = request.user_prompt();
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        user_content = inject_context(request.rag_context(), request.user_prompt());
+        std::string rag_template = settings.template_rag_prompt;
+        replace_all(rag_template, "{{rag_context}}", request.rag_context());
+        user_content = rag_template + "\n" + user_content;
     }
 
     ss << "<|im_start|>user\n" << user_content << "<|im_end|>\n<|im_start|>assistant\n";
@@ -55,7 +48,7 @@ std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamR
 
 // --- 2. Llama 3 ---
 // <|start_header_id|>user<|end_header_id|>\n\nCONTENT<|eot_id|>...
-std::string Llama3Formatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
+std::string Llama3Formatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const Settings& settings) const {
     std::stringstream ss;
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
@@ -68,7 +61,9 @@ std::string Llama3Formatter::format(const sentiric::llm::v1::GenerateStreamReque
 
     std::string user_content = request.user_prompt();
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        user_content = inject_context(request.rag_context(), request.user_prompt());
+        std::string rag_template = settings.template_rag_prompt;
+        replace_all(rag_template, "{{rag_context}}", request.rag_context());
+        user_content = rag_template + "\n" + user_content;
     }
 
     ss << "<|start_header_id|>user<|end_header_id|>\n\n" << user_content << "<|eot_id|>";
@@ -78,19 +73,14 @@ std::string Llama3Formatter::format(const sentiric::llm::v1::GenerateStreamReque
 
 // --- 3. Mistral / Ministral ---
 // [INST] System \n\n User [/INST]
-std::string MistralFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
+std::string MistralFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const Settings& settings) const {
     std::stringstream ss;
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
-    // Ministral için en güvenli yol: System prompt yokmuş gibi davranıp her şeyi User Instruction'a gömmek.
-    
     ss << "[INST] ";
-    bool first = true;
     
-    // History varsa önce onları işle
     if (!request.history().empty()) {
-        ss << sys << "\n\n"; // System'i en başa koy
-        first = false; 
+        ss << sys << "\n\n";
         for (const auto& turn : request.history()) {
             if (turn.role() == "user") {
                 ss << turn.content() << " [/INST]";
@@ -99,13 +89,14 @@ std::string MistralFormatter::format(const sentiric::llm::v1::GenerateStreamRequ
             }
         }
     } else {
-        // History yoksa System'i buraya koyacağız
         ss << sys << "\n\n";
     }
 
     std::string user_content = request.user_prompt();
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        user_content = inject_context(request.rag_context(), request.user_prompt());
+        std::string rag_template = settings.template_rag_prompt;
+        replace_all(rag_template, "{{rag_context}}", request.rag_context());
+        user_content = rag_template + "\n" + user_content;
     }
 
     ss << user_content << " [/INST]";
@@ -114,11 +105,9 @@ std::string MistralFormatter::format(const sentiric::llm::v1::GenerateStreamRequ
 
 // --- 4. Gemma (STRICT MODE) ---
 // <start_of_turn>user\nCONTENT<end_of_turn>\n<start_of_turn>model\n
-std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
+std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const Settings& settings) const {
     std::stringstream ss;
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
-
-    // Gemma System Prompt desteklemez. Bunu User inputunun başına ekliyoruz.
     
     bool first_msg = true;
     for (const auto& turn : request.history()) {
@@ -126,7 +115,7 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamReques
         ss << "<start_of_turn>" << role << "\n";
         
         if (first_msg && role == "user") {
-            ss << "Role: " << sys << "\n\n";
+            ss << sys << "\n\n";
             first_msg = false;
         }
         
@@ -135,12 +124,14 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamReques
 
     ss << "<start_of_turn>user\n";
     if (first_msg) {
-        ss << "Role: " << sys << "\n\n";
+        ss << sys << "\n\n";
     }
 
     std::string user_content = request.user_prompt();
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        user_content = inject_context(request.rag_context(), request.user_prompt());
+        std::string rag_template = settings.template_rag_prompt;
+        replace_all(rag_template, "{{rag_context}}", request.rag_context());
+        user_content = rag_template + "\n" + user_content;
     }
     
     ss << user_content << "<end_of_turn>\n<start_of_turn>model\n";
@@ -148,7 +139,7 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamReques
 }
 
 // --- 5. Raw ---
-std::string RawTemplateFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const llama_model* model, const Settings& settings) const {
+std::string RawTemplateFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const Settings& settings) const {
     std::stringstream ss;
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
@@ -159,7 +150,9 @@ std::string RawTemplateFormatter::format(const sentiric::llm::v1::GenerateStream
     
     std::string user_content = request.user_prompt();
     if (request.has_rag_context() && !request.rag_context().empty()) {
-        user_content = inject_context(request.rag_context(), request.user_prompt());
+        std::string rag_template = settings.template_rag_prompt;
+        replace_all(rag_template, "{{rag_context}}", request.rag_context());
+        user_content = rag_template + "\n" + user_content;
     }
     
     ss << "User: " << user_content << "\nAssistant:";

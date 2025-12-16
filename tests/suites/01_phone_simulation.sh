@@ -18,10 +18,10 @@ talk() {
         --arg rag "$CRM_DATA" \
         --slurpfile hist "$HISTORY_FILE" \
         '{
-            messages: $hist[0],
-            rag_context: $rag,
-            temperature: 0.0,
-            max_tokens: 150
+            "messages": $hist[0],
+            "rag_context": $rag,
+            "temperature": 0.0,
+            "max_tokens": 150
         }')
 
     START=$(date +%s%N)
@@ -31,22 +31,15 @@ talk() {
     
     RAW_CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content')
     
-    # Gelişmiş temizlik: <think>...</think> bloklarını (multiline dahil) sil
-    # perl -0777 tüm dosyayı tek satır gibi okur
-    CLEAN_CONTENT=$(echo "$RAW_CONTENT" | perl -0777 -pe 's/<think>.*?<\/think>//gs')
-    
-    # Extra whitespace temizliği
-    CLEAN_CONTENT=$(echo "$CLEAN_CONTENT" | tr -s ' ' | sed 's/^[ \t]*//;s/[ \t]*$//')
+    # GÜÇLENDİRİLMİŞ TEMİZLİK: <think>...</think> bloklarını (multiline dahil) ve diğer potansiyel artıkları sil
+    CLEAN_CONTENT=$(echo "$RAW_CONTENT" | perl -0777 -pe 's/<think>.*?<\/think>//gs' | sed 's/<[^>]*>//g' | tr -s ' ' | xargs)
 
     echo -e "👤 User: $user_msg"
     echo -e "🤖 AI (Clean): $CLEAN_CONTENT"
     echo -e "⏱️  TTFT/Latency: ${LATENCY}ms"
 
-    # Kontrol: -i (case insensitive)
-    # NOT: 1500'ü 15000 olarak görmesin diye grep kontrolünü gevşek tutuyoruz ama içeriğe bakıyoruz.
-    # Gerçek RAG başarısı için modelin "1500" kelimesini geçirmesi yeterli.
-    
-    if echo "$CLEAN_CONTENT" | grep -iq "$expect_keyword"; then
+    # KATI KONTROL: Cevapta beklenen anahtar kelime tam olarak geçmeli
+    if echo "$CLEAN_CONTENT" | grep -Fq "$expect_keyword"; then
         log_pass "Cevap doğrulandı ('$expect_keyword' bulundu)."
     else
         log_fail "Beklenen bilgi eksik: '$expect_keyword'"
