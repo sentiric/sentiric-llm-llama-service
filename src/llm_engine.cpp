@@ -9,8 +9,9 @@
 #include <thread>
 #include <future>
 
-// ... (Önceki struct tanımları ve Constructor/Destructor aynen kalır) ...
-// RAII Helpers
+// --- RAII HELPERS ---
+
+// Batch bellek yönetimini otomatikleştirir
 struct LlamaBatchScope {
     llama_batch batch;
     
@@ -26,12 +27,15 @@ struct LlamaBatchScope {
     }
 };
 
+// Sampler zincirini otomatik temizler
 struct LlamaSamplerGuard {
     llama_sampler* sampler;
     LlamaSamplerGuard(llama_sampler_chain_params params) 
         : sampler(llama_sampler_chain_init(params)) {}
     ~LlamaSamplerGuard() { if (sampler) llama_sampler_free(sampler); }
 };
+
+// --- CONSTRUCTOR & DESTRUCTOR ---
 
 LLMEngine::LLMEngine(Settings& settings, prometheus::Gauge& active_contexts_gauge)
     : settings_(settings), active_contexts_gauge_(active_contexts_gauge) {
@@ -60,6 +64,8 @@ LLMEngine::~LLMEngine() {
         llama_backend_free();
     }
 }
+
+// --- MODEL MANAGEMENT ---
 
 bool LLMEngine::reload_model(const std::string& profile_name) {
     spdlog::info("🔄 Profile switch requested: {}", profile_name);
@@ -144,6 +150,8 @@ bool LLMEngine::is_model_loaded() const {
     return model_loaded_.load(); 
 }
 
+// --- REQUEST PROCESSING ---
+
 void LLMEngine::process_single_request(std::shared_ptr<BatchedRequest> batched_request) {
     if (batcher_) {
         batcher_->add_request(batched_request); 
@@ -171,6 +179,8 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
     }
 }
 
+// --- CORE LOGIC: TOKENIZATION & TRUNCATION ---
+
 std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<BatchedRequest> req_ptr, const std::string& formatted_prompt) {
     const auto* vocab = llama_model_get_vocab(model_);
     bool add_special = false; 
@@ -195,11 +205,11 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
     spdlog::debug("📝 Token Usage Analysis: Input={} | Context Capacity={} | Safe Limit={}", 
                   tokens.size(), max_context, safe_prompt_limit);
 
+    // [FIX 1] Head-Preservation Truncation
     if (safe_prompt_limit > 0 && tokens.size() > safe_prompt_limit) {
         spdlog::warn("⚠️ Prompt truncated: {} -> {} tokens. (Applying Head+Tail strategy)", tokens.size(), safe_prompt_limit);
         
-        // [DEĞİŞİKLİK] HEAD_SIZE 256'ya yükseltildi.
-        // Bu, çoğu System Prompt + RAG Header'ını kapsar.
+        // System Prompt'u korumak için ilk 256 token (Head)
         const size_t HEAD_SIZE = 256;
         
         if (safe_prompt_limit > HEAD_SIZE) {
@@ -208,14 +218,15 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
              std::vector<llama_token> smart_tokens;
              smart_tokens.reserve(safe_prompt_limit);
              
-             // Copy Head (System Prompt Region)
+             // 1. Head (System Prompt) kopyala
              smart_tokens.insert(smart_tokens.end(), tokens.begin(), tokens.begin() + HEAD_SIZE);
              
-             // Copy Tail (Recent User Message)
+             // 2. Tail (Son kullanıcı mesajları) kopyala
              smart_tokens.insert(smart_tokens.end(), tokens.end() - tail_size, tokens.end());
              
              tokens = std::move(smart_tokens);
         } else {
+             // Limit çok düşükse sadece sondan al (Fallback)
              std::vector<llama_token> truncated_tokens(tokens.begin() + (tokens.size() - safe_prompt_limit), tokens.end());
              tokens = std::move(truncated_tokens);
         }
@@ -230,13 +241,16 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
     return tokens;
 }
 
-// ... (Kalan fonksiyonlar `decode_prompt`, `generate_response`, `execute_single_request` aynı kalır) ...
+// --- CORE LOGIC: DECODING (PROMPT PROCESSING) ---
+
 bool LLMEngine::decode_prompt(llama_context* ctx, ContextGuard& guard, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr) {
     size_t matched_len = guard.get_matched_tokens();
 
-    if (matched_len < prompt_tokens.size()) {
-        llama_memory_seq_rm(llama_get_memory(ctx), -1, matched_len, -1);
-    }
+    // [FIX 2] Unconditional KV Cache Rewind
+    // Eşleşme noktasından sonra gelen her şeyi (önceki üretimler, hayalet tokenlar) SİL.
+    // Bu işlem, Smart Cache tam eşleşse bile yapılmalıdır.
+    // Parametreler: (mem, seq_id=-1, start=matched_len, end=-1)
+    llama_memory_seq_rm(llama_get_memory(ctx), -1, matched_len, -1);
     
     size_t tokens_to_process = prompt_tokens.size() - matched_len;
     
@@ -253,6 +267,7 @@ bool LLMEngine::decode_prompt(llama_context* ctx, ContextGuard& guard, const std
             }
             
             if (i + n_eval == tokens_to_process) {
+                // Son batch ise logit hesapla
                 batch_scope.batch.logits[n_eval - 1] = true;
             }
             
@@ -266,6 +281,8 @@ bool LLMEngine::decode_prompt(llama_context* ctx, ContextGuard& guard, const std
     return true;
 }
 
+// --- CORE LOGIC: GENERATION (SAMPLING) ---
+
 void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr) {
     const auto* vocab = llama_model_get_vocab(model_);
     const auto& params = req_ptr->request.params();
@@ -273,11 +290,13 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     LlamaSamplerGuard sampler_guard(llama_sampler_chain_default_params());
     llama_sampler* chain = sampler_guard.sampler;
 
+    // 1. Grammar Sampling
     if (!req_ptr->grammar.empty()) {
         llama_sampler* g = llama_sampler_init_grammar(vocab, req_ptr->grammar.c_str(), "root");
         if (g) llama_sampler_chain_add(chain, g);
     }
     
+    // 2. Penalties & Distribution
     float repeat_penalty = params.has_repetition_penalty() ? params.repetition_penalty() : settings_.default_repeat_penalty;
     llama_sampler_chain_add(chain, llama_sampler_init_penalties(llama_n_ctx(ctx), repeat_penalty, 0.0f, 0.0f));
     llama_sampler_chain_add(chain, llama_sampler_init_top_k(params.has_top_k() ? params.top_k() : settings_.default_top_k));
@@ -294,19 +313,26 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     uint32_t req_max_gen = params.has_max_new_tokens() ? params.max_new_tokens() : settings_.default_max_tokens;
     int n_decoded = 0;
     llama_pos n_past = prompt_tokens.size();
+    
+    // Güvenlik limiti kontrolü
     uint32_t ctx_limit = settings_.context_size;
-    if (n_past + req_max_gen > ctx_limit) req_max_gen = ctx_limit - n_past - 1;
+    if (n_past + req_max_gen > ctx_limit) {
+        req_max_gen = ctx_limit - n_past - 1;
+    }
 
     LlamaBatchScope token_batch(1, 0, 1);
     
     while (n_decoded < (int)req_max_gen) {
+        // İptal Kontrolü
         if (req_ptr->should_stop_callback && req_ptr->should_stop_callback()) {
             req_ptr->finish_reason = "cancelled"; break;
         }
         
+        // Sampling
         llama_token new_token_id = llama_sampler_sample(chain, ctx, -1);
         llama_sampler_accept(chain, new_token_id);
         
+        // EOS Kontrolü
         if (llama_vocab_is_eog(vocab, new_token_id)) {
             req_ptr->finish_reason = "stop"; break;
         }
@@ -317,6 +343,7 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
         int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true); 
         std::string token_str(buf, n);
         
+        // Stop Sequence Kontrolü
         bool stop_found = false;
         for (const auto& seq : dynamic_stop_sequences) {
             if (token_str.find(seq) != std::string::npos) {
@@ -331,11 +358,13 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
             break;
         }
 
+        // Token Emit
         if (!is_control) {
             if(req_ptr->on_token_callback) req_ptr->on_token_callback(token_str);
             req_ptr->token_queue.push(token_str);
         }
         
+        // Next Token Decode
         token_batch.clear();
         common_batch_add(token_batch.batch, new_token_id, n_past, {0}, true);
         
