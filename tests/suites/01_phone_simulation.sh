@@ -6,18 +6,20 @@ HISTORY_FILE="/tmp/phone_test_hist.json"
 
 echo "[]" > "$HISTORY_FILE"
 
-log_header "SENARYO: Telefon Asistanı Simülasyonu"
+log_header "SENARYO: Telefon Asistanı Simülasyonu (Doğru Bağlam Kalıcılığı)"
 
-# Sadece konuşmanın ilk adımı için RAG context'i ile istek gönderir.
-talk_with_rag() {
+# Bir RAG diyaloğunda, context her zaman mevcuttur.
+# Bu fonksiyon, bu gerçek dünya senaryosunu doğru bir şekilde simüle eder.
+talk() {
     local user_msg="$1"
     local expect_keyword="$2"
-    local rag_data="$3"
-
+    
+    # 1. Kullanıcının yeni mesajını geçmişe ekle
     jq --arg msg "$user_msg" '. += [{"role":"user", "content":$msg}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
     
+    # 2. Her zaman tam konuşma geçmişini ve RAG context'ini içeren bir payload oluştur
     PAYLOAD=$(jq -n \
-        --arg rag "$rag_data" \
+        --arg rag "$CRM_DATA" \
         --slurpfile hist "$HISTORY_FILE" \
         '{
             "messages": $hist[0],
@@ -26,35 +28,9 @@ talk_with_rag() {
             "max_tokens": 150
         }')
 
-    send_and_validate "$user_msg" "$expect_keyword" "$PAYLOAD"
-}
-
-# RAG context'i OLMADAN, sadece konuşma geçmişiyle devam eder.
-talk() {
-    local user_msg="$1"
-    local expect_keyword="$2"
-    
-    jq --arg msg "$user_msg" '. += [{"role":"user", "content":$msg}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
-    
-    PAYLOAD=$(jq -n \
-        --slurpfile hist "$HISTORY_FILE" \
-        '{
-            "messages": $hist[0],
-            "temperature": 0.0,
-            "max_tokens": 150
-        }')
-
-    send_and_validate "$user_msg" "$expect_keyword" "$PAYLOAD"
-}
-
-# Ortak istek gönderme ve doğrulama mantığı
-send_and_validate() {
-    local user_msg="$1"
-    local expect_keyword="$2"
-    local payload="$3"
-    
+    # 3. İsteği gönder ve doğrula
     START=$(date +%s%N)
-    RESPONSE=$(send_chat "$payload")
+    RESPONSE=$(send_chat "$PAYLOAD")
     END=$(date +%s%N)
     LATENCY=$(( (END - START) / 1000000 ))
     
@@ -72,12 +48,13 @@ send_and_validate() {
         return 1
     fi
 
+    # 4. AI'ın cevabını bir sonraki tur için geçmişe ekle
     jq --arg msg "$CLEAN_CONTENT" '. += [{"role":"assistant", "content":$msg}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
 }
 
 
 # 1. Aşama: Bilgi Al (RAG ile)
-talk_with_rag "Merhaba, borcum ne kadar?" "1500" "$CRM_DATA" || exit 1
+talk "Merhaba, borcum ne kadar?" "1500" || exit 1
 
-# 2. Aşama: Bilgi Üzerine Konuş (RAG olmadan)
+# 2. Aşama: Bilgi Üzerine Konuş (RAG ile devam ederek)
 talk "Son ödeme tarihi ne zaman peki?" "Yarın" || exit 1
