@@ -52,8 +52,7 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
 
     std::string system_prompt = settings.template_system_prompt;
     
-    // [FIX 2] Top-level System Prompt Override
-    // OpenAI API uyumluluğu için, messages dizisinden bağımsız gönderilen system_prompt'u kabul et.
+    // Top-level system prompt override
     if (body.contains("system_prompt") && body["system_prompt"].is_string()) {
         system_prompt = body["system_prompt"].get<std::string>();
     }
@@ -207,12 +206,14 @@ void ChatController::handle_chat_completions(const httplib::Request &req, httpli
         auto batched_request = std::make_shared<BatchedRequest>();
         batched_request->request = grpc_request;
 
-        // [FIX 1] Correct GBNF Grammar Formatting
+        // [FIX] Simplistic and Robust JSON Grammar
+        // Ayrıştırılmış kurallar parser'ın yığın hatası vermesini engeller.
         if (body.contains("response_format") && body["response_format"].value("type", "") == "json_object") {
              batched_request->grammar = R"(
 root   ::= object
 value  ::= object | array | string | number | ("true" | "false" | "null") ws
-object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws
+object ::= "{" ws members "}" ws
+members ::= (string ":" ws value ("," ws string ":" ws value)*)?
 array  ::= "[" ws (value ("," ws value)*)? "]" ws
 string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws
 number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws

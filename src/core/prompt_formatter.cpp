@@ -97,12 +97,13 @@ std::string MistralFormatter::format(const sentiric::llm::v1::GenerateStreamRequ
     return ss.str();
 }
 
-// --- 4. Gemma ---
+// --- 4. Gemma (DÜZELTİLDİ) ---
 std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const Settings& settings) const {
     std::stringstream ss;
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
-    // Gemma'da sistem prompt'u desteklenmez, bu yüzden onu ilk kullanıcı mesajına ekleriz.
+    // Gemma sistem prompt'u desteklemez. 1B gibi modellerin talimatı ciddiye alması için
+    // System Prompt'u ilk kullanıcı mesajının İÇİNE, en başa koyuyoruz.
     bool history_exists = request.history_size() > 0;
 
     for (const auto& turn : request.history()) {
@@ -113,7 +114,8 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamReques
 
     ss << "<start_of_turn>user\n";
     if (!history_exists) {
-        ss << sys << "\n\n";
+        // [DEĞİŞİKLİK] "System:" ön eki ile belirginleştirme
+        ss << "System: " << sys << "\n\n";
     }
 
     std::string user_content = build_final_user_content(request, settings);
