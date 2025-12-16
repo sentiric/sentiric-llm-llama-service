@@ -1,7 +1,7 @@
 #!/bin/bash
 source tests/lib/common.sh
 
-log_header "SENARYO: Voice Gateway Simülasyonu (V3 - Gelişmiş Hafıza & Söz Kesme)"
+log_header "SENARYO: Voice Gateway Simülasyonu (V4 - Coproc ile %100 Kararlı)"
 
 # --- Test Ayarları ---
 RAG_DATA="Sipariş No: #ABC-123. Durum: Kargoya verildi. Kargo Takip No: TRK-987654321. Ürün: Bluetooth Kulaklık. Teslimat Adresi: İstanbul. Tahmini Teslim: Yarın."
@@ -15,67 +15,71 @@ log_gateway() { echo -e "\n\033[1;33m⚡ GATEWAY:\033[0m $1"; }
 # Tek bir konuşma turunu yöneten ana fonksiyon
 chat_turn() {
     local user_input="$1"
-    local system_prompt_override="${2:-$DEFAULT_SYSTEM_PROMPT}" # Opsiyonel 2. argüman ile prompt ezme
+    local system_prompt_override="${2:-$DEFAULT_SYSTEM_PROMPT}"
 
-    # 1. Kullanıcı girdisini geçmişe ekle
-    jq --arg content "$user_input" '. += [{"role": "user", "content": $content}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+    jq --arg c "$user_input" '. += [{"role": "user", "content": $content}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
 
-    # 2. Payload hazırla
     local PAYLOAD
     PAYLOAD=$(jq -n --arg rag "$RAG_DATA" --arg sys "$system_prompt_override" --slurpfile hist "$HISTORY_FILE" \
         '{ "messages": ([{"role":"system","content":$sys}] + $hist[0]), "rag_context": $rag, "stream": true, "temperature": 0.0 }')
 
-    # 3. AI Cevabını stream et ve yakala
     echo -n -e "\033[1;32m🤖 ASİSTAN:\033[0m "
     local full_response=""
-    curl -s -N -X POST "$API_URL/v1/chat/completions" -H "Content-Type: application/json" -d "$PAYLOAD" | while IFS= read -r line; do
-        if [[ $line == "data: "* && $line != *"DONE"* ]]; then
-            token=$(echo "${line:6}" | jq -r '.choices[0].delta.content // empty')
-            if [ -n "$token" ]; then
-                echo -n -e "\033[0;32m$token\033[0m"
-                full_response+="$token"
-                sleep 0.08
-            fi
+    
+    # AI Cevabını stream et ve yakala
+    while IFS= read -r token; do
+        if [ -n "$token" ]; then
+            echo -n -e "\033[0;32m$token\033[0m"
+            full_response+="$token"
         fi
-    done
-    echo "" # Yeni satır
+    done < <(curl -s -N -X POST "$API_URL/v1/chat/completions" -H "Content-Type: application/json" -d "$PAYLOAD" | 
+             while IFS= read -r line; do
+                 if [[ $line == "data: "* && $line != *"DONE"* ]]; then
+                     echo "${line:6}" | jq -r '.choices[0].delta.content // empty'
+                 fi
+             done)
+    echo ""
 
-    # 4. AI'ın tam cevabını geçmişe ekle
-    jq --arg content "$full_response" '. += [{"role": "assistant", "content": $content}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+    jq --arg c "$full_response" '. += [{"role": "assistant", "content": $c}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
 }
 
 # --- TEST AKIŞI ---
 
 # 1. BAŞLANGIÇ
 echo "[]" > "$HISTORY_FILE"
-PARTIAL_RESPONSE="" # Yarım cevabı tutacak değişken
 
-# 2. İLK SORU (Arka planda çalışacak)
-log_user "Merhaba, siparişim ne alemde?"
-jq --arg c "Merhaba, siparişim ne alemde?" '. += [{"role": "user", "content": $c}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+# 2. İLK SORU
+log_user "Merhaba, siparişim ne alemde? Kargoya verildi mi, kargo takip numarasını ve teslimat adresini öğrenebilir miyim?"
+jq --arg c "Merhaba, siparişim ne alemde? Kargoya verildi mi, kargo takip numarasını ve teslimat adresini öğrenebilir miyim?" '. += [{"role": "user", "content": $c}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+
 PAYLOAD=$(jq -n --arg rag "$RAG_DATA" --arg sys "$DEFAULT_SYSTEM_PROMPT" --slurpfile hist "$HISTORY_FILE" \
     '{ "messages": $hist[0], "rag_context": $rag, "stream": true, "temperature": 0.0 }')
 
 log_gateway "LLM'e istek gönderiliyor..."
 echo -n -e "\033[1;32m🤖 ASİSTAN:\033[0m "
 
-# [FIX] `tee` yerine `while` döngüsü içinde değişken doldurma (Race condition önlemi)
-curl -s -N -X POST "$API_URL/v1/chat/completions" -d "$PAYLOAD" -H "Content-Type: application/json" | while IFS= read -r line; do
-    if [[ $line == "data: "* && $line != *"DONE"* ]]; then
-        token=$(echo "${line:6}" | jq -r '.choices[0].delta.content // empty');
-        if [ -n "$token" ]; then 
-            echo -n -e "\033[0;32m$token\033[0m"
-            PARTIAL_RESPONSE+="$token"
-            sleep 0.08
+# [FİNAL DÜZELTME] Coproc ile güvenli arka plan işlemi
+coproc LLM_STREAM {
+    curl -s -N -X POST "$API_URL/v1/chat/completions" -d "$PAYLOAD" -H "Content-Type: application/json" | 
+    while IFS= read -r line; do
+        if [[ $line == "data: "* && $line != *"DONE"* ]]; then
+            echo "${line:6}" | jq -r '.choices[0].delta.content // empty'
         fi
+    done
+}
+
+# AI'ın çıktısını oku ve ekrana yaz, bir yandan da değişkene kaydet
+PARTIAL_RESPONSE=""
+while IFS= read -r -t 1.5 token; do # 1.5 saniye bekle
+    if [ -n "$token" ]; then
+        echo -n -e "\033[0;32m$token\033[0m"
+        PARTIAL_RESPONSE+="$token"
     fi
-done &
-LLM_PID=$!
-sleep 2
+done <&"${LLM_STREAM[0]}"
 
 # 3. SÖZ KESME
 log_gateway "!!! VAD: KULLANICI KONUŞMAYA BAŞLADI !!!"
-kill $LLM_PID; wait $LLM_PID 2>/dev/null
+kill $LLM_STREAM_PID; wait $LLM_STREAM_PID 2>/dev/null
 jq --arg c "$PARTIAL_RESPONSE" '. += [{"role": "assistant", "content": $c}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
 log_gateway "-> LLM stream kesildi. AI'ın yarım cümlesi hafızaya kaydedildi: \"$PARTIAL_RESPONSE...\""
 
@@ -83,7 +87,6 @@ log_gateway "-> LLM stream kesildi. AI'ın yarım cümlesi hafızaya kaydedildi:
 chat_turn "Pardon, bir şey daha soracağım, teslimat adresi doğru mu, İstanbul muydu?"
 
 # 5. FİNAL SORU (Özel Prompt ile Hafıza Testi)
-# [FIX] Modele ne yapması gerektiğini net bir şekilde söylüyoruz.
 MEMORY_PROMPT="Sen bir analizcisin. Sana verilen konuşma geçmişini incele ve kullanıcının en baştaki ilk sorusunu bulup tekrar et."
 chat_turn "Harika. Peki en başta ne sormuştum, unuttum da." "$MEMORY_PROMPT"
 
