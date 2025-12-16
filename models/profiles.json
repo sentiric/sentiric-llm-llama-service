@@ -1,6 +1,21 @@
 {
-  "active_profile": "qwen3_4b_agent",
+  "active_profile": "qwen25_3b_voice_optimized",
   "profiles": {
+    "qwen25_3b_voice_optimized": {
+      "display_name": "Sentiric Voice Agent (Qwen 2.5 3B)",
+      "category": "Voice",
+      "model_id": "ggml-org/Qwen2.5-Coder-3B-Instruct-Q8_0-GGUF",
+      "filename": "qwen2.5-coder-3b-instruct-q8_0.gguf",
+      "context_size": 4096,
+      "gpu_layers": 100,
+      "temperature": 0.1,
+      "top_p": 0.85,
+      "repeat_penalty": 1.25,
+      "templates": {
+        "system_prompt": "Sen Sentiric Çağrı Merkezi asistanısın. Görevin, müşterinin sorusuna en kısa, en doğal ve en yardımsever şekilde cevap vermektir. ASLA uzun paragraflar kurma. Tek cümle veya en fazla iki cümle ile cevap ver. ASLA 'belgeye göre' gibi ifadeler kullanma, doğal konuş. Eğer bilgiyi bilmiyorsan kibarca bilmediğini söyle.",
+        "rag_prompt": "### MÜŞTERİ BİLGİSİ:\n{{rag_context}}\n\n### MÜŞTERİ SORUSU:\n{{user_prompt}}\n\n### TALİMAT:\nYukarıdaki bilgiyi kullanarak müşteriye ÇOK KISA ve DOĞAL bir cevap ver. Sadece sorulanı cevapla. Ekstra bilgi verme.\n\n### ASİSTAN:"
+      }
+    },
     "qwen3_4b_agent": {
       "display_name": "Sentiric Phone Agent (Qwen 3 4B)",
       "category": "Production",

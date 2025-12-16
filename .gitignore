@@ -19,3 +19,4 @@ llm_service
 # Artık vendor dizini yok, bu satırı silebiliriz
 # vendor/
 .env
+test_report.csv

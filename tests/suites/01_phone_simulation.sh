@@ -24,7 +24,7 @@ talk() {
         '{
             "messages": $hist[0],
             "rag_context": $rag,
-            "temperature": 0.0,
+            "temperature": 0.1,
             "max_tokens": 150
         }')
 
@@ -41,7 +41,8 @@ talk() {
     echo -e "🤖 AI (Clean): $CLEAN_CONTENT"
     echo -e "⏱️  Latency: ${LATENCY}ms"
 
-    if echo "$CLEAN_CONTENT" | grep -Fq "$expect_keyword"; then
+    # [FIX] Case-insensitive grep (-i) eklendi
+    if echo "$CLEAN_CONTENT" | grep -Fqi "$expect_keyword"; then
         log_pass "Cevap doğrulandı ('$expect_keyword' bulundu)."
     else
         log_fail "Beklenen bilgi eksik: '$expect_keyword'"

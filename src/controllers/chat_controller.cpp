@@ -205,8 +205,9 @@ void ChatController::handle_chat_completions(const httplib::Request &req, httpli
         auto batched_request = std::make_shared<BatchedRequest>();
         batched_request->request = grpc_request;
 
-        // [FIX] BATTLE-TESTED SIMPLE JSON GRAMMAR
-        // Bu gramer, llama.cpp'nin default JSON şemalarına çok daha yakındır ve stack hatası vermez.
+        // [FIX] HIGHLY PERMISSIVE JSON GRAMMAR
+        // Eski gramer, llama.cpp'nin parser'ı ile uyumsuzluk yaşıyordu.
+        // Bu versiyon, whitespace ve object/array yapılarında daha esnek.
         if (body.contains("response_format") && body["response_format"].value("type", "") == "json_object") {
              batched_request->grammar = R"(
 root   ::= object

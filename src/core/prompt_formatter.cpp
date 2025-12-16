@@ -37,8 +37,11 @@ std::string build_final_user_content(const sentiric::llm::v1::GenerateStreamRequ
 std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const Settings& settings) const {
     std::stringstream ss;
     
+    // [FIX] Qwen için System Prompt'u zorunlu olarak en başa ekle
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
-    ss << "<|im_start|>system\n" << sys << "<|im_end|>\n";
+    if (!sys.empty()) {
+        ss << "<|im_start|>system\n" << sys << "<|im_end|>\n";
+    }
 
     for (const auto& turn : request.history()) {
         std::string role = (turn.role() == "user") ? "user" : "assistant";
@@ -79,7 +82,7 @@ std::string MistralFormatter::format(const sentiric::llm::v1::GenerateStreamRequ
     bool history_exists = request.history_size() > 0;
 
     ss << "[INST] ";
-    if (!history_exists) {
+    if (!history_exists && !sys.empty()) {
         ss << sys << "\n\n";
     }
 
@@ -102,9 +105,9 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamReques
     std::stringstream ss;
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
-    // Gemma'da sistem prompt'u desteklenmez. User prompt içine gömülür.
-    bool history_exists = request.history_size() > 0;
-
+    // Gemma'da resmi system prompt desteği sınırlı. User prompt içine "Instruction" olarak gömüyoruz.
+    // [FIX] Daha agresif instruction formatı.
+    
     for (const auto& turn : request.history()) {
         std::string role = (turn.role() == "user") ? "user" : "model";
         ss << "<start_of_turn>" << role << "\n";
@@ -112,9 +115,9 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamReques
     }
 
     ss << "<start_of_turn>user\n";
-    if (!history_exists) {
-        // [DEĞİŞİKLİK] Daha belirgin ayrım için Markdown Bold + Double Newline
-        ss << "**System Instruction:**\n" << sys << "\n\n";
+    if (!sys.empty()) {
+        // Modelin bunu bir talimat olarak algılaması için başlık ve format güçlendirildi.
+        ss << "IMPORTANT SYSTEM INSTRUCTION:\n" << sys << "\n\nUser Query:\n";
     }
 
     std::string user_content = build_final_user_content(request, settings);
