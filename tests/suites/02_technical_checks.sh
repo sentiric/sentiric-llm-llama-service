@@ -17,21 +17,23 @@ else
     log_fail "System prompt override çalışmadı: $RES"
 fi
 
-# --- TEST 2: JSON Mode ---
-log_info "Test: JSON Mode (Structured Output)"
+# --- TEST 2: JSON Mode (Prompt Engineering ile) ---
+log_info "Test: JSON Mode (Prompt ile Zorlama)"
+# [FIX] response_format kaldırıldı, istek system_prompt'a eklendi
 PAYLOAD='{
-    "messages": [{"role": "user", "content": "Rastgele bir renk ver. JSON formatında: {color: string, hex: string}"}],
-    "response_format": {"type": "json_object"},
-    "temperature": 0.1
+    "messages": [
+        {"role": "system", "content": "Cevabını SADECE geçerli bir JSON objesi olarak ver. Başka hiçbir şey ekleme."},
+        {"role": "user", "content": "Rastgele bir renk ver. Şema: {color: string, hex: string}"}
+    ],
+    "temperature": 0.0
 }'
 RES=$(send_chat "$PAYLOAD" | jq -r '.choices[0].message.content')
 
-# [FİNAL FIX] Markdown'u ve tek tırnakları temizle
+# Markdown ve tırnak temizliği
 CLEAN_JSON=$(echo "$RES" | sed 's/```json//g; s/```//g' | tr "'" '"' | tr -d '\n')
 echo -e "🤖 AI (Raw): $RES"
 echo -e "🧹 Clean: $CLEAN_JSON"
 
-# JSON Validasyonu
 if echo "$CLEAN_JSON" | jq -e '. | has("color") and has("hex")' >/dev/null 2>&1; then
     log_pass "Geçerli JSON şeması üretildi: $CLEAN_JSON"
 else
