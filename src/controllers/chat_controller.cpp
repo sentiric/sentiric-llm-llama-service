@@ -52,7 +52,6 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
 
     std::string system_prompt = settings.template_system_prompt;
     
-    // Top-level system prompt override
     if (body.contains("system_prompt") && body["system_prompt"].is_string()) {
         system_prompt = body["system_prompt"].get<std::string>();
     }
@@ -206,16 +205,18 @@ void ChatController::handle_chat_completions(const httplib::Request &req, httpli
         auto batched_request = std::make_shared<BatchedRequest>();
         batched_request->request = grpc_request;
 
-        // [FIX] Simplistic and Robust JSON Grammar
-        // Ayrıştırılmış kurallar parser'ın yığın hatası vermesini engeller.
+        // [FIX] BATTLE-TESTED SIMPLE JSON GRAMMAR
+        // Bu gramer, llama.cpp'nin default JSON şemalarına çok daha yakındır ve stack hatası vermez.
         if (body.contains("response_format") && body["response_format"].value("type", "") == "json_object") {
              batched_request->grammar = R"(
 root   ::= object
-value  ::= object | array | string | number | ("true" | "false" | "null") ws
-object ::= "{" ws members "}" ws
-members ::= (string ":" ws value ("," ws string ":" ws value)*)?
-array  ::= "[" ws (value ("," ws value)*)? "]" ws
-string ::= "\"" ([^"\\\x7F\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F]{4}))* "\"" ws
+value  ::= object | array | string | number | ("true" | "false" | "null")
+object ::= "{" ws ( members )? "}"
+members ::= pair ( "," ws pair )*
+pair   ::= string ":" ws value
+array  ::= "[" ws ( elements )? "]"
+elements ::= value ( "," ws value )*
+string ::= "\"" ([^"\\] | "\\" .)* "\"" ws
 number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
 ws     ::= [ \t\n\r]*
 )";
