@@ -191,16 +191,41 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
     if (effective_max_gen == 0) effective_max_gen = buffer;
     uint32_t safe_prompt_limit = (max_context > effective_max_gen + buffer) ? (max_context - effective_max_gen - buffer) : 0;
     
+    // [SAFETY] Truncation logic with "Head Preservation" to keep System Prompt
     if (safe_prompt_limit > 0 && tokens.size() > safe_prompt_limit) {
-        spdlog::warn("⚠️ Prompt truncated: {} -> {} tokens. (System prompt might be lost)", tokens.size(), safe_prompt_limit);
-        std::vector<llama_token> truncated_tokens(tokens.begin() + (tokens.size() - safe_prompt_limit), tokens.end());
-        tokens = std::move(truncated_tokens);
+        spdlog::warn("⚠️ Prompt truncated: {} -> {} tokens. (Applying Head+Tail strategy)", tokens.size(), safe_prompt_limit);
+        
+        // System prompt usually resides in the first few tokens. 
+        // We preserve the first 64 tokens (Head) and the last (safe_limit - 64) tokens (Tail).
+        // This ensures instructions are kept, and recent history is kept, sacrificing the middle.
+        const size_t HEAD_SIZE = 64;
+        
+        if (safe_prompt_limit > HEAD_SIZE) {
+             size_t tail_size = safe_prompt_limit - HEAD_SIZE;
+             
+             std::vector<llama_token> smart_tokens;
+             smart_tokens.reserve(safe_prompt_limit);
+             
+             // Copy Head
+             smart_tokens.insert(smart_tokens.end(), tokens.begin(), tokens.begin() + HEAD_SIZE);
+             
+             // Copy Tail
+             smart_tokens.insert(smart_tokens.end(), tokens.end() - tail_size, tokens.end());
+             
+             tokens = std::move(smart_tokens);
+        } else {
+             // Fallback to simple tail truncation if limit is extremely small
+             std::vector<llama_token> truncated_tokens(tokens.begin() + (tokens.size() - safe_prompt_limit), tokens.end());
+             tokens = std::move(truncated_tokens);
+        }
     } else if (safe_prompt_limit == 0) {
+        // Emergency condition: Context completely full
         uint32_t emergency_limit = std::min((uint32_t)tokens.size(), buffer * 2);
         spdlog::warn("⚠️ Context full. Emergency truncation: {} -> {} tokens", tokens.size(), emergency_limit);
         std::vector<llama_token> truncated_tokens(tokens.end() - emergency_limit, tokens.end());
         tokens = std::move(truncated_tokens);
     }
+    
     req_ptr->prompt_tokens = tokens.size();
     return tokens;
 }
