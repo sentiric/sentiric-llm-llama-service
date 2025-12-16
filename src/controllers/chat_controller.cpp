@@ -51,35 +51,48 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
     const auto& settings = engine_->get_settings();
 
     std::string system_prompt = settings.template_system_prompt;
-
+    
+    // [FIX] OpenAI Chat Format Logic Correction
+    // Kural: "messages" dizisindeki SON eleman aktif prompt'tur. Öncekiler history'dir.
+    // System mesajı her zaman system_prompt olarak ayarlanır.
+    
     if (body.contains("messages") && body["messages"].is_array()) {
         const auto& messages = body["messages"];
-        bool first_user_message_found = false;
+        size_t total_msgs = messages.size();
         
-        for (const auto& msg : messages) {
+        for (size_t i = 0; i < total_msgs; ++i) {
+            const auto& msg = messages[i];
             std::string role = msg.value("role", "");
             std::string content = msg.value("content", "");
-            
+
             if (role == "system") {
-                 system_prompt = content;
-            } else if (role == "user" && !first_user_message_found) {
-                grpc_request.set_user_prompt(content);
-                first_user_message_found = true;
-            }
-            else {
-                auto* turn = grpc_request.add_history();
-                turn->set_role(role);
-                turn->set_content(content);
+                // System prompt override (son bulunan geçerlidir)
+                system_prompt = content;
+            } else {
+                // Son mesaj ve rolü 'user' ise -> User Prompt (RAG buraya uygulanır)
+                // Diğer tüm durumlar -> History
+                if (i == total_msgs - 1 && role == "user") {
+                    grpc_request.set_user_prompt(content);
+                } else {
+                    auto* turn = grpc_request.add_history();
+                    turn->set_role(role);
+                    turn->set_content(content);
+                }
             }
         }
     }
 
-    // **[KRİTİK HATA DÜZELTMESİ]**
-    // Gelen JSON gövdesinden 'rag_context' alanını oku ve protobuf'a ekle.
+    // Edge Case: Eğer messages dizisi yoksa veya son mesaj user değilse, prompt boş kalabilir.
+    // Ancak API contract gereği user_prompt dolu olmalı. Eğer boşsa hata vermemesi için
+    // basit bir koruma (Cli veya test araçları bazen direkt prompt gönderebilir, ama burada JSON body işliyoruz).
+    // Standart akışta son mesajın user olması beklenir.
+
+    // RAG Context Enjeksiyonu
     if (body.contains("rag_context") && body["rag_context"].is_string()) {
         grpc_request.set_rag_context(body["rag_context"]);
     }
 
+    // Reasoning Prompt Ekleme (System Prompt sonuna)
     if (!reasoning_prompt.empty()) {
         system_prompt += reasoning_prompt;
     }
