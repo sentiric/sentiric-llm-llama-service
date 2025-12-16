@@ -3,18 +3,15 @@
   "profiles": {
     "qwen3_4b_agent": {
       "display_name": "Sentiric Phone Agent (Qwen 3 4B)",
-      "description": "Smartest model. Optimized for Turkish Phone Calls.",
       "category": "Production",
       "model_id": "ggml-org/Qwen3-4B-GGUF",
       "filename": "Qwen3-4B-Q4_K_M.gguf",
       "context_size": 8192,
       "gpu_layers": 100,
       "temperature": 0.1,
-      "top_p": 0.85,
-      "repeat_penalty": 1.15,
       "templates": {
-        "system_prompt": "Sen Sentiric firmasının Türkçe konuşan telefon asistanısın. Markdown (kalın, italik) ASLA kullanma. Listeleme yapma. Sadece konuşma dilinde, kısa ve net cevap ver. Müşteri temsilcisi gibi konuş.",
-        "rag_prompt": "CRM VERİLERİ (KESİN BİLGİ):\n----------------\n{{rag_context}}\n----------------\n\nYÖNERGE: Yukarıdaki CRM verilerine bakarak müşterinin sorusunu cevapla. Veri yoksa bilmiyorum de uydurma.\n\nMüşteri: {{user_prompt}}"
+        "system_prompt": "Sen Sentiric müşteri temsilcisisin. Önünde müşterinin ekranı açık. Sadece o ekrandaki veriye göre konuş. Markdown yok. Kısa cevap ver.",
+        "rag_prompt": "EKRAN GÖRÜNTÜSÜ:\n{{rag_context}}\n\nMÜŞTERİ SORUSU:\n{{user_prompt}}\n\nCEVAP (Sadece bilgi ver):"
       }
     },
     "qwen2_3B": {
@@ -26,8 +23,8 @@
       "gpu_layers": 100,
       "temperature": 0.1,
       "templates": {
-        "system_prompt": "Sen bir çağrı merkezi asistanısın. Cevapların sadece düz metin olmalı. Markdown kullanma. Çok kısa konuş.",
-        "rag_prompt": "BİLGİ:\n{{rag_context}}\n\nSORU: {{user_prompt}}"
+        "system_prompt": "Sen bir asistansın. Verilen bağlama göre kısa cevap ver.",
+        "rag_prompt": "Bağlam:\n{{rag_context}}\n\nSoru: {{user_prompt}}\nCevap:"
       }
     },
     "ministral_3b_realtime": {
@@ -39,8 +36,8 @@
       "gpu_layers": 100,
       "temperature": 0.1,
       "templates": {
-        "system_prompt": "Sen Türkçe konuşan bir asistansın. Verilen bilgilere göre cevap ver. Markdown kullanma.",
-        "rag_prompt": "Veri:\n{{rag_context}}\n\nSoru: {{user_prompt}}"
+        "system_prompt": "Sen yardımsever bir asistansın. Aşağıdaki verileri kullanarak cevap ver.",
+        "rag_prompt": "Veri:\n{{rag_context}}\n\nSoru: {{user_prompt}}\nCevap:"
       }
     },
     "gemma_1b_ultrafast": {
@@ -51,10 +48,9 @@
       "context_size": 2048,
       "gpu_layers": 100,
       "temperature": 0.0,
-      "repeat_penalty": 1.2,
       "templates": {
-        "system_prompt": "Kısa cevap ver. Markdown yok.",
-        "rag_prompt": "Bilgi: {{rag_context}}\nSoru: {{user_prompt}}"
+        "system_prompt": "Aşağıdaki bilgilere göre kısa cevap ver.",
+        "rag_prompt": "Bilgi:\n{{rag_context}}\n\nSoru: {{user_prompt}}\nCevap:"
       }
     },
     "gemma_4b": {
@@ -65,10 +61,9 @@
       "context_size": 2048,
       "gpu_layers": 100,
       "temperature": 0.0,
-      "repeat_penalty": 1.2,
       "templates": {
-        "system_prompt": "Kısa cevap ver. Markdown yok.",
-        "rag_prompt": "Bilgi: {{rag_context}}\nSoru: {{user_prompt}}"
+        "system_prompt": "Aşağıdaki bilgilere göre kısa cevap ver.",
+        "rag_prompt": "Bilgi:\n{{rag_context}}\n\nSoru: {{user_prompt}}\nCevap:"
       }
     }
   }
