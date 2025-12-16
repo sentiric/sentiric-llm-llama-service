@@ -10,7 +10,6 @@
 #include <future>
 
 // RAII Helpers
-// Optimize edilmiş: Tekrar kullanılabilir batch guard (yalnızca init/free yönetimi)
 struct LlamaBatchScope {
     llama_batch batch;
     
@@ -21,7 +20,6 @@ struct LlamaBatchScope {
         if (batch.token) llama_batch_free(batch); 
     }
 
-    // Batch'i sıfırlamadan verileri temizle (Reuse için)
     void clear() {
         batch.n_tokens = 0;
     }
@@ -194,7 +192,6 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
     uint32_t safe_prompt_limit = (max_context > effective_max_gen + buffer) ? (max_context - effective_max_gen - buffer) : 0;
     
     if (safe_prompt_limit > 0 && tokens.size() > safe_prompt_limit) {
-        // [WARNING] System prompt loss risk here.
         spdlog::warn("⚠️ Prompt truncated: {} -> {} tokens. (System prompt might be lost)", tokens.size(), safe_prompt_limit);
         std::vector<llama_token> truncated_tokens(tokens.begin() + (tokens.size() - safe_prompt_limit), tokens.end());
         tokens = std::move(truncated_tokens);
@@ -210,14 +207,18 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
 
 bool LLMEngine::decode_prompt(llama_context* ctx, ContextGuard& guard, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr) {
     size_t matched_len = guard.get_matched_tokens();
+
+    // KRİTİK: State Sızıntısını Önleme
+    // Eğer önbellekteki token sayısı, şu anki eşleşen token sayısından fazlaysa,
+    // fazlalık KV önbelleğini temizle.
     if (matched_len < prompt_tokens.size()) {
         llama_memory_seq_rm(llama_get_memory(ctx), -1, matched_len, -1);
     }
+    
     size_t tokens_to_process = prompt_tokens.size() - matched_len;
     
     if (tokens_to_process > 0) {
         int32_t n_batch = llama_n_batch(ctx);
-        // Optimize: Batch reuse
         LlamaBatchScope batch_scope(n_batch, 0, 1);
         
         for (size_t i = 0; i < tokens_to_process; i += n_batch) {
@@ -273,7 +274,6 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
     uint32_t ctx_limit = settings_.context_size;
     if (n_past + req_max_gen > ctx_limit) req_max_gen = ctx_limit - n_past - 1;
 
-    // [OPTIMIZATION] Batch allocation moved outside loop
     LlamaBatchScope token_batch(1, 0, 1);
     
     while (n_decoded < (int)req_max_gen) {
@@ -313,7 +313,6 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
             req_ptr->token_queue.push(token_str);
         }
         
-        // Batch Reuse
         token_batch.clear();
         common_batch_add(token_batch.batch, new_token_id, n_past, {0}, true);
         
@@ -333,10 +332,18 @@ void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) 
     try {
         std::string formatted_prompt = formatter_->format(req_ptr->request, model_, settings_);
         std::vector<llama_token> prompt_tokens = tokenize_and_truncate(req_ptr, formatted_prompt);
+        
+        // Yeni 'acquire' çağrısı ile akıllı context edinme
         ContextGuard guard = context_pool_->acquire(prompt_tokens);
         llama_context* ctx = guard.get();
+        
+        // Eşleşen tokenları atlayarak prompt'u işle
         if (!decode_prompt(ctx, guard, prompt_tokens, req_ptr)) return;
+        
+        // Yanıt üret
         generate_response(ctx, prompt_tokens, req_ptr);
+        
+        // Context'i son token durumuyla havuza iade et
         guard.release_early(prompt_tokens);
     } catch (const std::exception& e) {
         spdlog::error("Error executing request: {}", e.what());

@@ -29,8 +29,6 @@ public:
     int get_id() const { return id_; }
     size_t get_matched_tokens() const { return matched_tokens_; }
 
-    // --- YENİ EKLE ---
-    // Context'i güvenli bir şekilde erkenden havuza bırakır
     void release_early(const std::vector<llama_token>& final_tokens);
 
 private:
@@ -45,15 +43,13 @@ public:
     LlamaContextPool(const Settings& settings, llama_model* model, prometheus::Gauge& active_contexts_gauge);
     ~LlamaContextPool();
 
-    // --- DÜZELTME BURADA: ÇİFT İMZA (OVERLOADING) ---
-    
-    // 1. Akıllı Cache (LLMEngine kullanır - Parametreli)
+    // Akıllı Önbellek ile Context Edinme (LLMEngine kullanır)
     ContextGuard acquire(const std::vector<llama_token>& input_tokens);
     
-    // 2. Legacy/Warmup (ModelWarmup kullanır - Parametresiz)
-    // Bu fonksiyon, mevcut kodun patlamamasını sağlayacak.
+    // Basit Context Edinme (Warmup gibi eski sistemler için)
     ContextGuard acquire(); 
     
+    // Context'i havuza iade etme ve token durumunu önbelleğe alma
     void release(llama_context* ctx, int id, const std::vector<llama_token>& current_tokens); 
     
     size_t get_active_count() const;

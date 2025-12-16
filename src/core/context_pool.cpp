@@ -70,7 +70,6 @@ void LlamaContextPool::initialize_contexts() {
     for (size_t i = 0; i < max_size_; ++i) {
         llama_context_params ctx_params = llama_context_default_params();
         
-        // [DEĞİŞİKLİK] Batch boyutu artık konfigüre edilebilir (Varsayılan 512).
         ctx_params.n_ctx = settings_.context_size;
         ctx_params.n_batch = std::min((uint32_t)settings_.context_size, settings_.physical_batch_size);
         
@@ -86,6 +85,7 @@ void LlamaContextPool::initialize_contexts() {
 }
 
 ContextGuard LlamaContextPool::acquire() {
+    // Legacy acquire: No smart caching, just finds the first available context.
     return acquire({});
 }
 
@@ -99,6 +99,7 @@ ContextGuard LlamaContextPool::acquire(const std::vector<llama_token>& input_tok
     int best_id = -1;
     size_t max_match = 0;
     
+    // Smart Caching: Find the available context with the longest matching prefix.
     for (size_t i = 0; i < max_size_; ++i) {
         if (is_busy_[i]) continue;
 
@@ -116,13 +117,14 @@ ContextGuard LlamaContextPool::acquire(const std::vector<llama_token>& input_tok
         }
     }
 
+    // Fallback: If no good match, find any free context.
     if (best_id == -1) {
          for (size_t i = 0; i < max_size_; ++i) {
             if (!is_busy_[i]) { best_id = i; break; }
          }
     }
     
-    if (best_id == -1) throw std::runtime_error("Unexpected pool state: no context available.");
+    if (best_id == -1) throw std::runtime_error("Unexpected pool state: no context available after wait.");
 
     is_busy_[best_id] = true;
     active_contexts_gauge_.Set(get_active_count());
@@ -139,6 +141,7 @@ void LlamaContextPool::release(llama_context* ctx, int id, const std::vector<lla
     
     std::lock_guard<std::mutex> lock(mutex_);
     if (id >= 0 && id < (int)contexts_.size()) {
+        // Cache the final token state for the next acquisition.
         contexts_[id].tokens = current_tokens;
         contexts_[id].last_used = std::chrono::steady_clock::now();
         is_busy_[id] = false;
