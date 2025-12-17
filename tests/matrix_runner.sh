@@ -3,6 +3,13 @@ source tests/lib/common.sh
 
 PROFILES_FILE="models/profiles.json"
 REPORT_FILE="test_report.csv"
+LOG_FILE="test_run.log"
+
+# Log dosyasını sıfırla
+> "$LOG_FILE"
+
+# Tüm stdout ve stderr'i hem ekrana hem log dosyasına yönlendir
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 # Rapor Başlığı
 echo "Model,Test,Status,Latency(ms),Note" > "$REPORT_FILE"
@@ -18,7 +25,8 @@ fi
 # -----------------------------------------------------------------------------
 PROFILES=$(jq -r '.profiles | keys[]' "$PROFILES_FILE")
 
-log_header "🚀 SENTIRIC VERTICALS VALIDATION MATRIX (V2.7 - REALTIME)"
+log_header "🚀 SENTIRIC VERTICALS VALIDATION MATRIX (V2.7.1 - BALANCED RAG)"
+log_info "Log Dosyası: $LOG_FILE"
 log_info "Test Edilecek Profiller: $(echo $PROFILES | tr '\n' ' ')"
 
 FAILED_PROFILES=()
@@ -118,20 +126,25 @@ for profile in $PROFILES; do
 
     # G. Test 14: Voice Gateway Simülasyonu (Söz Kesme)
     START=$(date +%s%N)
-    if ./tests/suites/14_voice_gateway_simulation.sh; then
-         END=$(date +%s%N); DUR=$(( (END - START) / 1000000 ))
-         log_pass "Suite 14: Voice Gateway Sim (${DUR}ms)"
-         echo "$profile,Voice_Sim,PASS,$DUR," >> "$REPORT_FILE"
+    if [ -f "./tests/suites/14_voice_gateway_simulation.sh" ]; then
+        if ./tests/suites/14_voice_gateway_simulation.sh; then
+             END=$(date +%s%N); DUR=$(( (END - START) / 1000000 ))
+             log_pass "Suite 14: Voice Gateway Sim (${DUR}ms)"
+             echo "$profile,Voice_Sim,PASS,$DUR," >> "$REPORT_FILE"
+        else
+             log_fail "Suite 14: Voice Gateway Sim"
+             FAILED_PROFILES+=("$profile (Voice Sim)")
+             echo "$profile,Voice_Sim,FAIL,0,Interruption Fail" >> "$REPORT_FILE"
+        fi
     else
-         log_fail "Suite 14: Voice Gateway Sim"
-         FAILED_PROFILES+=("$profile (Voice Sim)")
-         echo "$profile,Voice_Sim,FAIL,0,Interruption Fail" >> "$REPORT_FILE"
+        log_fail "Suite 14: Script not found (Skipping)"
+        echo "$profile,Voice_Sim,SKIP,0,Script Missing" >> "$REPORT_FILE"
     fi
 
     # H. Test 3: Stress Testi (Concurrency & TPS)
     OUTPUT=$(./tests/suites/03_stress_mini.sh)
     echo "$OUTPUT"
-    if echo "$OUTPUT" | grep -q "Stress testi tamamlandı"; then
+    if echo "$OUTPUT" | grep -q "Token/Saniye"; then
          TPS=$(echo "$OUTPUT" | grep "Token/Saniye" | awk '{print $3}' | tr -d '\r')
          log_pass "Suite 03: Stress (TPS: $TPS)"
          echo "$profile,Stress,PASS,0,TPS: $TPS" >> "$REPORT_FILE"

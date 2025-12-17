@@ -20,3 +20,4 @@ llm_service
 # vendor/
 .env
 test_report.csv
+test_run.log
