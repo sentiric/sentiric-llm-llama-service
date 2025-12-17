@@ -1,5 +1,5 @@
 {
-  "active_profile": "qwen25_3b_instruct_q8",
+  "active_profile": "gemma3_4b_instruct_q8",
   "profiles": {
     "qwen25_3b_instruct_q8": {
       "display_name": "Sentiric Universal Agent (Qwen 2.5 3B Instruct Q8)",
@@ -49,11 +49,11 @@
         "rag_prompt": "### BAĞLAM (GERÇEK VERİLER):\n{{rag_context}}\n\n### KULLANICI:\n{{user_prompt}}\n\n### KESİN TALİMATLAR:\n1. Cevabını SADECE yukarıdaki [BAĞLAM] verilerine dayandır.\n2. Bağlamda cevap yoksa dürüstçe \"Sistemde bu bilgiyi göremiyorum\" de, uydurma.\n3. Kullanıcının moduna uygun (arkadaşça veya ciddi) tonu yukarıdaki listeden seç.\n4. \"Thank you\", \"Okay\" gibi gürültüleri görmezden gel.\n\n### CEVAP:"
       }
     },
-    "gemma1_7b_instruct_q4": {
-      "display_name": "Sentiric Universal Agent (Gemma 1.1 7B Instruct Q4)",
+    "gemma3_4b_instruct_q8": {
+      "display_name": "Sentiric Universal Agent (Gemma 3 4B Instruct Q8)",
       "category": "Production",
-      "model_id": "ggml-org/gemma-1.1-7b-it-Q4_K_S-GGUF",
-      "filename": "gemma-1.1-7b-it.Q4_K_S.gguf",
+      "model_id": "ggml-org/gemma-3-4b-it-GGUF",
+      "filename": "gemma-3-4b-it-Q8_0.gguf",
       "context_size": 8192,
       "gpu_layers": 100,
       "temperature": 0.75,
