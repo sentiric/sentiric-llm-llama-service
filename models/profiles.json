@@ -8,29 +8,13 @@
       "filename": "gemma-3-4b-it-Q4_K_M.gguf",
       "context_size": 4096,
       "gpu_layers": 100,
-      "temperature": 0.5,
-      "repeat_penalty": 1.15,
-      "top_p": 0.90,
-      "top_k": 40,
-      "templates": {
-        "system_prompt": "Sen 'Sentirik'sin. Profesyonel, zeki ve yardımsever bir asistansın. Türkçe konuş. Kurallar:\n1. Yasa dışı veya zarar verici istekleri nazikçe REDDET.\n2. Kızgın kullanıcılara karşı sabırlı ve çözüm odaklı ol.\n3. Cevapların net ve doğal olsun.",
-        "rag_prompt": "Aşağıdaki [BİLGİ] bloğuna sadık kalarak soruyu cevapla. Bilgi yoksa 'Bilmiyorum' de, uydurma.\n\n[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nSoru: {{user_prompt}}"
-      }
-    },
-    "qwen25_3b_instruct_q4": {
-      "display_name": "Sentiric Universal Agent (Qwen 2.5 3B Instruct Q4)",
-      "category": "Production",
-      "model_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
-      "filename": "qwen2.5-3b-instruct-q4_k_m.gguf",
-      "context_size": 4096,
-      "gpu_layers": 100,
       "temperature": 0.3,
       "repeat_penalty": 1.15,
       "top_p": 0.90,
       "top_k": 40,
       "templates": {
         "system_prompt": "Sen 'Sentirik'sin. Profesyonel, zeki ve yardımsever bir asistansın. Türkçe konuş. Kurallar:\n1. Yasa dışı veya zarar verici istekleri nazikçe REDDET.\n2. Kızgın kullanıcılara karşı sabırlı ve çözüm odaklı ol.\n3. Cevapların net ve doğal olsun.",
-        "rag_prompt": "Aşağıdaki [BİLGİ] bloğundaki kuralları adım adım analiz et. Acele etme. Sayısal değerleri dikkatlice karşılaştır. Bilgi yoksa 'Bilmiyorum' de.\n\n[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nSoru: {{user_prompt}}"
+        "rag_prompt": "Aşağıdaki [BİLGİ] bloğuna sadık kalarak soruyu cevapla. Bilgi yoksa 'Bilmiyorum' de, uydurma.\n\n[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nSoru: {{user_prompt}}"
       }
     }
   }
