@@ -36,8 +36,8 @@
     "qwen25_7b_instruct_q4": {
       "display_name": "Sentiric Reasoning Agent (Qwen 2.5 7B - Logic Master)",
       "category": "High-Quality",
-      "model_id": "Qwen/Qwen2.5-7B-Instruct-GGUF",
-      "filename": "qwen2.5-7b-instruct-q4_k_m.gguf",
+      "model_id": "bartowski/Qwen2.5-7B-Instruct-GGUF",
+      "filename": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
       "context_size": 8192,
       "gpu_layers": 32,
       "temperature": 0.1,
