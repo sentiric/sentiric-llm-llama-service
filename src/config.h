@@ -20,7 +20,7 @@ struct Settings {
     int http_threads = 50; 
 
     // Model & Profiles
-    std::string profile_name = "qwen25_3b_phone_assistant"; 
+    std::string profile_name = "gemma3_4b_instruct_q4"; 
     std::string model_dir = "/models";
     std::string lora_dir = "/lora_adapters"; // [YENİ]
     std::string model_id = "";

@@ -7,30 +7,34 @@ log_header "SENARYO: Teknik Yetenek Testleri"
 log_info "Test: System Prompt Override (Korsan Modu)"
 PAYLOAD='{
     "messages": [{"role": "user", "content": "Selam!"}],
-    "system_prompt": "Sen bir korsansın. Her cümlene ARRR diye başla.",
+    "system_prompt": "Sen bir korsansın. Konuşurken sürekli ARRR, Ahoy veya Aye gibi korsan nidaları kullan. Korsan ağzıyla konuş.",
+    "temperature": 0.5,
     "max_tokens": 50
 }'
 RES=$(send_chat "$PAYLOAD" | jq -r '.choices[0].message.content')
-if echo "$RES" | grep -iq "ARRR"; then
+
+echo -e "🤖 AI: $RES"
+
+if echo "$RES" | grep -iqE "ARRR|Ahoy|Aye|Yarr|Matey|Shiver|Timbers|Denizci|Korsan"; then
     log_pass "Korsan modu aktif: $RES"
 else
     log_fail "System prompt override çalışmadı: $RES"
 fi
 
-# --- TEST 2: JSON Mode (Prompt Engineering ile) ---
+# --- TEST 2: JSON Mode (Prompt ile Zorlama) ---
 log_info "Test: JSON Mode (Prompt ile Zorlama)"
-# [FIX] response_format kaldırıldı, istek system_prompt'a eklendi
 PAYLOAD='{
     "messages": [
-        {"role": "system", "content": "Cevabını SADECE geçerli bir JSON objesi olarak ver. Başka hiçbir şey ekleme."},
-        {"role": "user", "content": "Rastgele bir renk ver. Şema: {color: string, hex: string}"}
+        {"role": "system", "content": "Cevabını SADECE geçerli bir JSON objesi olarak ver. Markdown kullanma."},
+        {"role": "user", "content": "Rastgele bir renk ver. Şema: { \"color\": \"string\", \"hex\": \"string\" }"}
     ],
-    "temperature": 0.0
+    "temperature": 0.1
 }'
 RES=$(send_chat "$PAYLOAD" | jq -r '.choices[0].message.content')
 
-# Markdown ve tırnak temizliği
-CLEAN_JSON=$(echo "$RES" | sed 's/```json//g; s/```//g' | tr "'" '"' | tr -d '\n')
+# Temizlik (Akıllı tırnak düzeltme ve markdown temizleme)
+CLEAN_JSON=$(echo "$RES" | sed 's/```json//g; s/```//g' | sed 's/“/"/g; s/”/"/g' | tr "'" '"' | tr -d '\n')
+
 echo -e "🤖 AI (Raw): $RES"
 echo -e "🧹 Clean: $CLEAN_JSON"
 

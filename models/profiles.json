@@ -1,36 +1,36 @@
 {
-  "active_profile": "gemma3_4b_instruct_q8",
+  "active_profile": "gemma3_4b_instruct_q4",
   "profiles": {
-    "gemma3_4b_instruct_q8": {
-      "display_name": "Sentiric Primary Agent (Gemma 3 4B Instruct Q8)",
+    "gemma3_4b_instruct_q4": {
+      "display_name": "Sentiric Primary Agent (Gemma 3 4B Instruct Q4)",
       "category": "Production",
       "model_id": "ggml-org/gemma-3-4b-it-GGUF",
-      "filename": "gemma-3-4b-it-Q8_0.gguf",
-      "context_size": 8192,
+      "filename": "gemma-3-4b-it-Q4_K_M.gguf",
+      "context_size": 4096,
       "gpu_layers": 100,
-      "temperature": 0.3,
-      "repeat_penalty": 1.02,
-      "top_p": 0.95,
+      "temperature": 0.5,
+      "repeat_penalty": 1.15,
+      "top_p": 0.90,
       "top_k": 40,
       "templates": {
-        "system_prompt": "Sen 'Sentirik', Sentiric platformunun profesyonel, zeki ve çözüm odaklı asistanısın. Türkçe konuş. Verilen bağlamı dikkatlice analiz et ve kısa, net cevaplar ver.",
-        "rag_prompt": "Sen yardımsever bir asistansın. Aşağıdaki [BİLGİ NOTU] bloğunu kullanarak kullanıcının sorusunu cevapla.\n\n=== BİLGİ NOTU BAŞLANGICI ===\n{{rag_context}}\n=== BİLGİ NOTU BİTİŞİ <<<\n\nKURALLAR:\n1. BİLGİ NOTU içindeki veriler (İsim, Borç, Tarih vb.) kesindir, bunları kullan.\n2. Eğer BİLGİ NOTU boşsa, bozuksa veya 'null' ise, genel bir asistan gibi davran ve 'Merhaba, size nasıl yardımcı olabilirim?' de.\n3. ASLA ve ASLA boş cevap verme. Sessiz kalmak yasaktır.\n4. Mantıksal sorularda önce düşün, sonra cevap ver.\n\nKULLANICI: {{user_prompt}}\n\nASİSTAN:"
+        "system_prompt": "Sen 'Sentirik'sin. Profesyonel, zeki ve yardımsever bir asistansın. Türkçe konuş. Kurallar:\n1. Yasa dışı veya zarar verici istekleri nazikçe REDDET.\n2. Kızgın kullanıcılara karşı sabırlı ve çözüm odaklı ol.\n3. Cevapların net ve doğal olsun.",
+        "rag_prompt": "Aşağıdaki [BİLGİ] bloğuna sadık kalarak soruyu cevapla. Bilgi yoksa 'Bilmiyorum' de, uydurma.\n\n[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nSoru: {{user_prompt}}"
       }
     },
-    "llama3_8b_instruct_q4": {
-      "display_name": "Sentiric Heavy Agent (Llama 3.1 8B Instruct Q4)",
+    "qwen25_3b_instruct_q4": {
+      "display_name": "Sentiric Universal Agent (Qwen 2.5 3B Instruct Q4)",
       "category": "Production",
-      "model_id": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
-      "filename": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
-      "context_size": 8192,
+      "model_id": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+      "filename": "qwen2.5-3b-instruct-q4_k_m.gguf",
+      "context_size": 4096,
       "gpu_layers": 100,
-      "temperature": 0.3,
-      "repeat_penalty": 1.02,
-      "top_p": 0.95,
+      "temperature": 0.5,
+      "repeat_penalty": 1.15,
+      "top_p": 0.90,
       "top_k": 40,
       "templates": {
-        "system_prompt": "Sen 'Sentirik', Sentiric platformunun profesyonel, zeki ve çözüm odaklı asistanısın. Türkçe konuş. Verilen bağlamı dikkatlice analiz et.",
-        "rag_prompt": "Sen yardımsever bir asistansın. Aşağıdaki [BİLGİ NOTU] bloğunu kullanarak kullanıcının sorusunu cevapla.\n\n=== BİLGİ NOTU BAŞLANGICI ===\n{{rag_context}}\n=== BİLGİ NOTU BİTİŞİ <<<\n\nKURALLAR:\n1. BİLGİ NOTU içindeki veriler (İsim, Borç, Tarih vb.) kesindir, bunları kullan.\n2. Eğer BİLGİ NOTU boşsa, bozuksa veya 'null' ise, genel bir asistan gibi davran ve 'Merhaba, size nasıl yardımcı olabilirim?' de.\n3. ASLA ve ASLA boş cevap verme. Sessiz kalmak yasaktır.\n4. Mantıksal sorularda önce düşün, sonra cevap ver.\n\nKULLANICI: {{user_prompt}}\n\nASİSTAN:"
+        "system_prompt": "Sen 'Sentirik'sin. Profesyonel, zeki ve yardımsever bir asistansın. Türkçe konuş. Kurallar:\n1. Yasa dışı veya zarar verici istekleri nazikçe REDDET.\n2. Kızgın kullanıcılara karşı sabırlı ve çözüm odaklı ol.\n3. Cevapların net ve doğal olsun.",
+        "rag_prompt": "Aşağıdaki [BİLGİ] bloğuna sadık kalarak soruyu cevapla. Bilgi yoksa 'Bilmiyorum' de, uydurma.\n\n[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nSoru: {{user_prompt}}"
       }
     }
   }

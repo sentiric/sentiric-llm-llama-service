@@ -11,7 +11,7 @@
 
 void print_usage() {
     std::cout << R"(
-🧠 Sentiric LLM CLI v2.7
+🧠 Sentiric LLM CLI v2.7.2
 
 Kullanım:
   llm_cli [seçenekler] <komut> [argümanlar]
@@ -26,17 +26,22 @@ Komutlar:
 Seçenekler:
   --grpc-endpoint <addr>   - GRPC endpoint (varsayılan: llm-llama-service:16071).
   --http-endpoint <addr>   - HTTP endpoint (varsayılan: llm-llama-service:16070).
-  ... (diğer seçenekler)
+  --iterations <n>         - Tekli test iterasyon sayısı.
+  --concurrent <n>         - Eşzamanlı bağlantı sayısı.
+  --requests <n>           - Bağlantı başına istek sayısı.
+  --output <file>          - Raporu dosyaya kaydeder (opsiyonel).
 )";
 }
 
 int main(int argc, char** argv) {
     spdlog::set_level(spdlog::level::info);
     if (argc < 2) { print_usage(); return 1; }
+    
     std::vector<std::string> args(argv + 1, argv + argc);
     std::map<std::string, std::string> options;
     std::string command;
     std::vector<std::string> command_args;
+    
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i].rfind("--", 0) == 0) {
             std::string key = args[i].substr(2);
@@ -45,6 +50,7 @@ int main(int argc, char** argv) {
         } else if (command.empty()) { command = args[i]; } 
         else { command_args.push_back(args[i]); }
     }
+    
     std::string grpc_endpoint = options.count("grpc-endpoint") ? options["grpc-endpoint"] : "llm-llama-service:16071";
     std::string http_endpoint = options.count("http-endpoint") ? options["http-endpoint"] : "llm-llama-service:16070";
 
@@ -68,9 +74,22 @@ int main(int argc, char** argv) {
              int iter = options.count("iterations") ? std::stoi(options["iterations"]) : 10;
              int concurrent = options.count("concurrent") ? std::stoi(options["concurrent"]) : 1;
              int reqs = options.count("requests") ? std::stoi(options["requests"]) : 1;
+             std::string outfile = options.count("output") ? options["output"] : "";
+             
              sentiric_llm_cli::Benchmark benchmark(grpc_endpoint);
-             if (concurrent > 1) { benchmark.run_concurrent_test(concurrent, reqs); } 
-             else { benchmark.run_performance_test(iter); }
+             sentiric_llm_cli::BenchmarkResult result;
+
+             if (concurrent > 1) { 
+                 // [FIX] Eşzamanlı test sonucunu yakala
+                 result = benchmark.run_concurrent_test(concurrent, reqs); 
+             } else { 
+                 // [FIX] Tekli test sonucunu yakala
+                 result = benchmark.run_performance_test(iter); 
+             }
+             
+             // [FIX] Raporu mutlaka üret
+             benchmark.generate_report(result, outfile);
+
         } else if (command == "interrupt-test") {
             sentiric_llm_cli::Benchmark benchmark(grpc_endpoint);
             std::string initial = "Merhaba, siparişim ne alemde? Kargoya verildi mi, kargo takip numarasını ve teslimat adresini öğrenebilir miyim?";

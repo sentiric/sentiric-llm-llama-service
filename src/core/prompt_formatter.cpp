@@ -37,7 +37,6 @@ std::string build_final_user_content(const sentiric::llm::v1::GenerateStreamRequ
 std::string QwenChatMLFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const Settings& settings) const {
     std::stringstream ss;
     
-    // [FIX] Qwen için System Prompt'u zorunlu olarak en başa ekle
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     if (!sys.empty()) {
         ss << "<|im_start|>system\n" << sys << "<|im_end|>\n";
@@ -78,7 +77,6 @@ std::string MistralFormatter::format(const sentiric::llm::v1::GenerateStreamRequ
     std::stringstream ss;
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
-    // Mistral'de ilk kullanıcı mesajı sistem prompt'u ile birleşir.
     bool history_exists = request.history_size() > 0;
 
     ss << "[INST] ";
@@ -100,29 +98,43 @@ std::string MistralFormatter::format(const sentiric::llm::v1::GenerateStreamRequ
     return ss.str();
 }
 
-// --- 4. Gemma ---
+// --- 4. Gemma (DÜZELTİLDİ) ---
 std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamRequest& request, const Settings& settings) const {
     std::stringstream ss;
+    
+    // Gemma'da 'system' rolü yoktur. Sistem mesajı, İLK kullanıcı mesajının başına eklenmelidir.
     std::string sys = !request.system_prompt().empty() ? request.system_prompt() : settings.template_system_prompt;
     
-    // Gemma'da resmi system prompt desteği sınırlı. User prompt içine "Instruction" olarak gömüyoruz.
-    // [FIX] Daha agresif instruction formatı.
-    
+    bool is_first_turn = true;
+
+    // Geçmişi işle
     for (const auto& turn : request.history()) {
         std::string role = (turn.role() == "user") ? "user" : "model";
+        
         ss << "<start_of_turn>" << role << "\n";
+        
+        // Eğer bu ilk kullanıcı mesajıysa ve sistem mesajı varsa, buraya ekle
+        if (is_first_turn && role == "user" && !sys.empty()) {
+            ss << sys << "\n\n";
+            is_first_turn = false; // Artık eklendi, bir daha ekleme
+        }
+        
         ss << turn.content() << "<end_of_turn>\n";
     }
 
-    ss << "<start_of_turn>user\n";
-    if (!sys.empty()) {
-        // Modelin bunu bir talimat olarak algılaması için başlık ve format güçlendirildi.
-        ss << "IMPORTANT SYSTEM INSTRUCTION:\n" << sys << "\n\nUser Query:\n";
-    }
-
+    // Son kullanıcı mesajını işle (RAG dahil)
     std::string user_content = build_final_user_content(request, settings);
     
-    ss << user_content << "<end_of_turn>\n<start_of_turn>model\n";
+    ss << "<start_of_turn>user\n";
+    if (is_first_turn && !sys.empty()) {
+        // Eğer hiç geçmiş yoksa, sistem mesajını buraya ekle
+        ss << sys << "\n\n";
+    }
+    ss << user_content << "<end_of_turn>\n";
+    
+    // Modelin cevap vermesi için tetikleyici
+    ss << "<start_of_turn>model\n";
+    
     return ss.str();
 }
 

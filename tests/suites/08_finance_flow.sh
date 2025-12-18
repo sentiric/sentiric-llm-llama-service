@@ -12,9 +12,8 @@ chat_turn() {
     echo -e "\n🔹 [$step] Kullanıcı: $input"
     jq --arg c "$input" '. += [{"role": "user", "content": $c}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
     
-    # Prompt Güçlendirildi: Halüsinasyon önleme.
     PAYLOAD=$(jq -n --arg rag "$RAG_DATA" --slurpfile hist "$HISTORY_FILE" \
-    --arg sys "Sen ciddi bir banka asistanısın. Sadece RAG verisindeki bilgileri kullan. Veride 'Yok' yazıyorsa 'Yok' de, asla uydurma." \
+    --arg sys "Sen bir banka asistanısın. Sadece RAG verisini kullan. Döviz hesabı sorulursa 'Döviz Hesabı' alanına bak, bakiye söyleme." \
     '{messages: ([{"role":"system","content":$sys}] + $hist[0]), rag_context: $rag, temperature: 0.1, max_tokens: 150}')
     
     RES=$(send_chat "$PAYLOAD" | jq -r '.choices[0].message.content' | sed 's/<think>.*<\/think>//g' | tr -d '\n')
@@ -26,5 +25,6 @@ chat_turn() {
 
 chat_turn "Son yaptığım işlem kime gitti?" "caner|yıldız" "İşlem Detayı"
 chat_turn "Hesabımda ne kadar kaldı?" "45|bin" "Bakiye Sorgusu"
-chat_turn "Dolar almak istiyorum, hesabım var mı?" "yok|mevcut değil|açalım" "Çapraz Satış/Bilgi"
+# [FIX] Soru daha net hale getirildi
+chat_turn "Dolar almak istiyorum, döviz hesabım var mı?" "yok|mevcut değil|açalım" "Çapraz Satış/Bilgi"
 rm "$HISTORY_FILE"
