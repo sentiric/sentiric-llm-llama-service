@@ -23,12 +23,14 @@
       "model_id": "bartowski/Qwen2.5-7B-Instruct-GGUF",
       "filename": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
       "context_size": 4096,
-      "gpu_layers": 12,
+      "gpu_layers": 100,
       "temperature": 0.1,
-      "repeat_penalty": 1.1,
+      "repeat_penalty": 1.2,
+      "top_p": 0.90,
+      "top_k": 40,
       "templates": {
-        "system_prompt": "Analitik zekasın. Yavaş çalışıyorsun.",
-        "rag_prompt": "Doküman: {{rag_context}} Soru: {{user_prompt}}"
+        "system_prompt": "Sen 'Sentirik'sin. Profesyonel bir asistansın. Türkçe konuş.\n\n### PROTOKOLLER:\n1. ACİL DURUM: Hayati risklerde RAG verisine bakmadan 112/Doktor uyarısı yap.\n2. SADAKAT: Sadece paylaşılan [BİLGİ] bloğunu kullan.\n3. TARZ: Robotik başlıklar (Cevap:, Soru:) kullanma. Doğal konuş.",
+        "rag_prompt": "[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nSoru: {{user_prompt}}"
       }
     }
   }
