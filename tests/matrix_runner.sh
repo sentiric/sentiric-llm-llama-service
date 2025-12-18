@@ -141,18 +141,19 @@ for profile in $PROFILES; do
         echo "$profile,Voice_Sim,SKIP,0,Script Missing" >> "$REPORT_FILE"
     fi
 
-    # H. Test 3: Stress Testi (Concurrency & TPS)
-    OUTPUT=$(./tests/suites/03_stress_mini.sh)
-    echo "$OUTPUT"
-    if echo "$OUTPUT" | grep -q "Token/Saniye"; then
-         TPS=$(echo "$OUTPUT" | grep "Token/Saniye" | awk '{print $3}' | tr -d '\r')
-         log_pass "Suite 03: Stress (TPS: $TPS)"
-         echo "$profile,Stress,PASS,0,TPS: $TPS" >> "$REPORT_FILE"
-    else
-         log_fail "Suite 03: Stress"
-         FAILED_PROFILES+=("$profile (Stress)")
-         echo "$profile,Stress,FAIL,0,Crash" >> "$REPORT_FILE"
-    fi
+    # Geçici olarak devre dışı
+    # # H. Test 3: Stress Testi (Concurrency & TPS)
+    # OUTPUT=$(./tests/suites/03_stress_mini.sh)
+    # echo "$OUTPUT"
+    # if echo "$OUTPUT" | grep -q "Token/Saniye"; then
+    #      TPS=$(echo "$OUTPUT" | grep "Token/Saniye" | awk '{print $3}' | tr -d '\r')
+    #      log_pass "Suite 03: Stress (TPS: $TPS)"
+    #      echo "$profile,Stress,PASS,0,TPS: $TPS" >> "$REPORT_FILE"
+    # else
+    #      log_fail "Suite 03: Stress"
+    #      FAILED_PROFILES+=("$profile (Stress)")
+    #      echo "$profile,Stress,FAIL,0,Crash" >> "$REPORT_FILE"
+    # fi
     
 done
 

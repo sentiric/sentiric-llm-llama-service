@@ -13,7 +13,12 @@ API_URL="http://localhost:16070"
 log_header() { echo -e "\n${CYAN}>>> $1${NC}"; }
 log_info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
 log_pass() { echo -e "${GREEN}✅ PASS: $1${NC}"; }
-log_fail() { echo -e "${RED}❌ FAIL: $1${NC}"; return 1; }
+# log_fail fonksiyonunu, çağıran scripti hatayla sonlandıracak şekilde güncelliyoruz.
+log_fail() { 
+    echo -e "${RED}❌ FAIL: $1${NC}"
+    # Hata durumunda hemen çıkış yap (Exit 1)
+    exit 1 
+}
 
 # AĞ KONTROLÜ VE OLUŞTURMA (DÜZELTİLDİ)
 ensure_network() {
