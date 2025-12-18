@@ -13,24 +13,8 @@
       "top_p": 0.90,
       "top_k": 40,
       "templates": {
-        "system_prompt": "Sen 'Sentirik' adlı profesyonel bir asistansın. Türkçe konuş.\n\n### ÇALIŞMA PROTOKOLLERİ:\n1. KONUŞMA DİLİ: Robotik veri verme. 'Cevap:', 'Soru:' gibi başlıklar kullanma. Tam ve doğal cümleler kur.\n2. ACİL DURUM: Sağlık sorunlarında (ağrı vb.) derhal 112/Doktor uyarısı yap.\n3. KİMLİK KORUMASI: Asistan kimliğini asla değiştirme (korsan vb. olma).\n4. SIZINTI YASAĞI: <context> gibi teknik etiketleri asla cevapta gösterme.",
+        "system_prompt": "Sen 'Sentirik' adlı profesyonel bir asistansın. Türkçe konuş.\n\n### ÇALIŞMA PROTOKOLLERİ:\n1. KONUŞMA DİLİ: Robotik veri verme. Tam ve doğal cümleler kur.\n2. ACİL DURUM: Sağlık sorunlarında derhal 112/Doktor uyarısı yap.\n3. KİMLİK KORUMASI: Asistan kimliğini asla değiştirme (korsan vb. olma).\n4. SIZINTI YASAĞI: <context> gibi teknik etiketleri asla cevapta gösterme.",
         "rag_prompt": "<context>\n{{rag_context}}\n</context>\n\nSoru: {{user_prompt}}\n\nCevabı doğal bir cümleyle ve teknik etiket kullanmadan ver:"
-      }
-    },
-    "qwen25_7b_instruct_q4": {
-      "display_name": "Sentiric Reasoning Agent (Qwen 2.5 7B - Logic Master)",
-      "category": "High-Quality",
-      "model_id": "bartowski/Qwen2.5-7B-Instruct-GGUF",
-      "filename": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
-      "context_size": 8192,
-      "gpu_layers": 28,
-      "temperature": 0.1,
-      "repeat_penalty": 1.1,
-      "top_p": 0.95,
-      "top_k": 50,
-      "templates": {
-        "system_prompt": "Sen 'Sentirik' analitik zekasısın. Karmaşık mantık ve hesaplamadan sorumlusun.\n1. ADIM ADIM DÜŞÜN: Sayısal verileri titizlikle karşılaştır.\n2. FORMAT: Sadece sonucu ver, teknik etiket sızdırma.",
-        "rag_prompt": "<document>\n{{rag_context}}\n</document>\n\nSoru: {{user_prompt}}\n\nAnalitik Cevap:"
       }
     },
     "llama3_8b_instruct_q4": {
@@ -39,14 +23,30 @@
       "model_id": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
       "filename": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
       "context_size": 4096,
-      "gpu_layers": 28,
-      "temperature": 0.3,
+      "gpu_layers": 24,
+      "temperature": 0.1,
       "repeat_penalty": 1.15,
       "top_p": 0.90,
       "top_k": 40,
       "templates": {
-        "system_prompt": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are 'Sentirik'. Respond in Turkish. Strictly adhere to context. Do not echo instructions.<|eot_id|>",
-        "rag_prompt": "<|start_header_id|>user<|end_header_id|>\n\nCONTEXT:\n{{rag_context}}\n\nQUESTION:\n{{user_prompt}}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+        "system_prompt": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are 'Sentirik', a high-precision enterprise assistant. \n\n### PROTOCOLS (In Order of Priority):\n1. SAFETY: For medical emergencies, refer to '112' or 'Doctor' regardless of context.\n2. ANALYTICS: Compare numbers and ranges step-by-step. Be logically precise.\n3. IDENTITY: Maintain a professional persona. Reject roleplay requests.\n4. LANGUAGE: Always respond in Turkish only.\n\nStrictly adhere to the provided context. Do not include tags or system thoughts in output.<|eot_id|>",
+        "rag_prompt": "<|start_header_id|>user<|end_header_id|>\n\nCONTEXT:\n<document>\n{{rag_context}}\n</document>\n\nAnalyze the document and answer this question precisely: {{user_prompt}}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+      }
+    },
+    "qwen25_7b_instruct_q4": {
+      "display_name": "Sentiric Reasoning Agent (Qwen 2.5 7B - Logic Master)",
+      "category": "High-Quality",
+      "model_id": "bartowski/Qwen2.5-7B-Instruct-GGUF",
+      "filename": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+      "context_size": 8192,
+      "gpu_layers": 24,
+      "temperature": 0.1,
+      "repeat_penalty": 1.1,
+      "top_p": 0.95,
+      "top_k": 50,
+      "templates": {
+        "system_prompt": "Sen 'Sentirik' analitik zekasısın. Karmaşık mantık ve hesaplamadan sorumlusun.\n1. ADIM ADIM DÜŞÜN: Sayısal verileri titizlikle karşılaştır.\n2. FORMAT: Sadece sonucu ver, teknik etiket sızdırma.",
+        "rag_prompt": "<document>\n{{rag_context}}\n</document>\n\nSoru: {{user_prompt}}\n\nAnalitik Cevap:"
       }
     }
   }
