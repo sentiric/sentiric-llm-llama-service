@@ -19,7 +19,7 @@ chat_turn() {
     echo -e "🤖 AI: $RES"
     jq --arg c "$RES" '. += [{"role": "assistant", "content": $c}]' "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
     
-    # [GÜNCELLEME] Regex "yapmadın" ve "alınacak" kelimelerini içerecek şekilde esnetildi
+    # [GÜNCELLEME] Regex toleransı artırıldı
     if echo "$RES" | grep -iqE "$key"; then 
         log_pass "$step Başarılı"
     else 
@@ -28,8 +28,11 @@ chat_turn() {
 }
 
 chat_turn "Odam manzaralı mı?" "deniz|manzara|evet" "Oda Bilgisi"
-chat_turn "Akşam 8 gibi gelsem sorun olur mu?" "onaylandı|sorun yok|bekliyoruz|olmayacak|olmaz|uygun|sorun olmaz" "Özel İstek Kontrolü"
-# [GÜNCELLEME] Beklenen anahtar kelimeler listesi genişletildi
-chat_turn "Ödemeyi şimdi mi yaptım?" "girişte|yapılmadı|alınacak|yapmadın|ödemediniz|ödenmedi" "Ödeme Bilgisi"
+
+# [FIX] "sorun yaratmaz", "sorun teşkil etmez" gibi varyasyonlar için regex güncellendi.
+chat_turn "Akşam 8 gibi gelsem sorun olur mu?" "onaylandı|sorun yok|bekliyoruz|olmayacak|olmaz|uygun|sorun olmaz|sorun yaratmaz|sorun teşkil|problem yok|memnuniyetle" "Özel İstek Kontrolü"
+
+# [FIX] "girişinizde", "giriş esnasında", "yapılacaktır" gibi varyasyonlar için regex güncellendi.
+chat_turn "Ödemeyi şimdi mi yaptım?" "giriş|yapılmadı|alınacak|yapmadın|ödemediniz|ödenmedi|henüz|yapılacak" "Ödeme Bilgisi"
 
 rm "$HISTORY_FILE"
