@@ -1,124 +1,64 @@
-# 🧠 Sentiric LLM Llama Service (v2.5)
+# 🧠 Sentiric LLM Llama Service (v3.2.0)
 
-**Production-Ready**, yüksek performanslı, C++ tabanlı yerel LLM çıkarım motoru. Özellikle **Gerçek Zamanlı Telefon Asistanı (Voice AI)** senaryoları için optimize edilmiş, **Qwen 2.5 3B** motoru ile güçlendirilmiştir.
+**Production-Ready**, yüksek performanslı, C++ tabanlı yerel LLM çıkarım motoru. **Google Gemma 3 4B** ve **Qwen 2.5** mimarileri için optimize edilmiş, RAG (Retrieval-Augmented Generation) tabanlı sesli asistan altyapısı.
 
 [![CI - Build and Push Docker Image](https://github.com/sentiric/sentiric-llm-llama-service/actions/workflows/build-and-push.yml/badge.svg)](https://github.com/sentiric/sentiric-llm-llama-service/actions/workflows/build-and-push.yml)
 
 ## 🚀 Durum: STABLE (Üretim Hazır)
 
-Bu servis, **15 Aralık 2025** itibarıyla v2.5 sürümüne yükseltilmiş ve aşağıdaki kritik yeteneklerle donatılmıştır:
+Bu servis, **v3.2.0** sürümüyle aşağıdaki kritik yeteneklere kavuşmuştur:
 
--   ✅ **Phone-Call Ready Latency:** GPU hızlandırması ile <300ms ilk token süresi (TTFT).
--   ✅ **Qwen 2.5 3B Core:** Türkçe dil desteği ve talimat takibi (Instruction Following) için sınıfının lideri.
--   ✅ **RAG (Retrieval-Augmented Generation):** Dış bağlam verileriyle (Context Injection) halüsinasyonsuz yanıtlar.
--   ✅ **Smart Context Pooling:** Aynı anda çoklu aramayı yönetebilen, thread-safe havuz mimarisi.
--   ✅ **Deep Observability:** Prometheus metrikleri, Trace ID takibi ve detaylı yapılandırılmış loglar.
+-   ✅ **Ultra-Low Latency:** Gemma 3 optimizasyonu ile **250ms - 500ms** arası ilk token süresi (TTFT).
+-   ✅ **Smart Context Caching:** Benzer sorgularda önbellek kullanımı ile anında yanıt.
+-   ✅ **Robust Validation:** Sağlık, Finans, Turizm gibi dikey sektörler için 14 farklı test senaryosu.
+-   ✅ **Secure & Safe:** Jailbreak koruması, JSON format zorlama ve halüsinasyon önleyici BOS token yönetimi.
+-   ✅ **Omni-Studio v3:** Entegre UI ile gerçek zamanlı test, "Reasoning" izleme ve donanım kontrolü.
 
 ---
 
-## 🛠️ Hızlı Başlangıç
+## 🏗️ Mimari & Teknoloji
 
-### Ön Gereksinimler
--   Docker & Docker Compose
--   NVIDIA GPU (Tavsiye edilen: 6GB VRAM ve üzeri)
--   CUDA Toolkit 12.0+
+-   **Core:** `llama.cpp` (b7415+) üzerine kurulu özel C++ motoru.
+-   **API:** gRPC (Stream + mTLS) ve HTTP/REST (OpenAI Uyumlu).
+-   **Modeller:**
+    -   **Production:** `gemma-3-4b-it` (Hız ve Tutarlılık için önerilir).
+    -   **Research:** `qwen-2.5-7b-instruct` (Karmaşık mantık için).
 
-### 1. Başlatma (Otomatik Kurulum)
+### Performans Referansları (RTX 3060 6GB)
 
-Sistem, ilk açılışta gerekli `Qwen 2.5 3B` modelini otomatik olarak indirir.
+| Metrik | Gemma 3 4B | Qwen 2.5 7B |
+|---|---|---|
+| **TTFT (Gecikme)** | **~250ms** ⚡ | ~1200ms |
+| **TPS (Hız)** | **~65 t/s** | ~35 t/s |
+| **Bellek (VRAM)** | ~3.8 GB | ~5.2 GB |
 
+---
+
+## 🛠️ Kurulum ve Test
+
+### 1. Başlatma
 ```bash
-# Servisi ve veritabanlarını başlat
 make up
-
-# Logları izle (Model indirme sürecini görmek için)
-make logs
 ```
 
-### 2. Sağlık Kontrolü
-
-Model yüklendiğinde servis `Healthy` durumuna geçer:
-
+### 2. Tam Kapsamlı Test (Matrix Validation)
+Sistemin tüm yeteneklerini (Empati, Mantık, Format, Hız) test etmek için:
 ```bash
-curl http://localhost:16070/health
-# Yanıt: {"status": "healthy", "model_ready": true, "capacity": ...}
+make test
 ```
-
-### 3. Test Etme (CLI ile)
-
-Dahili test aracı ile bir RAG sorgusu gönderin:
-
-```bash
-# Sigorta senaryosu örneği
-docker compose -f docker-compose.run.gpu.yml run --rm llm-cli \
-  llm_cli generate "Mehmet Bey'in poliçesi ne durumda?" \
-  --rag-context "Müşteri: Mehmet Aslan. Poliçe: Aktif. Bitiş: 2026."
-```
+*Bu komut, 2 farklı model üzerinde 14 farklı senaryoyu (toplam ~30 test adımı) otomatik olarak çalıştırır.*
 
 ---
 
-## ⚙️ Yapılandırma ve Profiller
+## ⚙️ Yapılandırma (`.env`)
 
-Servis, statik model ayarları (`profiles.json`) ile dinamik altyapı ayarlarını (`.env`) birbirinden ayırır.
-
-### Aktif Model Profili: `qwen25_3b_phone_assistant`
-
-Bu profil, telefon görüşmeleri için özel olarak ayarlanmıştır:
--   **Model:** Qwen 2.5 3B Instruct
--   **Temperature:** 0.2 (Tutarlı ve ciddi yanıtlar için)
--   **Context Size:** 8192 Token
--   **System Prompt:** Çağrı merkezi asistanı kimliği.
-
-*Farklı bir profil kullanmak için `models/profiles.json` dosyasını inceleyin.*
-
-### Temel Ortam Değişkenleri (`.env`)
-
-| Değişken | Varsayılan | Açıklama |
+| Değişken | Önerilen | Açıklama |
 |---|---|---|
-| `LLM_LLAMA_SERVICE_GPU_LAYERS` | `100` | GPU'ya yüklenecek katman sayısı (100 = Tümü). |
-| `LLM_LLAMA_SERVICE_THREADS` | `Auto` | İşlemci çekirdek limiti. |
-| `LLM_LLAMA_SERVICE_KV_OFFLOAD` | `true` | KV Cache'i VRAM'de tut (Hız için kritik). |
-| `LLM_LLAMA_SERVICE_PORT_GRPC` | `16071` | Ana iletişim portu. |
-
----
-
-## 🏗️ Mimari
-
-```mermaid
-graph TD
-    Client[Gateway / Voice Service] -->|gRPC (mTLS)| GRPC_Server
-    
-    subgraph "LLM Service Container"
-        GRPC_Server --> Engine[LLM Engine]
-        HTTP_Server --> Engine
-        
-        Engine --> Batcher[Dynamic Batcher]
-        Batcher --> Pool[Llama Context Pool]
-        
-        Pool -->|Acquire| GPU[(NVIDIA GPU)]
-        Pool -->|Load| ModelFile[Qwen 2.5 GGUF]
-    end
-```
-
-### Temel Bileşenler
-1.  **Dynamic Batcher:** Gelen istekleri mikrosaniyeler içinde gruplayarak GPU verimini artırır.
-2.  **Context Pool:** Her telefon görüşmesi için izole bir bellek alanı (Context) sağlar.
-3.  **Prompt Formatter:** RAG verisini ve geçmişi modelin anlayacağı özel formata çevirir.
-
----
-
-## 📊 Performans Referansları
-
-**Donanım:** NVIDIA RTX 3060 (6GB VRAM)
-
-| Metrik | Değer | Açıklama |
-|---|---|---|
-| **TTFT (Time To First Token)** | ~250ms | İlk sesin çıkma süresi. |
-| **TPS (Tokens Per Second)** | ~55-60 | Konuşma hızı (İnsan ortalamasının 3 katı). |
-| **Max Concurrent Calls** | 4-5 | Aynı anda desteklenen aktif görüşme. |
+| `LLM_LLAMA_SERVICE_GPU_LAYERS` | `100` | Tüm katmanlar GPU'da. |
+| `LLM_LLAMA_SERVICE_CONTEXT_SIZE` | `4096` | Telefon görüşmesi için yeterli. |
+| `LLM_LLAMA_SERVICE_KV_OFFLOAD` | `true` | Hız için kritik. |
 
 ---
 
 ## 📜 Lisans
-
 Bu proje **AGPL-3.0** lisansı altındadır.
