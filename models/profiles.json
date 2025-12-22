@@ -8,8 +8,8 @@
       "filename": "gemma-3-4b-it-Q4_K_M.gguf",
       "context_size": 4096,
       "gpu_layers": 100,
-      "temperature": 0.1,
-      "repeat_penalty": 1.2,
+      "temperature": 0.2,
+      "repeat_penalty": 1.1,
       "top_p": 0.90,
       "top_k": 40,
       "templates": {

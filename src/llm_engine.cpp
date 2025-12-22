@@ -10,7 +10,7 @@
 #include <future>
 #include <filesystem>
 #include <regex>
-#include <optional> // [EKLENDİ]
+#include <optional>
 
 // --- RAII HELPERS ---
 
@@ -250,7 +250,11 @@ void LLMEngine::process_batch(std::vector<std::shared_ptr<BatchedRequest>>& batc
 // --- TOKENIZATION & TRUNCATION ---
 std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<BatchedRequest> req_ptr, const std::string& formatted_prompt) {
     const auto* vocab = llama_model_get_vocab(model_);
-    bool add_special = false; 
+    
+    // [FIX] Gemma gibi modeller için BOS token (add_special = true) ŞARTTIR.
+    // Aksi takdirde model prompt'u sızdırır (leak) veya halüsinasyon görür.
+    bool add_special = true; 
+    
     std::vector<llama_token> tokens(formatted_prompt.length() + 64);
     int n_tokens = llama_tokenize(vocab, formatted_prompt.c_str(), formatted_prompt.length(), tokens.data(), tokens.size(), add_special, true);
     if (n_tokens < 0) {
@@ -274,6 +278,7 @@ std::vector<llama_token> LLMEngine::tokenize_and_truncate(std::shared_ptr<Batche
              size_t tail_size = safe_prompt_limit - HEAD_SIZE;
              std::vector<llama_token> smart_tokens;
              smart_tokens.reserve(safe_prompt_limit);
+             // BOS token'ı korumak için begin() + 1 yapmıyoruz, baştan kesiyoruz.
              smart_tokens.insert(smart_tokens.end(), tokens.begin(), tokens.begin() + HEAD_SIZE);
              smart_tokens.insert(smart_tokens.end(), tokens.end() - tail_size, tokens.end());
              tokens = std::move(smart_tokens);
@@ -377,7 +382,6 @@ void LLMEngine::generate_response(llama_context* ctx, const std::vector<llama_to
 }
 
 void LLMEngine::execute_single_request(std::shared_ptr<BatchedRequest> req_ptr) {
-    // [DEADLOCK FİX]: ContextGuard'ı burada başlatma! Optional kullan.
     std::optional<ContextGuard> guard;
     llama_context* ctx = nullptr;
 

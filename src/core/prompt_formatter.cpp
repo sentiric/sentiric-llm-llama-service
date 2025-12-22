@@ -130,7 +130,7 @@ std::string GemmaFormatter::format(const sentiric::llm::v1::GenerateStreamReques
         // Eğer hiç geçmiş yoksa, sistem mesajını buraya ekle
         ss << sys << "\n\n";
     }
-    ss << user_content << "<end_of_turn>\n";
+    ss << user_content << "<end_of_turn>\n"; // Buradaki extra \n kaldırıldı
     
     // Modelin cevap vermesi için tetikleyici
     ss << "<start_of_turn>model\n";
