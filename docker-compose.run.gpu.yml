@@ -20,8 +20,3 @@ services:
     networks:
       - sentiric-net
     # Konteynerin hemen kapanmaması için (debug amaçlı tty: true eklenebilir ama script için gerek yok)
-
-networks:
-  sentiric-net:
-    external: true
-    name: "${NETWORK_NAME:-sentiric.cloud}"

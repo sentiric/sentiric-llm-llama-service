@@ -12,13 +12,23 @@
       "repeat_penalty": 1.1,
       "top_p": 0.90,
       "top_k": 40,
+      "default_max_tokens": 1024,
+      
+      "max_batch_size": 1,
+      "physical_batch_size": 512,
+      "threads": 4,
+      "threads_batch": 4,
+      "enable_batching": true,
+      "use_mmap": true,
+      "kv_offload": true,
+
       "templates": {
         "system_prompt": "Sen 'Sentirik'sin. Profesyonel bir asistansın. Türkçe konuş.\n\n### PROTOKOLLER:\n1. ACİL DURUM: Hayati risklerde RAG verisine bakmadan 112/Doktor uyarısı yap.\n2. SADAKAT: Sadece paylaşılan [BİLGİ] bloğunu kullan.\n3. TARZ: Robotik başlıklar (Cevap:, Soru:) kullanma. Doğal konuş.",
         "rag_prompt": "[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nSoru: {{user_prompt}}"
       }
     },
     "qwen25_7b_research": {
-      "display_name": "Sentiric Research (Qwen 2.5 7B - Slow)",
+      "display_name": "Sentiric Research (Qwen 2.5 7B - Deep Logic)",
       "category": "Research",
       "model_id": "bartowski/Qwen2.5-7B-Instruct-GGUF",
       "filename": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
@@ -28,6 +38,16 @@
       "repeat_penalty": 1.2,
       "top_p": 0.90,
       "top_k": 40,
+      "default_max_tokens": 2048,
+
+      "max_batch_size": 1,
+      "physical_batch_size": 512,
+      "threads": 4,
+      "threads_batch": 4,
+      "enable_batching": true,
+      "use_mmap": true,
+      "kv_offload": true,
+
       "templates": {
         "system_prompt": "Sen 'Sentirik'sin. Profesyonel bir asistansın. Türkçe konuş.\n\n### PROTOKOLLER:\n1. ACİL DURUM: Hayati risklerde RAG verisine bakmadan 112/Doktor uyarısı yap.\n2. SADAKAT: Sadece paylaşılan [BİLGİ] bloğunu kullan.\n3. TARZ: Robotik başlıklar (Cevap:, Soru:) kullanma. Doğal konuş.",
         "rag_prompt": "[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nSoru: {{user_prompt}}"

@@ -21,8 +21,3 @@ services:
     networks:
       - sentiric-net
     command: ["llm_cli", "help"]
-
-networks:
-  sentiric-net:
-    external: true
-    name: "${NETWORK_NAME:-sentiric.cloud}"

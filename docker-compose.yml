@@ -1,6 +1,7 @@
+name: sentiric
+
 networks:
   sentiric-net:
-    name: "${NETWORK_NAME:-sentiric.cloud}"
     driver: bridge
     ipam:
       config:
