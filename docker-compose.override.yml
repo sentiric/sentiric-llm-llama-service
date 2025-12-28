@@ -1,6 +1,0 @@
-services:
-  llm-llama-service:
-    build:
-      context: ../sentiric-llm-llama-service
-      dockerfile: Dockerfile.gpu
-      

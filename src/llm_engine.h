@@ -12,6 +12,7 @@
 #include <memory>
 #include <shared_mutex>
 #include <map>
+#include <list>
 #include "sentiric/llm/v1/llama.pb.h"
 #include <prometheus/gauge.h>
 
@@ -27,11 +28,10 @@ public:
     
     bool update_hardware_config(int gpu_layers, int context_size, bool kv_offload);
 
-    // [GÜNCELLENDİ] LoRA adaptörünü Context seviyesinde uygular
-    // Dönüş değeri: Adaptör başarıyla uygulandıysa true, hata varsa false
+    // LoRA adaptörünü Context seviyesinde uygular
     bool apply_lora_to_context(llama_context* ctx, const std::string& lora_adapter_id);
 
-    // [YENİ] Context üzerindeki tüm adaptörleri temizler
+    // Context üzerindeki tüm adaptörleri temizler
     void clear_lora_from_context(llama_context* ctx);
 
     DynamicBatcher* get_batcher() const { return batcher_.get(); }
@@ -49,18 +49,19 @@ private:
     bool decode_prompt(llama_context* ctx, ContextGuard& guard, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr);
     void generate_response(llama_context* ctx, const std::vector<llama_token>& prompt_tokens, std::shared_ptr<BatchedRequest> req_ptr);
 
-    // [YENİ] LoRA Adapter Cache Yönetimi
+    // LoRA Adapter Cache Yönetimi (Hardened with capacity limit)
     struct llama_adapter_lora* get_or_load_adapter(const std::string& lora_id);
     void clear_adapter_cache();
+    void evict_oldest_lora();
 
     Settings settings_;
     llama_model* model_ = nullptr;
     std::atomic<bool> model_loaded_{false};
     
-    // [GÜNCELLENDİ] LoRA Cache
-    // Adapter ID -> Pointer mapping. Pointer'lar model_ free edildiğinde otomatik geçersiz kalır,
-    // ancak manuel free gerekirse burada tutuyoruz.
+    // LoRA Cache (ID -> Pointer + LRU Tracker)
     std::map<std::string, struct llama_adapter_lora*> lora_cache_;
+    std::list<std::string> lora_lru_list_;
+    const size_t MAX_LORA_CACHE_SIZE = 8; // Max 8 unique LoRA at the same time to save VRAM
     std::mutex lora_mutex_;
 
     std::unique_ptr<LlamaContextPool> context_pool_;

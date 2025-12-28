@@ -1,15 +1,32 @@
 name: sentiric
 
+x-common-settings: &common-settings
+  dns:
+    - ${DISCOVERY_SERVICE_IPV4_ADDRESS:-10.88.5.1}
+    - ${PRIMARY_DNS:-8.8.8.8}
+    - ${SECONDARY_DNS:-1.1.1.1}
+  dns_search:
+    - ${DISCOVERY_DNS_SEARCH_DOMAIN:-service.sentiric.cloud}
+  restart: always
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [ gpu, compute, utility ]
+
 networks:
   sentiric-net:
     driver: bridge
+    name: sentiric-net
     ipam:
       config:
         - subnet: ${NETWORK_SUBNET:-10.88.0.0/16}
           gateway: ${NETWORK_GATEWAY:-10.88.0.1}
 
 volumes:
-  
+
   # =============================================================
   # KATMAN 4: YAPAY ZEKA UZMAN MOTORLARI (AI EXPERT ENGINES)
   # =============================================================
@@ -17,7 +34,7 @@ volumes:
   # [capability-llm]
   llm-llama-models:
   llm-llama-loras: # [YENİ] LoRA adaptörleri için volume
-  llm-llama-cache: 
+  llm-llama-cache:
 
 
 services:
@@ -26,43 +43,58 @@ services:
   # Gerçek AI işini yapan, potansiyel olarak yavaş başlayan servisler.
   # =============================================================
 
-  
+
   #  [capability-llm]: Büyük Dil Modeli Yetenekleri (LLM Capabilities)
   # --------------------------------------------------    
   llm-llama-service:
+    <<: *common-settings
     image: ghcr.io/sentiric/sentiric-llm-llama-service:latest-gpu
-    env_file: ["${ENV_FILE_PATH}"]
-    environment:
-      # GPU için varsayılan katman sayısını ezer
-      - LLM_LLAMA_SERVICE_GPU_LAYERS=${LLM_LLAMA_SERVICE_GPU_LAYERS:-28}    
+    build:
+      context: ../sentiric-llm-llama-service
+      dockerfile: Dockerfile.gpu
     volumes:
-      - "${CERTIFICATES_REPO_PATH}:/sentiric-certificates:ro"
+      - "${CERTIFICATES_REPO_PATH:-../sentiric-certificates}:/sentiric-certificates:ro"
       - llm-llama-models:/models
-      - llm-llama-loras:/lora_adapters # [YENİ] LoRA dizinini mount et
+      - llm-llama-loras:/lora_adapters
+    environment:
+      LLM_LLAMA_SERVICE_HOST: llm-llama-service
+      LLM_LLAMA_SERVICE_LISTEN_ADDRESS: 0.0.0.0
+      LLM_LLAMA_SERVICE_HTTP_PORT: 16070
+      LLM_LLAMA_SERVICE_GRPC_PORT: 16071
+      LLM_LLAMA_SERVICE_METRICS_PORT: 16072
+      NVIDIA_VISIBLE_DEVICES: all
+      LLM_LLAMA_SERVICE_MAX_BATCH_SIZE: 1
+      LLM_LLAMA_SERVICE_DEFAULT_SYSTEM_PROMPT: |
+        Sen 'Sentirik'sin. Profesyonel bir asistansın.
+        Türkçe konuş.
+        Karışılıklı olarak telefonda konuşuyorsun.
+
+        ### PROTOKOLLER:
+        ACİL DURUM: Hayati risklerde RAG verisine bakmadan 112/Doktor uyarısı yap.
+        SADAKAT: Sadece paylaşılan [BİLGİ] bloğunu kullan.
+        TARZ: Robotik başlıklar (Cevap:, Soru:, Anlaşıldı, Tamam) kullanma.
+        Doğal konuş.
+
+      LLM_LLAMA_SERVICE_DEFAULT_RAG_PROMPT: |
+        [BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nSoru: {{user_prompt}}"
+
+      LLM_LLAMA_SERVICE_DEFAULT_RAG_PROMPT_LOW: |
+        [TALİMAT]: Cevap vermeden önce kısaca düşünün. Düşüncelerinizi <think> etiketleri içine alın.
+
+      LLM_LLAMA_SERVICE_DEFAULT_RAG_PROMPT_HIGH: |
+        "[TALİMAT]: Bu karmaşık bir görevdir.
+        Adım adım derinlemesine düşünün.
+        Sorunu analiz edin, uç durumları kontrol edin ve cevap vermeden önce tüm düşünme sürecinizi <think> etiketleri içine alın.        
+
+      GRPC_TLS_CA_PATH: /sentiric-certificates/certs/ca.crt
+      LLM_LLAMA_SERVICE_CERT_PATH: /sentiric-certificates/certs/llm-llama-service-chain.crt
+      LLM_LLAMA_SERVICE_KEY_PATH: /sentiric-certificates/certs/llm-llama-service.key
+    networks:
+      sentiric-net:
+        ipv4_address: ${LLM_LLAMA_SERVICE_IPV4_ADDRESS:-10.88.60.7}
     ports:
       - "${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}:${LLM_LLAMA_SERVICE_HTTP_PORT:-16070}"
       - "${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}:${LLM_LLAMA_SERVICE_GRPC_PORT:-16071}"
       - "${LLM_LLAMA_SERVICE_METRICS_PORT:-16072}:${LLM_LLAMA_SERVICE_METRICS_PORT:-16072}"
-    networks:
-      sentiric-net:
-        ipv4_address: ${LLM_LLAMA_SERVICE_IPV4_ADDRESS:-10.88.60.7}
-    dns:
-      - ${DISCOVERY_SERVICE_IPV4_ADDRESS:-10.88.5.1}
-      - ${PRIMARY_DNS:-8.8.8.8}
-      - ${SECONDARY_DNS:-1.1.1.1}       
-    dns_search:
-      - ${DISCOVERY_DNS_SEARCH_DOMAIN}
-    restart: always
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${LLM_LLAMA_SERVICE_HTTP_PORT}/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60m # Model indirme ve dönüştürme uzun sürebilir
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+      test: [ "CMD", "curl", "-f", "http://localhost:${LLM_LLAMA_SERVICE_HTTP_PORT}/health" ]
