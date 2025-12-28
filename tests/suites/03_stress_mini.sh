@@ -11,8 +11,7 @@ log_info "4 Eşzamanlı bağlantı ile yük testi başlatılıyor..."
 # STDOUT çıktısını doğrudan bir değişkene atıyoruz ve oradan parse ediyoruz.
 # --output parametresi boş geçildiğinde Benchmark sınıfı zaten STDOUT'a yazar.
 
-OUTPUT=$(docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.run.gpu.yml \
-    run --rm llm-cli llm_cli benchmark --concurrent 4 --requests 5 --output "")
+OUTPUT=$(docker compose -f docker-compose.yml run --rm llm-cli llm_cli benchmark --concurrent 4 --requests 5 --output "")
 
 # Çıktıyı ekrana da basalım ki loglarda görelim
 echo "$OUTPUT"
