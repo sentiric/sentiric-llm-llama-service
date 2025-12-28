@@ -32,30 +32,42 @@ struct Settings {
     std::string legacy_model_path = "";
     std::string model_url_template = "https://huggingface.co/{model_id}/resolve/main/{filename}";
     
-    // --- TEMPLATE CONFIGURATION ---
-    std::string template_system_prompt = "You are a helpful assistant.";
-    std::string template_rag_prompt = "Use the following context to answer the question:\nContext: {{rag_context}}\n\nQuestion: {{user_prompt}}";
-    
-    std::string reasoning_prompt_low = "\n[INSTRUCTION]: Think briefly before answering. Enclose thoughts in <think> tags.";
-    std::string reasoning_prompt_high = "\n[INSTRUCTION]: This is a complex task. Think deeply step-by-step. Analyze the problem, check for edge cases, and enclose your full reasoning process in <think> tags before answering.";
+    // --- TEMPLATE CONFIGURATION (TURKISH DEFAULT / ADAPTIVE) ---
+    // [ADAPTIVE] Türkçe varsayılan, İngilizce algılandığında geçiş yapan akıllı prompt
+    std::string template_system_prompt = 
+        "Sen 'Sentirik'sin. Profesyonel, yardımsever ve zeki bir asistansın.\n"
+        "\n"
+        "### İLETİŞİM PROTOKOLLERİ:\n"
+        "1. DİL: Varsayılan dilin Türkçe'dir. Ancak kullanıcı İngilizce veya başka bir dilde yazarsa, algıladığın dilde yanıt ver.\n"
+        "2. ÜSLUP: Doğal, akıcı ve insan benzeri konuş. Robotik kalıplardan (Örn: 'Bir yapay zeka olarak...') kaçın.\n"
+        "3. RAG: Eğer [BİLGİ] bloğu verilmişse, cevabı SADECE oradaki veriye dayandır.\n"
+        "4. GÜVENLİK: Tıbbi/Hayati acil durumlarda yorum yapma, doğrudan 112/Doktora yönlendir.";
 
-    // --- ENGINE & HARDWARE PERFORMANCE ---
-    int n_gpu_layers = 0;              // 0 = CPU only, 100+ = Full GPU
-    uint32_t context_size = 2048;      // DEFAULT: Low memory footprint for multi-service stack
+    std::string template_rag_prompt = 
+        "[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\n"
+        "Yukarıdaki bağlamı kullanarak cevapla:\nSoru: {{user_prompt}}";
     
-    // Threading Strategy
-    uint32_t n_threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));       // Decode threads
-    uint32_t n_threads_batch = std::max(1u, std::min(8u, std::thread::hardware_concurrency())); // Batch processing threads
+    std::string reasoning_prompt_low = "\n[TALİMAT]: Cevap vermeden önce kısaca düşün. Düşüncelerini <think> etiketleri içine al.";
+    std::string reasoning_prompt_high = "\n[TALİMAT]: Bu karmaşık bir görev. Adım adım derinlemesine düşün. Analizini <think> etiketleri içine al.";
+
+    // --- ENGINE & HARDWARE PERFORMANCE (ECO MODE DEFAULTS) ---
+    int n_gpu_layers = 100;            // Default: All Layers on GPU (Speed)
+    uint32_t context_size = 2048;      // Default: 2048 (VRAM Safety for Multi-Service)
+    
+    // Threading Strategy (Limited to 4 to save CPU for STT/TTS)
+    // Hardware concurrency genellikle sanal çekirdekleri de sayar, 4 güvenli bir limittir.
+    uint32_t n_threads = std::max(1u, std::min(4u, std::thread::hardware_concurrency()));
+    uint32_t n_threads_batch = std::max(1u, std::min(4u, std::thread::hardware_concurrency())); 
     
     // Batching & Memory
-    uint32_t physical_batch_size = 512; // llama.cpp batch size (Hardware limit)
+    uint32_t physical_batch_size = 512; 
     ggml_numa_strategy numa_strategy = GGML_NUMA_STRATEGY_DISABLED;
     bool use_mmap = true;
     bool kv_offload = true;
     
     // Dynamic Batching (Request Queue)
     bool enable_dynamic_batching = true;
-    size_t max_batch_size = 1;          // DEFAULT: 1 for safety
+    size_t max_batch_size = 1;          // Default: 1 (Strict Memory Limit)
     int batch_timeout_ms = 5;
     bool enable_warm_up = true;
 
@@ -66,7 +78,7 @@ struct Settings {
     std::string grpc_key_path = "";
 
     // --- SAMPLING DEFAULTS ---
-    float default_temperature = 0.7f;
+    float default_temperature = 0.2f;
     int32_t default_top_k = 40;
     float default_top_p = 0.95f;
     float default_repeat_penalty = 1.1f;
@@ -77,20 +89,27 @@ struct Settings {
     std::string worker_group = "default-group";
     std::string gateway_address = "";
 
-    // JSON Serialization for UI/API inspection
+    // JSON Serialization (FULL OBSERVABILITY RECTIFIED)
     nlohmann::json to_json() const {
         return {
+            // Kimlik
             {"profile_name", profile_name},
             {"model_id", model_id},
+            
+            // Donanım Kaynakları
             {"gpu_layers", n_gpu_layers},
             {"context_size", context_size},
             {"threads", n_threads},
-            {"threads_batch", n_threads_batch},
-            {"max_batch_size_slots", max_batch_size}, // Kullanıcıya "slots" olarak göster
-            {"physical_batch_size", physical_batch_size},
+            {"threads_batch", n_threads_batch},       // [RESTORED]
+            {"physical_batch_size", physical_batch_size}, // [RESTORED]
+            
+            // Eşzamanlılık & Bellek
+            {"max_batch_size_slots", max_batch_size},
             {"kv_offload", kv_offload},
-            {"use_mmap", use_mmap},
-            {"enable_dynamic_batching", enable_dynamic_batching},
+            {"use_mmap", use_mmap},                   // [RESTORED]
+            {"enable_dynamic_batching", enable_dynamic_batching}, // [RESTORED]
+            
+            // Promptlar
             {"template_system_prompt", template_system_prompt}
         };
     }
@@ -109,7 +128,6 @@ inline bool apply_profile(Settings& s, const std::string& profile_name_override)
     if (!fs::exists(profile_path)) {
         profile_path = fs::path(s.model_dir) / "profiles.json";
         if (!fs::exists(profile_path)) {
-            // Profil dosyası yoksa sessizce devam et (Environment variable'lar kullanılacak)
             spdlog::debug("Profiles file not found. Using defaults/env only.");
             return false;
         }
@@ -239,15 +257,13 @@ inline Settings load_settings() {
         }
     };
 
-    // 2. Load basic paths first (needed to find profile)
+    // 2. Load basic paths first
     override_string("LLM_LLAMA_SERVICE_MODEL_DIR", s.model_dir);
     
     // 3. APPLY PROFILE (Overwrites defaults)
-    // Bu aşamada profil yüklenir ve varsayılan değerleri ezer.
     apply_profile(s, ""); 
 
-    // 4. APPLY ENVIRONMENT VARIABLES (Overwrites Profile - Infrastructure is King)
-    // Bu aşamada .env dosyasındaki değerler, profilden gelenleri ezer.
+    // 4. APPLY ENVIRONMENT VARIABLES (Overwrites Profile)
     
     // Network
     override_string("LLM_LLAMA_SERVICE_LISTEN_ADDRESS", s.host);
@@ -288,6 +304,9 @@ inline Settings load_settings() {
     override_float("LLM_LLAMA_SERVICE_DEFAULT_TOP_P", s.default_top_p);
     override_float("LLM_LLAMA_SERVICE_DEFAULT_REPEAT_PENALTY", s.default_repeat_penalty);
     override_string("LLM_LLAMA_SERVICE_DEFAULT_SYSTEM_PROMPT", s.template_system_prompt);
+    override_string("LLM_LLAMA_SERVICE_DEFAULT_RAG_PROMPT", s.template_rag_prompt);
+    override_string("LLM_LLAMA_SERVICE_DEFAULT_RAG_PROMPT_LOW", s.reasoning_prompt_low);
+    override_string("LLM_LLAMA_SERVICE_DEFAULT_RAG_PROMPT_HIGH", s.reasoning_prompt_high);
 
     // Gateway
     s.worker_id = get_env_var("LLM_WORKKER_ID", "worker-" + std::to_string(std::rand()));
