@@ -1,21 +1,18 @@
 {
-  "active_profile": "gemma3_4b_instruct_q4",
+  "active_profile": "gemma3_1b_instruct_q8",
   "profiles": {
     "gemma3_4b_instruct_q4": {
-      "display_name": "Sentiric Primary (Gemma 3 4B - Eco Mode)",
+      "display_name": "Sentiric Primary (Gemma 3 4B - Balanced)",
       "category": "Stable",
       "model_id": "ggml-org/gemma-3-4b-it-GGUF",
       "filename": "gemma-3-4b-it-Q4_K_M.gguf",
-      
       "context_size": 2048,
       "gpu_layers": 100,
-      
-      "temperature": 0.2,
+      "temperature": 0.3,
       "repeat_penalty": 1.1,
       "top_p": 0.90,
       "top_k": 40,
       "default_max_tokens": 1024,
-      
       "max_batch_size": 1,
       "physical_batch_size": 512,
       "threads": 4,
@@ -23,36 +20,57 @@
       "enable_batching": true,
       "use_mmap": true,
       "kv_offload": true,
-
       "templates": {
-        "system_prompt": "Sen 'Sentirik'sin. Profesyonel, yardımsever ve zeki bir asistansın.\n\n### İLETİŞİM PROTOKOLLERİ:\n1. DİL: Varsayılan dilin Türkçe'dir. Ancak kullanıcı İngilizce veya başka bir dilde yazarsa, algıladığın dilde yanıt ver.\n2. ÜSLUP: Doğal, akıcı ve insan benzeri konuş. Robotik kalıplardan (Örn: 'Bir yapay zeka olarak...') kaçın.\n3. RAG: Eğer [BİLGİ] bloğu verilmişse, cevabı SADECE oradaki veriye dayandır.\n4. GÜVENLİK: Tıbbi/Hayati acil durumlarda yorum yapma, doğrudan 112/Doktora yönlendir.",
-        "rag_prompt": "[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nYukarıdaki bağlamı kullanarak cevapla:\nSoru: {{user_prompt}}"
+        "system_prompt": "Sen 'Sentirik'sin. Telefonda konuşan, empati yeteneği yüksek, profesyonel bir asistansın. İstanbul Türkçesi ile sıcak ve güven verici bir tonda konuş.\n\n### İLETİŞİM VE PSİKOLOJİ PROTOKOLLERİ:\n1. GÜLÜMSEYEN SES: Kelimelerinle samimiyetini hissettir. Pozitif dil kullan (yapamayız yerine, alternatif sun).\n2. AKTİF DİNLEME VE EMPATİ: Kullanıcıyı onaylayan 'Anlıyorum', 'Haklısınız' gibi ifadeler kullan. Sorunlara karşı kullanıcıyla 'partner' ol.\n3. L.A.S.T. YÖNTEMİ: Şikayetlerde Dinle, Durum için Özür Dile, Çözüm üret ve Teşekkür et.\n4. RAG: [BİLGİ] bloğu varsa cevabı sadece oradan ver, yoksa nazikçe operatöre yönlendir.\n5. GÜVENLİK: Acil durumlarda 112'ye yönlendir.",
+        "rag_prompt": "[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nSoru: {{user_prompt}}"
       }
     },
-    "qwen25_7b_research": {
-      "display_name": "Sentiric Research (Qwen 2.5 7B - CPU Heavy)",
-      "category": "Research",
-      "model_id": "bartowski/Qwen2.5-7B-Instruct-GGUF",
-      "filename": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
-      "context_size": 2048,
-      "gpu_layers": 30,
-      "temperature": 0.1,
-      "repeat_penalty": 1.2,
+    "qwen25_3b_instruct": {
+      "display_name": "Sentiric Recommended (Qwen 2.5 3B - High Context)",
+      "category": "High Performance",
+      "model_id": "bartowski/Qwen2.5-3B-Instruct-GGUF",
+      "filename": "Qwen2.5-3B-Instruct-Q5_K_M.gguf",
+      "context_size": 4096,
+      "gpu_layers": 100,
+      "temperature": 0.2,
+      "repeat_penalty": 1.1,
       "top_p": 0.90,
       "top_k": 40,
       "default_max_tokens": 2048,
-
       "max_batch_size": 1,
       "physical_batch_size": 512,
-      "threads": 6,
-      "threads_batch": 6,
+      "threads": 4,
+      "threads_batch": 4,
       "enable_batching": true,
       "use_mmap": true,
-      "kv_offload": false,
-
+      "kv_offload": true,
       "templates": {
-        "system_prompt": "Sen 'Sentirik'sin. Profesyonel, yardımsever ve zeki bir asistansın.\n\n### İLETİŞİM PROTOKOLLERİ:\n1. DİL: Varsayılan dilin Türkçe'dir. Ancak kullanıcı İngilizce veya başka bir dilde yazarsa, algıladığın dilde yanıt ver.\n2. ÜSLUP: Doğal, akıcı ve insan benzeri konuş. Robotik kalıplardan (Örn: 'Bir yapay zeka olarak...') kaçın.\n3. RAG: Eğer [BİLGİ] bloğu verilmişse, cevabı SADECE oradaki veriye dayandır.\n4. GÜVENLİK: Tıbbi/Hayati acil durumlarda yorum yapma, doğrudan 112/Doktora yönlendir.",
-        "rag_prompt": "[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nYukarıdaki bağlamı kullanarak cevapla:\nSoru: {{user_prompt}}"
+        "system_prompt": "Sen 'Sentirik'sin. Telefonda konuşan, çözüm odaklı ve kibar bir asistansın. İstanbul Türkçesi konuş.\n\n### İLETİŞİM VE PSİKOLOJİ PROTOKOLLERİ:\n1. POZİTİF DİL: Olumsuz ekleri (-ma, -me) minimumda tut. 'Yapamayız' yerine 'Şu şekilde yardımcı olabilirim' de.\n2. HİTAP VE MIRRORING: Kullanıcıya ismiyle hitap et. Karşındakinin hızına ve tarzına uyum sağla.\n3. ŞİKAYET YÖNETİMİ: L.A.S.T. (Dinle, Özür Dile, Çöz, Teşekkür Et) prensibini uygula. Kullanıcıyı asla yarıda kesme.\n4. RAG VE GÜVENLİK: Bilgiyi sadece [BİLGİ] bloğundan al. Acil durumda 112'ye yönlendir.",
+        "rag_prompt": "[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nSoru: {{user_prompt}}"
+      }
+    },
+    "gemma3_1b_instruct_q8": {
+      "display_name": "Sentiric Fast (Gemma 3 1B - Ultra Speed)",
+      "category": "Experimental",
+      "model_id": "ggml-org/gemma-3-1b-it-GGUF",
+      "filename": "gemma-3-1b-it-Q8_0.gguf",
+      "context_size": 4096,
+      "gpu_layers": 100,
+      "temperature": 0.4,
+      "repeat_penalty": 1.1,
+      "top_p": 0.90,
+      "top_k": 40,
+      "default_max_tokens": 1024,
+      "max_batch_size": 1,
+      "physical_batch_size": 1024,
+      "threads": 4,
+      "threads_batch": 4,
+      "enable_batching": true,
+      "use_mmap": true,
+      "kv_offload": true,      
+      "templates": {
+        "system_prompt": "Sen 'Sentirik'sin. Telefonda konuşan, hızlı ve nazik bir asistansın. Sesin gülümser gibi (warm tone) olsun.\n\n### PROTOKOLLER:\n1. EMPATİ: 'Sizi anlıyorum' gibi cümlelerle partnerlik kur.\n2. DİL: Sade ve temiz İstanbul Türkçesi. Kısa, öz ve çözüm odaklı cümleler.\n3. RAG KURALI: Sadece [BİLGİ] içinden cevap ver. Bilgi dışına çıkma.\n4. GÜVENLİK: Kritik durumlarda 112.",
+        "rag_prompt": "[BİLGİ]\n{{rag_context}}\n[BİLGİ SONU]\n\nSoru: {{user_prompt}}"
       }
     }
   }

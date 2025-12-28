@@ -114,7 +114,7 @@ void SystemController::handle_ui_layout(const httplib::Request &, httplib::Respo
                     {"id", "tempInput"},
                     {"label", "Sıcaklık"},
                     {"display_id", "tempVal"},
-                    {"properties", { {"min", 0.0}, {"max", 2.0}, {"step", 0.1}, {"value", 0.7} }}
+                    {"properties", { {"min", 0.0}, {"max", 2.0}, {"step", 0.1}, {"value", 0.3} }}
                 }
             }}
         }}

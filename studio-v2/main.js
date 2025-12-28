@@ -310,7 +310,7 @@ function buildPayload() {
     
     return {
         messages: msgs,
-        temperature: parseFloat($('tempInput')?.value || 0.7),
+        temperature: parseFloat($('tempInput')?.value || 0.3),
         max_tokens: parseInt($('tokenLimit')?.value || 1024),
         reasoning_effort: reasoningLevel, 
         stream: true
