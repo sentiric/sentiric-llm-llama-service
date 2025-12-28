@@ -2,12 +2,14 @@
   "active_profile": "gemma3_4b_instruct_q4",
   "profiles": {
     "gemma3_4b_instruct_q4": {
-      "display_name": "Sentiric Primary (Gemma 3 4B - Ultra Fast)",
+      "display_name": "Sentiric Primary (Gemma 3 4B - Eco Mode)",
       "category": "Stable",
       "model_id": "ggml-org/gemma-3-4b-it-GGUF",
       "filename": "gemma-3-4b-it-Q4_K_M.gguf",
-      "context_size": 4096,
+      
+      "context_size": 2048,
       "gpu_layers": 100,
+      
       "temperature": 0.2,
       "repeat_penalty": 1.1,
       "top_p": 0.90,
@@ -16,8 +18,8 @@
       
       "max_batch_size": 1,
       "physical_batch_size": 512,
-      "threads": 1,
-      "threads_batch": 1,
+      "threads": 4,
+      "threads_batch": 4,
       "enable_batching": true,
       "use_mmap": true,
       "kv_offload": true,
@@ -28,12 +30,12 @@
       }
     },
     "qwen25_7b_research": {
-      "display_name": "Sentiric Research (Qwen 2.5 7B - Deep Logic)",
+      "display_name": "Sentiric Research (Qwen 2.5 7B - CPU Heavy)",
       "category": "Research",
       "model_id": "bartowski/Qwen2.5-7B-Instruct-GGUF",
       "filename": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
-      "context_size": 4096,
-      "gpu_layers": 100,
+      "context_size": 2048,
+      "gpu_layers": 30,
       "temperature": 0.1,
       "repeat_penalty": 1.2,
       "top_p": 0.90,
@@ -42,11 +44,11 @@
 
       "max_batch_size": 1,
       "physical_batch_size": 512,
-      "threads": 4,
-      "threads_batch": 4,
+      "threads": 6,
+      "threads_batch": 6,
       "enable_batching": true,
       "use_mmap": true,
-      "kv_offload": true,
+      "kv_offload": false,
 
       "templates": {
         "system_prompt": "Sen 'Sentirik'sin. Profesyonel bir asistansın. Türkçe konuş.\n\n### PROTOKOLLER:\n1. ACİL DURUM: Hayati risklerde RAG verisine bakmadan 112/Doktor uyarısı yap.\n2. SADAKAT: Sadece paylaşılan [BİLGİ] bloğunu kullan.\n3. TARZ: Robotik başlıklar (Cevap:, Soru:) kullanma. Doğal konuş.",

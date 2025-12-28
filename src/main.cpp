@@ -25,23 +25,28 @@ namespace {
     std::promise<void> shutdown_promise;
 }
 
+// Log Filtreleme: Gereksiz Llama loglarını gizle
 void llama_log_callback(ggml_log_level level, const char * text, void * user_data) {
     (void)user_data;
     std::string_view text_view(text);
     if (!text_view.empty() && text_view.back() == '\n') {
         text_view.remove_suffix(1);
     }
+    
+    // Filtreleme: "." gibi progress logları veya çok düşük seviye detaylar
+    if (text_view == "." || text_view.find("llama_model_loader:") != std::string::npos) return;
+
     switch (level) {
         case GGML_LOG_LEVEL_ERROR: spdlog::error("[llama.cpp] {}", text_view); break;
         case GGML_LOG_LEVEL_WARN: spdlog::warn("[llama.cpp] {}", text_view); break;
-        case GGML_LOG_LEVEL_INFO: spdlog::debug("[llama.cpp] {}", text_view); break;
+        case GGML_LOG_LEVEL_INFO: spdlog::trace("[llama.cpp] {}", text_view); break; // INFO -> TRACE (Gizle)
         case GGML_LOG_LEVEL_DEBUG: spdlog::trace("[llama.cpp] {}", text_view); break;
         default: break;
     }
 }
 
 void signal_handler(int signal) {
-    spdlog::warn("Signal {} received. Initiating graceful shutdown...", signal);
+    spdlog::warn("🛑 Signal {} received. Initiating graceful shutdown...", signal);
     try {
         shutdown_promise.set_value();
     } catch (const std::future_error&) {}
@@ -63,8 +68,10 @@ void setup_logging() {
     auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     
     if (env == "production") {
+        // JSON Log formatı (Microservices uyumlu)
         sink->set_pattern(R"({"timestamp":"%Y-%m-%dT%T.%fZ","level":"%l","service":"llm-llama-service","message":"%v"})");
     } else {
+        // İnsan okunabilir format
         sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
     }
     
@@ -74,14 +81,26 @@ void setup_logging() {
 
 int main() {
     setup_logging();
+    
+    // Log level'ı en başta ayarla ki config logları görünsün
+    const char* log_level_env = std::getenv("LLM_LLAMA_SERVICE_LOG_LEVEL");
+    std::string level = log_level_env ? log_level_env : "info";
+    spdlog::set_level(spdlog::level::from_str(level));
+
     llama_log_set(llama_log_callback, nullptr);
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
+    spdlog::info("🚀 Sentiric LLM Llama Service starting...");
+
+    // AYARLARI YÜKLE (LOGLAR BURADA BASILACAK)
     auto settings = load_settings();
+    
+    // Eğer config'den gelen log level farklıysa güncelle
     spdlog::set_level(spdlog::level::from_str(settings.log_level));
-    spdlog::info("Sentiric LLM Llama Service starting (Worker ID: {}, Group: {})...", settings.worker_id, settings.worker_group);
+    spdlog::info("ℹ️ Final Configuration: Profile='{}', Ctx={}, GPU Layers={}, Batch={}", 
+                 settings.profile_name, settings.context_size, settings.n_gpu_layers, settings.max_batch_size);
 
     // 1. Prometheus Metrik Altyapısını Kur
     auto registry = std::make_shared<prometheus::Registry>();
@@ -124,18 +143,16 @@ int main() {
         // --- ENABLE STANDARD GRPC HEALTH CHECK ---
         grpc::EnableDefaultHealthCheckService(true);
 
-        spdlog::info("Configuration: host={}, http_port={}, grpc_port={}", settings.host, settings.http_port, settings.grpc_port);
-        
         auto engine = std::make_shared<LLMEngine>(settings, metrics.active_contexts);
         
         if (!engine->is_model_loaded()) {
-            spdlog::critical("LLM Engine failed to initialize with a valid model. Shutting down.");
+            spdlog::critical("🔥 LLM Engine failed to initialize with a valid model. Shutting down.");
             return 1;
         }
 
         // --- MODEL WARM-UP ---
         if (settings.enable_warm_up) {
-            spdlog::info("Starting model warm-up...");
+            spdlog::info("🌡️ Starting model warm-up...");
             ModelWarmup::fast_warmup(engine->get_context_pool(), settings.n_threads);
             spdlog::info("✅ Model warm-up completed");
         }
@@ -145,10 +162,10 @@ int main() {
         grpc::ServerBuilder builder;
 
         if (settings.grpc_ca_path.empty() || settings.grpc_cert_path.empty() || settings.grpc_key_path.empty()) {
-            spdlog::warn("gRPC TLS path variables not fully set. Using insecure credentials.");
+            spdlog::warn("⚠️ gRPC TLS path variables not fully set. Using insecure credentials.");
             builder.AddListeningPort(grpc_address, grpc::InsecureServerCredentials());
         } else {
-            spdlog::info("Loading TLS credentials for gRPC server...");
+            spdlog::info("🔐 Loading TLS credentials for gRPC server...");
             std::string root_ca = read_file(settings.grpc_ca_path);
             std::string server_cert = read_file(settings.grpc_cert_path);
             std::string server_key = read_file(settings.grpc_key_path);
@@ -161,14 +178,14 @@ int main() {
 
             auto creds = grpc::SslServerCredentials(ssl_opts);
             builder.AddListeningPort(grpc_address, creds);
-            spdlog::info("gRPC server configured to use mTLS.");
+            spdlog::info("✅ gRPC server configured to use mTLS.");
         }
 
         builder.RegisterService(&grpc_service);
         grpc_server_ptr = builder.BuildAndStart();
 
         if (!grpc_server_ptr) {
-            spdlog::critical("gRPC server failed to start on {}", grpc_address);
+            spdlog::critical("🔥 gRPC server failed to start on {}", grpc_address);
             return 1;
         }
 
@@ -182,9 +199,8 @@ int main() {
             spdlog::warn("⚠️ gRPC Health Check Service could not be retrieved. Gateway discovery might fail.");
         }
 
-        spdlog::info("🚀 gRPC server listening on {}", grpc_address);
+        spdlog::info("📡 gRPC server listening on {}", grpc_address);
 
-        // [GÜNCELLEME] Settings'den gelen http_threads parametresi geçiliyor
         http_server = std::make_shared<HttpServer>(engine, settings.host, settings.http_port, settings.http_threads);
         metrics_server = std::make_shared<MetricsServer>(settings.host, settings.metrics_port, *registry);
         
@@ -199,12 +215,10 @@ int main() {
         
         shutdown_future.wait();
         
-        spdlog::info("Shutting down servers...");
+        spdlog::info("🛑 Shutting down servers...");
         
-        // Health check'i NOT_SERVING yap ki Gateway yeni istek göndermesin
         if (health_service) {
             health_service->SetServingStatus("", false);
-            spdlog::info("gRPC Health Status set to NOT_SERVING.");
         }
 
         http_server->stop();
@@ -216,13 +230,13 @@ int main() {
         if (grpc_thread.joinable()) grpc_thread.join();
 
     } catch (const std::exception& e) {
-        spdlog::critical("Fatal error during service lifecycle: {}", e.what());
+        spdlog::critical("🔥 Fatal error: {}", e.what());
         if (http_server) http_server->stop();
         if (metrics_server) metrics_server->stop();
         if (grpc_server_ptr) grpc_server_ptr->Shutdown();
         return 1;
     }
 
-    spdlog::info("Service shut down gracefully.");
+    spdlog::info("👋 Service shut down gracefully.");
     return 0;
 }

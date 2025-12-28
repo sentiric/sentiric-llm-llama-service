@@ -63,7 +63,11 @@ services:
       LLM_LLAMA_SERVICE_GRPC_PORT: 16071
       LLM_LLAMA_SERVICE_METRICS_PORT: 16072
       NVIDIA_VISIBLE_DEVICES: all
+      # Performans
+      LLM_LLAMA_SERVICE_GPU_LAYERS: 100
+      LLM_LLAMA_SERVICE_CONTEXT_SIZE: 2048
       LLM_LLAMA_SERVICE_MAX_BATCH_SIZE: 1
+      # Prompt
       LLM_LLAMA_SERVICE_DEFAULT_SYSTEM_PROMPT: |
         Sen 'Sentirik'sin. Profesyonel bir asistansın.
         Türkçe konuş.

@@ -41,7 +41,7 @@ struct Settings {
 
     // --- ENGINE & HARDWARE PERFORMANCE ---
     int n_gpu_layers = 0;              // 0 = CPU only, 100+ = Full GPU
-    uint32_t context_size = 4096;      // Modelin hafıza penceresi (Context Window)
+    uint32_t context_size = 2048;      // DEFAULT: Low memory footprint for multi-service stack
     
     // Threading Strategy
     uint32_t n_threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));       // Decode threads
@@ -55,7 +55,7 @@ struct Settings {
     
     // Dynamic Batching (Request Queue)
     bool enable_dynamic_batching = true;
-    size_t max_batch_size = 1;          // [KRİTİK] Eşzamanlı maksimum istek sayısı (Slots)
+    size_t max_batch_size = 1;          // DEFAULT: 1 for safety
     int batch_timeout_ms = 5;
     bool enable_warm_up = true;
 
@@ -126,7 +126,7 @@ inline bool apply_profile(Settings& s, const std::string& profile_name_override)
         
         if (j.contains("profiles") && j["profiles"].contains(active)) {
             auto& p = j["profiles"][active];
-            spdlog::info("🔄 Applying Profile: [{}]", active);
+            spdlog::info("📂 [Config] Loading Profile: '{}'", active);
             
             s.profile_name = active;
             
@@ -140,7 +140,7 @@ inline bool apply_profile(Settings& s, const std::string& profile_name_override)
             if(p.contains("threads")) s.n_threads = p["threads"];
             if(p.contains("threads_batch")) s.n_threads_batch = p["threads_batch"];
             if(p.contains("physical_batch_size")) s.physical_batch_size = p["physical_batch_size"];
-            if(p.contains("max_batch_size")) s.max_batch_size = p["max_batch_size"]; // [FIX] Artık profilden okunuyor
+            if(p.contains("max_batch_size")) s.max_batch_size = p["max_batch_size"];
             
             // --- Flags ---
             if(p.contains("use_mmap")) s.use_mmap = p["use_mmap"];
@@ -162,11 +162,11 @@ inline bool apply_profile(Settings& s, const std::string& profile_name_override)
             
             return true;
         } else {
-            spdlog::warn("Requested profile '{}' not found in profiles.json. Falling back to defaults.", active);
+            spdlog::warn("⚠️ Requested profile '{}' not found in profiles.json. Falling back to defaults.", active);
             return false;
         }
     } catch (const std::exception& e) {
-        spdlog::error("Failed to parse profiles.json: {}", e.what());
+        spdlog::error("❌ Failed to parse profiles.json: {}", e.what());
         return false;
     }
 }
@@ -178,7 +178,7 @@ inline bool apply_profile(Settings& s, const std::string& profile_name_override)
 inline Settings load_settings() {
     Settings s;
 
-    // 1. Helper Lambdas for ENV reading
+    // 1. Helper Lambdas for ENV reading with Logging
     auto get_env_var = [](const char* name, const std::string& default_val) -> std::string {
         const char* val = std::getenv(name);
         return val ? std::string(val) : default_val;
@@ -188,26 +188,38 @@ inline Settings load_settings() {
     auto override_int = [&](const char* name, int& current_val) {
         const char* val_str = std::getenv(name);
         if (val_str) {
-            try { current_val = std::stoi(val_str); } catch (...) {}
+            try { 
+                current_val = std::stoi(val_str); 
+                spdlog::info("🔧 [Env Override] {} = {}", name, current_val);
+            } catch (...) {}
         }
     };
     auto override_uint = [&](const char* name, uint32_t& current_val) {
         const char* val_str = std::getenv(name);
         if (val_str) {
-            try { current_val = static_cast<uint32_t>(std::stoul(val_str)); } catch (...) {}
+            try { 
+                current_val = static_cast<uint32_t>(std::stoul(val_str)); 
+                spdlog::info("🔧 [Env Override] {} = {}", name, current_val);
+            } catch (...) {}
         }
     };
     // Size_t için özel (batch size vb.)
     auto override_size = [&](const char* name, size_t& current_val) {
         const char* val_str = std::getenv(name);
         if (val_str) {
-            try { current_val = static_cast<size_t>(std::stoul(val_str)); } catch (...) {}
+            try { 
+                current_val = static_cast<size_t>(std::stoul(val_str)); 
+                spdlog::info("🔧 [Env Override] {} = {}", name, current_val);
+            } catch (...) {}
         }
     };
     auto override_float = [&](const char* name, float& current_val) {
         const char* val_str = std::getenv(name);
         if (val_str) {
-            try { current_val = std::stof(val_str); } catch (...) {}
+            try { 
+                current_val = std::stof(val_str); 
+                spdlog::info("🔧 [Env Override] {} = {}", name, current_val);
+            } catch (...) {}
         }
     };
     auto override_bool = [&](const char* name, bool& current_val) {
@@ -216,11 +228,15 @@ inline Settings load_settings() {
             std::string val = val_str;
             std::transform(val.begin(), val.end(), val.begin(), ::tolower);
             current_val = (val == "true" || val == "1");
+            spdlog::info("🔧 [Env Override] {} = {}", name, current_val ? "true" : "false");
         }
     };
     auto override_string = [&](const char* name, std::string& current_val) {
         const char* val = std::getenv(name);
-        if (val) current_val = std::string(val);
+        if (val) {
+            current_val = std::string(val);
+            spdlog::info("🔧 [Env Override] {} = '{}'", name, current_val);
+        }
     };
 
     // 2. Load basic paths first (needed to find profile)
@@ -253,7 +269,7 @@ inline Settings load_settings() {
     override_bool("LLM_LLAMA_SERVICE_USE_MMAP", s.use_mmap);
     override_bool("LLM_LLAMA_SERVICE_KV_OFFLOAD", s.kv_offload);
     
-    // Batching (Fixing the "8" issue)
+    // Batching & Concurrency
     override_bool("LLM_LLAMA_SERVICE_ENABLE_BATCHING", s.enable_dynamic_batching);
     override_size("LLM_LLAMA_SERVICE_MAX_BATCH_SIZE", s.max_batch_size);
     override_int("LLM_LLAMA_SERVICE_BATCH_TIMEOUT_MS", s.batch_timeout_ms);
