@@ -1,3 +1,4 @@
+// Dosya: src/controllers/chat_controller.cpp
 #include "controllers/chat_controller.h"
 #include "spdlog/spdlog.h"
 #include <algorithm>
@@ -83,7 +84,6 @@ sentiric::llm::v1::GenerateStreamRequest ChatController::build_grpc_request(cons
         grpc_request.set_rag_context(body["rag_context"]);
     }
 
-    // [YENİ] LoRA adaptörünü ekle
     if (body.contains("lora_adapter") && body["lora_adapter"].is_string()) {
         grpc_request.set_lora_adapter_id(body["lora_adapter"]);
     }
@@ -118,7 +118,8 @@ void ChatController::handle_streaming_response(std::shared_ptr<BatchedRequest> b
                         auto now = std::chrono::steady_clock::now();
                         std::chrono::duration<double, std::milli> ttft = now - batched_request->creation_time;
                         batched_request->ttft_ms = ttft.count();
-                        spdlog::debug("[HTTP] ⚡ TTFT: {:.2f} ms", batched_request->ttft_ms.load());
+                        // [ARCH-COMPLIANCE] HTTP stream logları trace_id bağlamı ile güncellendi
+                        spdlog::debug("[HTTP][TraceID:{}] ⚡ TTFT: {:.2f} ms", batched_request->trace_id, batched_request->ttft_ms.load());
                     }
 
                     std::string clean_token = sanitize_token(token);
@@ -160,8 +161,9 @@ void ChatController::handle_streaming_response(std::shared_ptr<BatchedRequest> b
             sink.write("data: [DONE]\n\n", 12);
             sink.done();
             
-            spdlog::info("[HTTP] Stream Complete. Tokens: {}/{}, TTFT: {:.2f}ms", 
-                batched_request->prompt_tokens, batched_request->completion_tokens, batched_request->ttft_ms.load());
+            // [ARCH-COMPLIANCE] HTTP stream bitiş logu trace_id bağlamı ile güncellendi
+            spdlog::info("[HTTP][TraceID:{}] Stream Complete. Tokens: {}/{}, TTFT: {:.2f}ms", 
+                batched_request->trace_id, batched_request->prompt_tokens, batched_request->completion_tokens, batched_request->ttft_ms.load());
             
             return true;
         });
@@ -188,6 +190,10 @@ void ChatController::handle_unary_response(std::shared_ptr<BatchedRequest> batch
     response_json["usage"]["completion_tokens"] = batched_request->completion_tokens;
     response_json["usage"]["total_tokens"] = batched_request->prompt_tokens + batched_request->completion_tokens;
     res.set_content(response_json.dump(), "application/json");
+
+    // [ARCH-COMPLIANCE] Unary bitiş logu trace_id bağlamı ile eklendi
+    spdlog::info("[HTTP][TraceID:{}] Unary Complete. Tokens: {}/{}", 
+        batched_request->trace_id, batched_request->prompt_tokens, batched_request->completion_tokens);
 }
 
 void ChatController::handle_chat_completions(const httplib::Request &req, httplib::Response &res) {
@@ -209,6 +215,13 @@ void ChatController::handle_chat_completions(const httplib::Request &req, httpli
 
         auto batched_request = std::make_shared<BatchedRequest>();
         batched_request->request = grpc_request;
+
+        // [ARCH-COMPLIANCE] constraints.yaml: observability.tracing kuralı için x-trace-id propagate ediliyor.
+        std::string trace_id = req.get_header_value("x-trace-id");
+        if (trace_id.empty()) trace_id = "unknown";
+        batched_request->trace_id = trace_id;
+
+        spdlog::info("[HTTP][TraceID:{}] New Chat Completion Request", trace_id);
 
         if (body.contains("response_format") && body["response_format"].value("type", "") == "json_object") {
              batched_request->grammar = R"(

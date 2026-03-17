@@ -1,8 +1,8 @@
+// Dosya: src/core/dynamic_batcher.h
 #pragma once
 
 #include "config.h"
 #include "llama.h"
-// DÜZELTME: Header dosya adı
 #include "sentiric/llm/v1/llama.pb.h"
 #include "spdlog/spdlog.h"
 #include <vector>
@@ -47,7 +47,6 @@ private:
 };
 
 struct BatchedRequest {
-    // DÜZELTME: GenerateStreamRequest
     sentiric::llm::v1::GenerateStreamRequest request;
     
     std::function<bool(const std::string&)> on_token_callback;
@@ -62,6 +61,9 @@ struct BatchedRequest {
     std::string finish_reason = "stop";
 
     std::string grammar;
+
+    // [ARCH-COMPLIANCE] constraints.yaml: observability.tracing bağlam yayılımı için eklendi.
+    std::string trace_id = "unknown";
 
     // --- OBSERVABILITY METRICS ---
     std::chrono::steady_clock::time_point creation_time = std::chrono::steady_clock::now();

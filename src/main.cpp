@@ -1,3 +1,4 @@
+// Dosya: src/main.cpp
 #include "config.h"
 #include "llm_engine.h"
 #include "grpc_server.h"
@@ -8,7 +9,7 @@
 #include <csignal>
 #include <future>
 #include <grpcpp/grpcpp.h>
-#include <grpcpp/health_check_service_interface.h> // GEREKLİ: Health Check Interface
+#include <grpcpp/health_check_service_interface.h>
 #include <grpcpp/security/server_credentials.h>
 #include <fstream>
 #include <sstream>
@@ -25,7 +26,6 @@ namespace {
     std::promise<void> shutdown_promise;
 }
 
-// Log Filtreleme: Gereksiz Llama loglarını gizle
 void llama_log_callback(ggml_log_level level, const char * text, void * user_data) {
     (void)user_data;
     std::string_view text_view(text);
@@ -33,13 +33,12 @@ void llama_log_callback(ggml_log_level level, const char * text, void * user_dat
         text_view.remove_suffix(1);
     }
     
-    // Filtreleme: "." gibi progress logları veya çok düşük seviye detaylar
     if (text_view == "." || text_view.find("llama_model_loader:") != std::string::npos) return;
 
     switch (level) {
         case GGML_LOG_LEVEL_ERROR: spdlog::error("[llama.cpp] {}", text_view); break;
         case GGML_LOG_LEVEL_WARN: spdlog::warn("[llama.cpp] {}", text_view); break;
-        case GGML_LOG_LEVEL_INFO: spdlog::trace("[llama.cpp] {}", text_view); break; // INFO -> TRACE (Gizle)
+        case GGML_LOG_LEVEL_INFO: spdlog::trace("[llama.cpp] {}", text_view); break;
         case GGML_LOG_LEVEL_DEBUG: spdlog::trace("[llama.cpp] {}", text_view); break;
         default: break;
     }
@@ -68,10 +67,8 @@ void setup_logging() {
     auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     
     if (env == "production") {
-        // JSON Log formatı (Microservices uyumlu)
         sink->set_pattern(R"({"timestamp":"%Y-%m-%dT%T.%fZ","level":"%l","service":"llm-llama-service","message":"%v"})");
     } else {
-        // İnsan okunabilir format
         sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
     }
     
@@ -82,7 +79,6 @@ void setup_logging() {
 int main() {
     setup_logging();
     
-    // Log level'ı en başta ayarla ki config logları görünsün
     const char* log_level_env = std::getenv("LLM_LLAMA_SERVICE_LOG_LEVEL");
     std::string level = log_level_env ? log_level_env : "info";
     spdlog::set_level(spdlog::level::from_str(level));
@@ -92,17 +88,14 @@ int main() {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    spdlog::info("🚀 Sentiric LLM Llama Service starting...");
+    spdlog::info("🚀 Sentiric LLM Llama Service starting...v?.?.?");
 
-    // AYARLARI YÜKLE (LOGLAR BURADA BASILACAK)
     auto settings = load_settings();
     
-    // Eğer config'den gelen log level farklıysa güncelle
     spdlog::set_level(spdlog::level::from_str(settings.log_level));
     spdlog::info("ℹ️ Final Configuration: Profile='{}', Ctx={}, GPU Layers={}, Batch={}", 
                  settings.profile_name, settings.context_size, settings.n_gpu_layers, settings.max_batch_size);
 
-    // 1. Prometheus Metrik Altyapısını Kur
     auto registry = std::make_shared<prometheus::Registry>();
 
     auto& requests_total_family = prometheus::BuildCounter()
@@ -140,7 +133,6 @@ int main() {
     std::thread metrics_thread;
 
     try {
-        // --- ENABLE STANDARD GRPC HEALTH CHECK ---
         grpc::EnableDefaultHealthCheckService(true);
 
         auto engine = std::make_shared<LLMEngine>(settings, metrics.active_contexts);
@@ -150,7 +142,6 @@ int main() {
             return 1;
         }
 
-        // --- MODEL WARM-UP ---
         if (settings.enable_warm_up) {
             spdlog::info("🌡️ Starting model warm-up...");
             ModelWarmup::fast_warmup(engine->get_context_pool(), settings.n_threads);
@@ -162,6 +153,11 @@ int main() {
         grpc::ServerBuilder builder;
 
         if (settings.grpc_ca_path.empty() || settings.grpc_cert_path.empty() || settings.grpc_key_path.empty()) {
+            const char* env_p = std::getenv("ENV");
+            if (env_p && std::string(env_p) == "production") {
+                // [ARCH-COMPLIANCE] constraints.yaml kural ihlali engellemesi (security.grpc_communication)
+                throw std::runtime_error("Strict Compliance Error: mTLS credentials are MANDATORY in production environment for gRPC.");
+            }
             spdlog::warn("⚠️ gRPC TLS path variables not fully set. Using insecure credentials.");
             builder.AddListeningPort(grpc_address, grpc::InsecureServerCredentials());
         } else {
@@ -189,7 +185,6 @@ int main() {
             return 1;
         }
 
-        // --- SET HEALTH STATUS TO SERVING ---
         auto health_service = grpc_server_ptr->GetHealthCheckService();
         if (health_service) {
             health_service->SetServingStatus("sentiric.llm.v1.LLMLocalService", true);
