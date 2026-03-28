@@ -1,5 +1,6 @@
+// Dosya: src/controllers/system_controller.cpp
 #include "controllers/system_controller.h"
-#include "spdlog/spdlog.h"
+#include "suts_logger.h" // SUTS Logging eklendi
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -71,7 +72,6 @@ void SystemController::handle_ui_layout(const httplib::Request &, httplib::Respo
     res.set_header("Access-Control-Allow-Origin", "*");
     const auto& s = engine_->get_settings();
     
-    // UI Şeması (Layout Schema)
     json layout_schema = {
         {"panels", {
             {"settings", {
@@ -128,12 +128,20 @@ void SystemController::handle_static_context(const httplib::Request &req, httpli
     res.set_header("Access-Control-Allow-Origin", "*");
     
     try {
-        fs::path base_path = fs::canonical(fs::path("examples"));
+        // [FIX] Klasör yoksa çökmeyi (crash) engellemek için kontrol eklendi
+        fs::path base_path("examples");
+        if (!fs::exists(base_path)) {
+            SUTS_WARN("STATIC_DIR_NOT_FOUND", "", "", "", "⚠️ 'examples' directory not found. Static context serving disabled.");
+            res.status = 404;
+            res.set_content("Context directory not found (Feature disabled)", "text/plain");
+            return;
+        }
+
+        base_path = fs::canonical(base_path);
         fs::path requested_path = fs::weakly_canonical(base_path / filename);
 
-        // Security Check: Path Traversal Protection
         if (requested_path.string().find(base_path.string()) != 0) {
-            spdlog::warn("🚨 Security Alert: Path traversal attempt detected. Input: {}", filename);
+            SUTS_WARN("PATH_TRAVERSAL_ATTEMPT", "", "", "", "🚨 Security Alert: Path traversal attempt detected. Input: {}", filename);
             res.status = 403;
             res.set_content("Access Denied", "text/plain");
             return;
@@ -150,7 +158,7 @@ void SystemController::handle_static_context(const httplib::Request &req, httpli
         }
         res.status = 404;
     } catch (const std::exception& e) {
-        spdlog::error("Error in static context handler: {}", e.what());
+        SUTS_ERROR("STATIC_HANDLER_ERROR", "", "", "", "Error in static context handler: {}", e.what());
         res.status = 500;
     }
 }

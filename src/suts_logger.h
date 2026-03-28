@@ -1,3 +1,4 @@
+// Dosya: src/suts_logger.h
 #pragma once
 #include "nlohmann/json.hpp"
 #include "spdlog/spdlog.h"
@@ -18,9 +19,12 @@ namespace suts {
         nlohmann::json j;
         j["_is_suts"] = true; 
         j["event"] = event;
-        j["trace_id"] = trace_id.empty() ? nlohmann::json(nullptr) : trace_id;
-        j["span_id"] = span_id.empty() ? nlohmann::json(nullptr) : span_id;
-        j["tenant_id"] = tenant_id.empty() ? nlohmann::json(nullptr) : tenant_id;
+        
+        // [FIX] C++ Ternary operator type ambiguity hatası (CI çökmesi) çözüldü.
+        if (trace_id.empty()) j["trace_id"] = nullptr; else j["trace_id"] = trace_id;
+        if (span_id.empty())  j["span_id"]  = nullptr; else j["span_id"]  = span_id;
+        if (tenant_id.empty()) j["tenant_id"] = nullptr; else j["tenant_id"] = tenant_id;
+        
         j["message"] = fmt::format(fmt, std::forward<Args>(args)...);
         return j.dump();
     }

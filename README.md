@@ -1,4 +1,4 @@
-# 🧠 Sentiric LLM Llama Service (v3.2.0)
+# 🧠 Sentiric LLM Llama Service (v3.2.1)
 
 **Production-Ready**, yüksek performanslı, C++ tabanlı yerel LLM çıkarım motoru. **Google Gemma 3 4B** ve **Qwen 2.5** mimarileri için optimize edilmiş, RAG (Retrieval-Augmented Generation) tabanlı sesli asistan altyapısı.
 
@@ -6,11 +6,14 @@
 
 ## 🚀 Durum: STABLE (Üretim Hazır)
 
-Bu servis, **v3.2.0** sürümüyle aşağıdaki kritik yeteneklere kavuşmuştur:
+Bu servis, **v3.2.1** sürümüyle aşağıdaki kritik yeteneklere kavuşmuştur:
 
+-   ✅ **Surgical Logging & Folding:** SUTS v4.0 JSON formatı ve `trace_id`, `span_id` iz sürme mimarisi entegrasyonu.
+-   ✅ **Strict Tenant Isolation:** gRPC ve HTTP seviyesinde Fail-Fast kiracı izolasyonu.
 -   ✅ **Ultra-Low Latency:** Gemma 3 optimizasyonu ile **250ms - 500ms** arası ilk token süresi (TTFT).
 -   ✅ **Smart Context Caching:** Benzer sorgularda önbellek kullanımı ile anında yanıt.
 -   ✅ **Robust Validation:** Sağlık, Finans, Turizm gibi dikey sektörler için 14 farklı test senaryosu.
+
 -   ✅ **Secure & Safe:** Jailbreak koruması, JSON format zorlama ve halüsinasyon önleyici BOS token yönetimi.
 -   ✅ **Omni-Studio v3:** Entegre UI ile gerçek zamanlı test, "Reasoning" izleme ve donanım kontrolü.
 
