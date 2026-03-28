@@ -27,7 +27,7 @@ public:
 
     bool wait_and_pop(T& value, int timeout_ms = 100) {
         std::unique_lock<std::mutex> lock(mutex_);
-        if (!cond_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this]{ return !queue_.empty(); })) {
+        if (!cond_.wait_for(lock, std::chrono::milliseconds(timeout_ms),[this]{ return !queue_.empty(); })) {
             return false;
         }
         value = std::move(queue_.front());
@@ -62,12 +62,14 @@ struct BatchedRequest {
 
     std::string grammar;
 
-    // [ARCH-COMPLIANCE] constraints.yaml: observability.tracing bağlam yayılımı için eklendi.
+    //[ARCH-COMPLIANCE] İz sürme verileri eklendi
     std::string trace_id = "unknown";
+    std::string span_id = "unknown";
+    std::string tenant_id = "unknown";
 
     // --- OBSERVABILITY METRICS ---
     std::chrono::steady_clock::time_point creation_time = std::chrono::steady_clock::now();
-    std::atomic<double> ttft_ms{0.0}; // Time To First Token
+    std::atomic<double> ttft_ms{0.0}; 
     std::atomic<bool> first_token_emitted{false};
 };
 
@@ -78,13 +80,9 @@ public:
         , max_wait_time_(max_wait_time)
         , running_(true)
         , processing_thread_(&DynamicBatcher::processing_loop, this) {
-        spdlog::info("DynamicBatcher initialized: max_batch_size={}, max_wait_time={}ms", 
-                    max_batch_size, max_wait_time.count());
     }
     
-    ~DynamicBatcher() {
-        stop();
-    }
+    ~DynamicBatcher() { stop(); }
     
     std::future<void> add_request(std::shared_ptr<BatchedRequest> request) {
         auto future = request->completion_promise.get_future();

@@ -1,6 +1,6 @@
 // Dosya: src/controllers/chat_controller.cpp
 #include "controllers/chat_controller.h"
-#include "spdlog/spdlog.h"
+#include "suts_logger.h"
 #include <algorithm>
 #include <vector>
 #include <chrono>
@@ -30,7 +30,7 @@ bool ChatController::has_incomplete_utf8_suffix(const std::string& str) {
 
 std::string ChatController::sanitize_token(const std::string& input) {
     std::string clean = input;
-    clean.erase(std::remove_if(clean.begin(), clean.end(), [](unsigned char c) {
+    clean.erase(std::remove_if(clean.begin(), clean.end(),[](unsigned char c) {
         return (c < 32 && c != 9 && c != 10 && c != 13) || c == 127;
     }), clean.end());
     return clean;
@@ -118,8 +118,7 @@ void ChatController::handle_streaming_response(std::shared_ptr<BatchedRequest> b
                         auto now = std::chrono::steady_clock::now();
                         std::chrono::duration<double, std::milli> ttft = now - batched_request->creation_time;
                         batched_request->ttft_ms = ttft.count();
-                        // [ARCH-COMPLIANCE] HTTP stream logları trace_id bağlamı ile güncellendi
-                        spdlog::debug("[HTTP][TraceID:{}] ⚡ TTFT: {:.2f} ms", batched_request->trace_id, batched_request->ttft_ms.load());
+                        SUTS_DEBUG("HTTP_TTFT_COMPUTED", batched_request->trace_id, batched_request->span_id, batched_request->tenant_id, "⚡ HTTP TTFT: {:.2f} ms", batched_request->ttft_ms.load());
                     }
 
                     std::string clean_token = sanitize_token(token);
@@ -161,9 +160,9 @@ void ChatController::handle_streaming_response(std::shared_ptr<BatchedRequest> b
             sink.write("data: [DONE]\n\n", 12);
             sink.done();
             
-            // [ARCH-COMPLIANCE] HTTP stream bitiş logu trace_id bağlamı ile güncellendi
-            spdlog::info("[HTTP][TraceID:{}] Stream Complete. Tokens: {}/{}, TTFT: {:.2f}ms", 
-                batched_request->trace_id, batched_request->prompt_tokens, batched_request->completion_tokens, batched_request->ttft_ms.load());
+            SUTS_INFO("HTTP_STREAM_COMPLETE", batched_request->trace_id, batched_request->span_id, batched_request->tenant_id, 
+                "Stream Complete. Tokens: {}/{}, TTFT: {:.2f}ms", 
+                batched_request->prompt_tokens, batched_request->completion_tokens, batched_request->ttft_ms.load());
             
             return true;
         });
@@ -191,14 +190,28 @@ void ChatController::handle_unary_response(std::shared_ptr<BatchedRequest> batch
     response_json["usage"]["total_tokens"] = batched_request->prompt_tokens + batched_request->completion_tokens;
     res.set_content(response_json.dump(), "application/json");
 
-    // [ARCH-COMPLIANCE] Unary bitiş logu trace_id bağlamı ile eklendi
-    spdlog::info("[HTTP][TraceID:{}] Unary Complete. Tokens: {}/{}", 
-        batched_request->trace_id, batched_request->prompt_tokens, batched_request->completion_tokens);
+    SUTS_INFO("HTTP_UNARY_COMPLETE", batched_request->trace_id, batched_request->span_id, batched_request->tenant_id, 
+        "Unary Complete. Tokens: {}/{}", batched_request->prompt_tokens, batched_request->completion_tokens);
 }
 
 void ChatController::handle_chat_completions(const httplib::Request &req, httplib::Response &res) {
     res.set_header("Access-Control-Allow-Origin", "*");
     
+    std::string trace_id = req.get_header_value("x-trace-id");
+    std::string span_id = req.get_header_value("x-span-id");
+    std::string tenant_id = req.get_header_value("x-tenant-id");
+
+    if (trace_id.empty()) trace_id = "unknown";
+    if (span_id.empty()) span_id = "unknown";
+    if (tenant_id.empty()) tenant_id = "unknown";
+
+    if (tenant_id == "unknown") {
+        SUTS_ERROR("MISSING_TENANT_ID", trace_id, span_id, tenant_id, "Tenant ID is missing in HTTP headers. Request rejected.");
+        res.status = 400;
+        res.set_content(json({{"error", {{"message", "tenant_id header is strictly required"}, {"type", "invalid_request_error"}}}}).dump(), "application/json");
+        return;
+    }
+
     try {
         if (!engine_->is_model_loaded()) {
             res.status = 503; 
@@ -215,13 +228,11 @@ void ChatController::handle_chat_completions(const httplib::Request &req, httpli
 
         auto batched_request = std::make_shared<BatchedRequest>();
         batched_request->request = grpc_request;
-
-        // [ARCH-COMPLIANCE] constraints.yaml: observability.tracing kuralı için x-trace-id propagate ediliyor.
-        std::string trace_id = req.get_header_value("x-trace-id");
-        if (trace_id.empty()) trace_id = "unknown";
         batched_request->trace_id = trace_id;
+        batched_request->span_id = span_id;
+        batched_request->tenant_id = tenant_id;
 
-        spdlog::info("[HTTP][TraceID:{}] New Chat Completion Request", trace_id);
+        SUTS_INFO("HTTP_CHAT_REQUEST", trace_id, span_id, tenant_id, "New HTTP Chat Completion Request");
 
         if (body.contains("response_format") && body["response_format"].value("type", "") == "json_object") {
              batched_request->grammar = R"(
@@ -248,7 +259,7 @@ ws     ::= [ \t\n\r]*
             handle_unary_response(batched_request, completion_future, res);
         }
     } catch (const std::exception& e) {
-        spdlog::error("HTTP handler error: {}", e.what());
+        SUTS_ERROR("HTTP_HANDLER_ERROR", trace_id, span_id, tenant_id, "HTTP handler error: {}", e.what());
         res.status = 400;
         res.set_content(json({{"error", {{"message", e.what()}, {"type", "invalid_request_error"}}}}).dump(), "application/json");
     }

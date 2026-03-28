@@ -1,6 +1,6 @@
 // Dosya: src/grpc_server.cpp
 #include "grpc_server.h"
-#include "spdlog/spdlog.h"
+#include "suts_logger.h"
 #include <atomic>
 #include <chrono>
 
@@ -16,16 +16,31 @@ grpc::Status GrpcServer::GenerateStream(
     auto start_time = std::chrono::steady_clock::now();
 
     std::string trace_id = "unknown";
+    std::string span_id = "unknown";
+    std::string tenant_id = "unknown";
+
     const auto& client_metadata = context->client_metadata();
-    auto it = client_metadata.find("x-trace-id");
-    if (it != client_metadata.end()) {
-        trace_id = std::string(it->second.begin(), it->second.end());
-    }
     
-    spdlog::info("[gRPC][TraceID:{}] New GenerateStream request. LoRA: '{}'", 
-                 trace_id, request->has_lora_adapter_id() ? request->lora_adapter_id() : "none");
+    auto it_trace = client_metadata.find("x-trace-id");
+    if (it_trace != client_metadata.end()) trace_id = std::string(it_trace->second.begin(), it_trace->second.end());
+
+    auto it_span = client_metadata.find("x-span-id");
+    if (it_span != client_metadata.end()) span_id = std::string(it_span->second.begin(), it_span->second.end());
+
+    auto it_tenant = client_metadata.find("x-tenant-id");
+    if (it_tenant != client_metadata.end()) tenant_id = std::string(it_tenant->second.begin(), it_tenant->second.end());
+
+    // [ARCH-COMPLIANCE] Strict Tenant Isolation Fail-Fast
+    if (tenant_id == "unknown" || tenant_id.empty()) {
+        SUTS_ERROR("MISSING_TENANT_ID", trace_id, span_id, tenant_id, "Tenant ID is missing in gRPC metadata. Request rejected.");
+        return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "tenant_id is strictly required for isolation");
+    }
+
+    SUTS_INFO("LLM_REQUEST_RECEIVED", trace_id, span_id, tenant_id, "New GenerateStream request. LoRA: '{}'", 
+                 request->has_lora_adapter_id() ? request->lora_adapter_id() : "none");
 
     if (!engine_->is_model_loaded()) {
+        SUTS_WARN("MODEL_NOT_READY", trace_id, span_id, tenant_id, "Model is not ready yet.");
         return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Model is not ready yet.");
     }
     if (request->user_prompt().empty()) {
@@ -35,16 +50,17 @@ grpc::Status GrpcServer::GenerateStream(
     auto batched_request = std::make_shared<BatchedRequest>();
     batched_request->request = *request;
     batched_request->creation_time = start_time;
-    // [ARCH-COMPLIANCE] constraints.yaml gereği trace_id request modeline bağlanıyor
+    
     batched_request->trace_id = trace_id; 
+    batched_request->span_id = span_id;
+    batched_request->tenant_id = tenant_id;
     
     batched_request->on_token_callback = [batched_request, writer](const std::string& token) -> bool {
         if (!batched_request->first_token_emitted.exchange(true)) {
             auto now = std::chrono::steady_clock::now();
             std::chrono::duration<double, std::milli> ttft = now - batched_request->creation_time;
             batched_request->ttft_ms = ttft.count();
-            // [ARCH-COMPLIANCE] Loglarda trace_id bağlamı kullanılıyor
-            spdlog::debug("[gRPC][TraceID:{}] ⚡ TTFT: {:.2f} ms", batched_request->trace_id, batched_request->ttft_ms.load());
+            SUTS_DEBUG("LLM_TTFT_COMPUTED", batched_request->trace_id, batched_request->span_id, batched_request->tenant_id, "⚡ TTFT: {:.2f} ms", batched_request->ttft_ms.load());
         }
 
         sentiric::llm::v1::GenerateStreamResponse response; 
@@ -64,7 +80,8 @@ grpc::Status GrpcServer::GenerateStream(
             engine_->process_single_request(batched_request);
         }
     } catch (const std::exception& e) {
-        spdlog::error("Unhandled exception: {}", e.what());
+        // [ARCH-COMPLIANCE] Surgical Folding of internal engine errors
+        SUTS_ERROR("LLM_INTERNAL_ERROR", batched_request->trace_id, batched_request->span_id, batched_request->tenant_id, "Unhandled exception during inference: {}", e.what());
         batched_request->finish_reason = "error";
     }
 
@@ -81,8 +98,9 @@ grpc::Status GrpcServer::GenerateStream(
     std::chrono::duration<double> latency = end_time - start_time;
     metrics_.request_latency.Observe(latency.count());
 
-    spdlog::info("[gRPC][TraceID:{}] Completed. Tokens: {}/{}, TTFT: {:.2f}ms, Total: {:.2f}s", 
-        batched_request->trace_id, batched_request->prompt_tokens, batched_request->completion_tokens,
+    SUTS_INFO("LLM_STREAM_COMPLETE", batched_request->trace_id, batched_request->span_id, batched_request->tenant_id, 
+        "Completed. Tokens: {}/{}, TTFT: {:.2f}ms, Total: {:.2f}s", 
+        batched_request->prompt_tokens, batched_request->completion_tokens,
         batched_request->ttft_ms.load(), latency.count());
 
     return grpc::Status::OK;
