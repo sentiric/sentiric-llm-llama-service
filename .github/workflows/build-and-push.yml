@@ -1,4 +1,3 @@
-# .github/workflows/build-and-push.yml
 name: CI - Build and Push Docker Images
 
 on:
@@ -27,7 +26,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Disk alanını temizle (CUDA buildleri çok büyüktür)
+      # 1. DİSK TEMİZLİĞİ: Llama buildleri için alan aç
       - name: Free Disk Space
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -35,6 +34,12 @@ jobs:
           sudo rm -rf "/usr/local/share/boost"
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
+      # 2. KRİTİK DÜZELTME: Buildx Builder Kurulumu
+      # Bu adım 'docker-container' driver'ını aktif eder ve 'gha' cache desteğini getirir.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3. REGISTRY LOGIN
       - name: Log in to the GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -42,38 +47,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # [YENİ]: CMakeLists.txt içinden versiyonu dinamik okuma
+      # 4. ARGÜMANLARI HAZIRLA (CMake v1.2.0 Senkronizasyonu)
       - name: Prepare Build Arguments
         id: prep
         run: |
           echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
           echo "GIT_COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          # CMakeLists.txt dosyasından set(APP_VERSION "1.2.0") satırını bul ve versiyonu çek
           echo "SERVICE_VERSION=$(grep 'set(APP_VERSION' CMakeLists.txt | awk -F '\"' '{print $2}')" >> $GITHUB_ENV
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          # Hem en son (latest) tagi, hem de versiyon-commit bazlı detaylı tag
-          tags: |
-            type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=${{ env.SERVICE_VERSION }}${{ matrix.tag_suffix }}
-            type=raw,value=${{ env.SERVICE_VERSION }}-${{ env.GIT_COMMIT }}${{ matrix.tag_suffix }}
-
+      # 5. DERLE VE GÖNDER
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # Dockerfile içindeki ARG tanımlarını besle (SUTS için yararlıdır)
+          # Önbellek artık 'docker-container' driver sayesinde çalışacak
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            ghcr.io/${{ github.repository }}:latest${{ matrix.tag_suffix }},enable=${{ github.ref == 'refs/heads/main' }}
+            ghcr.io/${{ github.repository }}:${{ env.SERVICE_VERSION }}${{ matrix.tag_suffix }}
+            ghcr.io/${{ github.repository }}:${{ env.SERVICE_VERSION }}-${{ env.GIT_COMMIT }}${{ matrix.tag_suffix }}
           build-args: |
             BUILD_DATE=${{ env.BUILD_DATE }}
             GIT_COMMIT=${{ env.GIT_COMMIT }}
             SERVICE_VERSION=${{ env.SERVICE_VERSION }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
