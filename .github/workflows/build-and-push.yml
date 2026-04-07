@@ -2,10 +2,14 @@ name: CI - Build and Push Docker Images
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*.*.*'
+    branches: [ "main" ]
+    tags: [ 'v*.*.*' ]
+  workflow_dispatch:
+
+# [YENİ]: Aynı anda iki derleme çalışırsa eskisini iptal etme (Temiz bir kuyruk için)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false # Llama buildleri çok değerli, yarıda kesilmesin
 
 jobs:
   build-and-push:
@@ -15,6 +19,7 @@ jobs:
       packages: write
     
     strategy:
+      fail-fast: false # Bir imaj (CPU) hata alsa bile diğeri (GPU) devam etsin
       matrix:
         include:
           - dockerfile: Dockerfile
@@ -25,51 +30,60 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: 'recursive' # Llama.cpp ve diğer bağımlılıklar için kritik
 
-      # 1. DİSK TEMİZLİĞİ: Llama buildleri için alan aç
-      - name: Free Disk Space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf "/usr/local/share/boost"
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+      # 1. PROFESYONEL DİSK TEMİZLİĞİ (Llama derlemek için ~20GB alan açar)
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
 
-      # 2. KRİTİK DÜZELTME: Buildx Builder Kurulumu
-      # Bu adım 'docker-container' driver'ını aktif eder ve 'gha' cache desteğini getirir.
+      # 2. BUILDX KURULUMU (GHA Cache desteği ile)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          install: true # Standart 'docker build' komutunu buildx ile değiştir
 
       # 3. REGISTRY LOGIN
-      - name: Log in to the GitHub Container Registry
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 4. ARGÜMANLARI HAZIRLA (CMake v1.2.0 Senkronizasyonu)
-      - name: Prepare Build Arguments
+      # 4. SUTS v4.0 VERSİYON SENKRONİZASYONU
+      - name: Prepare Build Metadata
         id: prep
         run: |
           echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
           echo "GIT_COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "SERVICE_VERSION=$(grep 'set(APP_VERSION' CMakeLists.txt | awk -F '\"' '{print $2}')" >> $GITHUB_ENV
+          # CMakeLists.txt'den v1.2.0 değerini çekiyoruz
+          VERSION=$(grep 'set(APP_VERSION' CMakeLists.txt | awk -F '\"' '{print $2}')
+          echo "SERVICE_VERSION=$VERSION" >> $GITHUB_ENV
 
-      # 5. DERLE VE GÖNDER
-      - name: Build and push Docker image
+      # 5. DERLE VE GÖNDER (Optimized Layer Caching)
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           push: true
-          # Önbellek artık 'docker-container' driver sayesinde çalışacak
+          # GHA Cache (Önceki derlemeden vcpkg katmanlarını hatırlar)
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: |
-            ghcr.io/${{ github.repository }}:latest${{ matrix.tag_suffix }},enable=${{ github.ref == 'refs/heads/main' }}
-            ghcr.io/${{ github.repository }}:${{ env.SERVICE_VERSION }}${{ matrix.tag_suffix }}
-            ghcr.io/${{ github.repository }}:${{ env.SERVICE_VERSION }}-${{ env.GIT_COMMIT }}${{ matrix.tag_suffix }}
           build-args: |
             BUILD_DATE=${{ env.BUILD_DATE }}
             GIT_COMMIT=${{ env.GIT_COMMIT }}
             SERVICE_VERSION=${{ env.SERVICE_VERSION }}
+          tags: |
+            ghcr.io/${{ github.repository }}:latest${{ matrix.tag_suffix }},enable=${{ github.ref == 'refs/heads/main' }}
+            ghcr.io/${{ github.repository }}:${{ env.SERVICE_VERSION }}${{ matrix.tag_suffix }}
+            ghcr.io/${{ github.repository }}:${{ env.SERVICE_VERSION }}-${{ env.GIT_COMMIT }}${{ matrix.tag_suffix }}
