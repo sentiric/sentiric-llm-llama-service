@@ -70,7 +70,9 @@ class SutsFormatter : public spdlog::formatter {
     const char* env_p = std::getenv("ENV");
     const char* host = std::getenv("HOSTNAME");
     j["resource"] = {{"service.name", "llm-llama-service"},
-                     {"service.version", "3.2.1"},
+                     // [ARCH-COMPLIANCE FIX]: "3.2.1" yerine APP_VERSION
+                     // makrosu kullanılıyor.
+                     {"service.version", APP_VERSION},
                      {"service.env", env_p ? env_p : "production"},
                      {"host.name", host ? host : "unknown"}};
 

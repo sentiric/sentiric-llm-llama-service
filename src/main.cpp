@@ -24,6 +24,10 @@
 #include "llm_engine.h"
 #include "suts_logger.h"  // [YENİ]
 
+#ifndef APP_VERSION
+#define APP_VERSION "unknown"
+#endif
+
 namespace {
 std::promise<void> shutdown_promise;
 }
@@ -98,8 +102,10 @@ int main() {
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
 
+  // [ARCH-COMPLIANCE FIX]: Hardcoded v3.2.1 kaldırıldı, APP_VERSION makrosu
+  // kullanılıyor
   SUTS_INFO("SERVICE_START", "", "", "",
-            "🚀 Sentiric LLM Llama Service starting...v3.2.1");
+            "🚀 Sentiric LLM Llama Service starting... v{}", APP_VERSION);
 
   auto settings = load_settings();
 

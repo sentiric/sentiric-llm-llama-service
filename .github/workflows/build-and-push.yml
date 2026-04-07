@@ -27,6 +27,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Disk alanını temizle (CUDA buildleri çok büyüktür)
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
       - name: Log in to the GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -34,17 +42,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # [YENİ]: CMakeLists.txt içinden versiyonu dinamik okuma
+      - name: Prepare Build Arguments
+        id: prep
+        run: |
+          echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
+          echo "GIT_COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          # CMakeLists.txt dosyasından set(APP_VERSION "1.2.0") satırını bul ve versiyonu çek
+          echo "SERVICE_VERSION=$(grep 'set(APP_VERSION' CMakeLists.txt | awk -F '\"' '{print $2}')" >> $GITHUB_ENV
+
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          # Hem en son (latest) tagi, hem de versiyon-commit bazlı detaylı tag
           tags: |
-            type=schedule
-            type=ref,event=branch
-            type=ref,event=tag
-            type=sha,prefix=,suffix=${{ matrix.tag_suffix }}
-            type=raw,value=latest${{ matrix.tag_suffix }}
+            type=raw,value=latest${{ matrix.tag_suffix }},enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ env.SERVICE_VERSION }}${{ matrix.tag_suffix }}
+            type=raw,value=${{ env.SERVICE_VERSION }}-${{ env.GIT_COMMIT }}${{ matrix.tag_suffix }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -54,3 +70,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Dockerfile içindeki ARG tanımlarını besle (SUTS için yararlıdır)
+          build-args: |
+            BUILD_DATE=${{ env.BUILD_DATE }}
+            GIT_COMMIT=${{ env.GIT_COMMIT }}
+            SERVICE_VERSION=${{ env.SERVICE_VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

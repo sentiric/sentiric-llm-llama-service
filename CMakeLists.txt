@@ -1,14 +1,20 @@
 cmake_minimum_required(VERSION 3.20)
 
+# --- MERKEZİ VERSİYON YÖNETİMİ ---
+set(APP_VERSION "1.2.0")
+
 if(DEFINED GGML_CUDA AND GGML_CUDA)
-    project(llm-llama-service CXX CUDA)
+    project(llm-llama-service VERSION ${APP_VERSION} LANGUAGES CXX CUDA)
 else()
-    project(llm-llama-service CXX)
+    project(llm-llama-service VERSION ${APP_VERSION} LANGUAGES CXX)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic -Wno-unused-function")
+
+# Tüm C++ dosyaları (main.cpp, suts_logger.h vb.) için APP_VERSION makrosunu tanımla!
+add_compile_definitions(APP_VERSION="${APP_VERSION}")
 
 find_package(gRPC CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
