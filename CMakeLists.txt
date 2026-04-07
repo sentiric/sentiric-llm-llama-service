@@ -34,7 +34,8 @@ include(FetchContent)
 FetchContent_Declare(
   sentiric_contracts
   GIT_REPOSITORY https://github.com/sentiric/sentiric-contracts.git
-  GIT_TAG v1.13.6
+  # [ARCH-COMPLIANCE FIX]: Son sürüme güncellendi (v1.20.8)
+  GIT_TAG v1.20.8
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
