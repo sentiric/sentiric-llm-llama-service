@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 # --- MERKEZİ VERSİYON YÖNETİMİ ---
-set(APP_VERSION "1.2.0")
+set(APP_VERSION "1.2.1")
 
 if(DEFINED GGML_CUDA AND GGML_CUDA)
     project(llm-llama-service VERSION ${APP_VERSION} LANGUAGES CXX CUDA)
