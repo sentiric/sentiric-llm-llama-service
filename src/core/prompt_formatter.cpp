@@ -23,8 +23,20 @@ std::unique_ptr<PromptFormatter> create_formatter(const std::string& model_id) {
   return std::make_unique<RawTemplateFormatter>();
 }
 
-// YENİ YARDIMCI FONKSİYON: Sadece son kullanıcı girdisini RAG ile
-// zenginleştirir.
+// [ARCH-COMPLIANCE FIX] System Prompt Ezilme Koruması (Append instead of
+// Override)
+static std::string get_merged_system_prompt(
+    const sentiric::llm::v1::GenerateStreamRequest& request,
+    const Settings& settings) {
+  std::string base_sys = settings.template_system_prompt;
+  std::string custom_sys = request.system_prompt();
+
+  if (!custom_sys.empty() && custom_sys != "PROMPT_SYSTEM_DEFAULT") {
+    return base_sys + "\n\n### AKTİF GÖREV VE BAĞLAM:\n" + custom_sys;
+  }
+  return base_sys;
+}
+
 std::string build_final_user_content(
     const sentiric::llm::v1::GenerateStreamRequest& request,
     const Settings& settings) {
@@ -45,9 +57,7 @@ std::string QwenChatMLFormatter::format(
     const Settings& settings) const {
   std::stringstream ss;
 
-  std::string sys = !request.system_prompt().empty()
-                        ? request.system_prompt()
-                        : settings.template_system_prompt;
+  std::string sys = get_merged_system_prompt(request, settings);
   if (!sys.empty()) {
     ss << "<|im_start|>system\n" << sys << "<|im_end|>\n";
   }
@@ -69,9 +79,7 @@ std::string Llama3Formatter::format(
     const sentiric::llm::v1::GenerateStreamRequest& request,
     const Settings& settings) const {
   std::stringstream ss;
-  std::string sys = !request.system_prompt().empty()
-                        ? request.system_prompt()
-                        : settings.template_system_prompt;
+  std::string sys = get_merged_system_prompt(request, settings);
 
   ss << "<|start_header_id|>system<|end_header_id|>\n\n" << sys << "<|eot_id|>";
 
@@ -94,9 +102,7 @@ std::string MistralFormatter::format(
     const sentiric::llm::v1::GenerateStreamRequest& request,
     const Settings& settings) const {
   std::stringstream ss;
-  std::string sys = !request.system_prompt().empty()
-                        ? request.system_prompt()
-                        : settings.template_system_prompt;
+  std::string sys = get_merged_system_prompt(request, settings);
 
   bool history_exists = request.history_size() > 0;
 
@@ -119,46 +125,37 @@ std::string MistralFormatter::format(
   return ss.str();
 }
 
-// --- 4. Gemma (DÜZELTİLDİ) ---
+// --- 4. Gemma ---
 std::string GemmaFormatter::format(
     const sentiric::llm::v1::GenerateStreamRequest& request,
     const Settings& settings) const {
   std::stringstream ss;
 
-  // Gemma'da 'system' rolü yoktur. Sistem mesajı, İLK kullanıcı mesajının
-  // başına eklenmelidir.
-  std::string sys = !request.system_prompt().empty()
-                        ? request.system_prompt()
-                        : settings.template_system_prompt;
+  std::string sys = get_merged_system_prompt(request, settings);
 
   bool is_first_turn = true;
 
-  // Geçmişi işle
   for (const auto& turn : request.history()) {
     std::string role = (turn.role() == "user") ? "user" : "model";
 
     ss << "<start_of_turn>" << role << "\n";
 
-    // Eğer bu ilk kullanıcı mesajıysa ve sistem mesajı varsa, buraya ekle
     if (is_first_turn && role == "user" && !sys.empty()) {
       ss << sys << "\n\n";
-      is_first_turn = false;  // Artık eklendi, bir daha ekleme
+      is_first_turn = false;
     }
 
     ss << turn.content() << "<end_of_turn>\n";
   }
 
-  // Son kullanıcı mesajını işle (RAG dahil)
   std::string user_content = build_final_user_content(request, settings);
 
   ss << "<start_of_turn>user\n";
   if (is_first_turn && !sys.empty()) {
-    // Eğer hiç geçmiş yoksa, sistem mesajını buraya ekle
     ss << sys << "\n\n";
   }
-  ss << user_content << "<end_of_turn>\n";  // Buradaki extra \n kaldırıldı
+  ss << user_content << "<end_of_turn>\n";
 
-  // Modelin cevap vermesi için tetikleyici
   ss << "<start_of_turn>model\n";
 
   return ss.str();
@@ -169,9 +166,7 @@ std::string RawTemplateFormatter::format(
     const sentiric::llm::v1::GenerateStreamRequest& request,
     const Settings& settings) const {
   std::stringstream ss;
-  std::string sys = !request.system_prompt().empty()
-                        ? request.system_prompt()
-                        : settings.template_system_prompt;
+  std::string sys = get_merged_system_prompt(request, settings);
 
   ss << "System: " << sys << "\n\n";
   for (const auto& turn : request.history()) {

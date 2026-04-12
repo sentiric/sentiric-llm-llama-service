@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 # --- MERKEZİ VERSİYON YÖNETİMİ ---
-set(APP_VERSION "1.2.1")
+set(APP_VERSION "1.2.2")
 
 if(DEFINED GGML_CUDA AND GGML_CUDA)
     project(llm-llama-service VERSION ${APP_VERSION} LANGUAGES CXX CUDA)
@@ -40,8 +40,7 @@ include(FetchContent)
 FetchContent_Declare(
   sentiric_contracts
   GIT_REPOSITORY https://github.com/sentiric/sentiric-contracts.git
-  # [ARCH-COMPLIANCE FIX]: Son sürüme güncellendi (v1.20.8)
-  GIT_TAG v1.20.8
+  GIT_TAG v1.21.1
 )
 FetchContent_MakeAvailable(sentiric_contracts)
 
